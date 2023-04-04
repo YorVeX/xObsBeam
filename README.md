@@ -22,7 +22,36 @@ While the main idea is to use this for local transmission this plugin technicall
 Also there are these unteachable people who keep on asking for uncompressed transmission despite being told multiple times that it's not a good idea, insisting that their great 1 Gbps connection will certainly be able to handle it. They're in for a disappointing experience, but at least now you can point them somewhere to try and see for themselves (be warned that for this reason GitHub issues using this plugin on network are likely to be closed without investigation).
 
 ## Usage
-_TBD_
+Install the same version of the plugin (different versions are never guaranteed to be compatible to each other) into all OBS instances that you want to transmit video/audio feeds between.
+
+### Sender
+One OBS instance will be the sender, on this instance go to the OBS main menu and select Tools -> Beam.
+
+![image](https://user-images.githubusercontent.com/528974/229874785-8a504ebf-a743-4714-8acd-39651784d1c9.png)
+
+A dialog will appear where you can configure the sender identifier and how the sender will accept receiver connections. Named pipe connection is the recommended connection type, as it has the least overhead and therefore should come with the smallest resource impact.
+
+![image](https://user-images.githubusercontent.com/528974/229875292-ef1cd3e0-4249-4b37-81e0-874c39b7282b.png)
+
+Check the "Enable Beam output" box if you want your output to be active now. Press OK to save the settings.
+
+Note that as soon as the output is active your resource usage from OBS will go up, as OBS is now providing data to this plugin (regardless of whether the plugin is doing something with it at this point). Also certain video and audio settings (e.g. video resolution, FPS...) are locked in the OBS settings as long as an output is active. If you want to change those settings, you first need to disable the Beam output again.
+
+An output is currently the only way to send data. A filter based sender solution to send only the data of a single source might be added to xObsBeam as a new feature later.
+
+### Receiver
+At least one OBS instance will be the receiver (multiple receivers can connect to a sender), on a receiver instance add a new source of type Beam.
+
+![image](https://user-images.githubusercontent.com/528974/229876072-47b20f3b-bac9-4b5d-ba99-8738aa43a14d.png)
+
+Double click the source to edit its properties.
+
+![image](https://user-images.githubusercontent.com/528974/229876431-08f94b22-2a2a-4b69-960f-823d933830ca.png)
+
+Make sure to select the same connection type that you previously selected for the sender, also enter the pipe name that you configured for the sender ("My Beam Sender" in this example). Press OK to save the settings.
+
+Now you can show the new Beam source (click the eye icon next to it) and it should connect to the sender and start to receive data.
+
 
 ## FAQ
 - **Q**: Why is the plugin file so big compared to other plugins for the little bit it does, will this cause issues?
