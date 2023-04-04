@@ -104,8 +104,8 @@ public static class Output
   {
     Module.Log("output_create called", ObsLogLevel.Debug);
 
-    var obsFilterData = new Context();
-    IntPtr mem = Marshal.AllocCoTaskMem(Marshal.SizeOf(obsFilterData));
+    var context = new Context();
+    IntPtr mem = Marshal.AllocCoTaskMem(Marshal.SizeOf(context));
     Context* obsOutputDataPointer = (Context*)mem;
     obsOutputDataPointer->Settings = settings;
     obsOutputDataPointer->Output = output;
@@ -133,6 +133,8 @@ public static class Output
 
     if (Convert.ToBoolean(Obs.obs_output_can_begin_data_capture(_outputData.Output, ObsOutput.OBS_OUTPUT_AV)))
       Obs.obs_output_begin_data_capture(_outputData.Output, ObsOutput.OBS_OUTPUT_AV);
+    else
+      return Convert.ToByte(false);
 
     return Convert.ToByte(true);
   }
