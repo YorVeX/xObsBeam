@@ -18,29 +18,31 @@ A use case where this seems unnecessary is when trasmitting data from one OBS in
 If you are hoping that this solution has zero resource usage you will be disappointed. Beside the obvious memory needs to store several uncompressed frames on both sender and receiver side (a small queue is always needed) a significant amount of CPU usage is already caused at the moment where you activate any output plugin in OBS, even if the plugin is not doing anything with that data at all. Also managing and transferring vast amounts of data takes some resources. However, it will still be less than when encoding/compression would be added on top of this.
 
 ### Enthusiasts, edge cases and unteachables
-While the main idea is to use this for local transmission this plugin technically also works when used over a network, so that enthusiasts with expensive network setups can play around with and might actually make it work for them. And at least transmitting sources with low resolution and/or low FPS through the network could actually be feasible even over a standard network, e.g. for a retro game or a cam feed of an old webcam that you want to include.
+While the main idea is to use this for local transmission this plugin technically also works when used over a network, so that enthusiasts with expensive network setups can play around with and might actually make it work for them. And at least transmitting sources with low resolution and/or low FPS through the network could actually be feasible even over a standard 1 Gbps network, e.g. for a retro game or a cam feed of an old webcam that you want to include.
 Also there are these unteachable people who keep on asking for uncompressed transmission despite being told multiple times that it's not a good idea, insisting that their great 1 Gbps connection will certainly be able to handle it. They're in for a disappointing experience, but at least now you can point them somewhere to try and see for themselves (be warned that for this reason GitHub issues using this plugin on network are likely to be closed without investigation).
 
 ### Bandwidth
 Here is some example configurations and their necessary bandwidths for the video feed (audio usually is negligible):
 
-| Resolution | FPS | NV12 bandwidth | I444 bandwidth | BGRA bandwidth |
+| Resolution | FPS | NV12/I420 bandwidth | I444/P010/I010 bandwidth | BGRA bandwidth |
 | --- | --- | --- | --- | --- |
-| 720p | 30 | 312 Mpbs | I444 Mpbs | BGRA Mbps |
-| 720p | 60 | 632 Mpbs | I444 Mpbs | BGRA Mbps |
-| 900p | 30 | 488 Mpbs | I444 Mpbs | BGRA Mbps |
-| 900p | 60 | 984 Mpbs | I444 Mpbs | BGRA Mbps |
-| 1080p (FHD) | 30 | 704 Mpbs | I444 Mpbs | BGRA Mbps |
-| 1080p (FHD) | 60 | 1416 Mpbs | I444 Mpbs | BGRA Mbps |
-| 1440p (2K) | 30 | 1264 Mpbs | I444 Mpbs | BGRA Mbps |
-| 1440p (2K) | 60 | 2528 Mpbs | I444 Mpbs | BGRA Mbps |
+| 720p | 30 | 312 Mpbs | 632 Mpbs | 840 Mbps |
+| 720p | 60 | 632 Mpbs | 1264 Mpbs | 1680 Mbps |
+| 900p | 30 | 488 Mpbs | 984 Mpbs | 1312 Mbps |
+| 900p | 60 | 984 Mpbs | 1976 Mpbs | 2632 Mbps |
+| 1080p (FHD) | 30 | 704 Mpbs | 1416 Mpbs | 1896 Mbps |
+| 1080p (FHD) | 60 | 1416 Mpbs | 2840 Mpbs | 3792 Mbps |
+| 1440p (2K) | 30 | 1264 Mpbs | 2528 Mpbs | 3368 Mbps |
+| 1440p (2K) | 60 | 2528 Mpbs | 5056 Mpbs | 6744 Mbps |
 | 2160p (4K) | 30 | 2840 Mpbs | 5688 Mpbs | 7592 Mbps |
 | 2160p (4K) | 60 | 5688 Mpbs | 11384 Mpbs | 15184 Mpbs |
+
+Remember that NV12 is the OBS default. If you choose a different color format also the load on the sender will increase in addition to the bandwidth demand.
 
 If you want to get this number for your specific configuration just start the Beam output and check the OBS log, it will show a line like this:
 `[xObsBeam] Video output feed initialized, theoretical net bandwidth demand is 632 Mpbs`
 
-Note that this is the theoretical *minimum net bandwidth* that is needed on a network. To measure your available net bandwidth you can use a tool like [iperf](https://iperf.fr), e.g. for a 2.5 Gbps connection it is 2.37 Gbps for me.
+Note that this is the theoretical **minimum net bandwidth** that is needed on a network. To measure your available net bandwidth you can use a tool like [iperf](https://iperf.fr), e.g. for a 2.5 Gbps connection it could be something like 2.37 Gbps.
 
 In addition there still needs to be enough headroom available for spikes that can occur at any time and of course for all other traffic that wants to use the same interface. Depending on how sensitive this traffic is and how good all involved network devices are (switch, router, network card, cable, the chain is as good as its weakest link) other traffic might suffer long before you get even close to any theoretical limits, e.g. if you play a latency sensitive game on a cheap router your latency might already double our triple when only using half of theoretically available bandwidth or less because of how network packets are prioritized. Also other traffic originators might have spikes too.
 
