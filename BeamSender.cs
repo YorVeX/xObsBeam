@@ -53,6 +53,8 @@ public class BeamSender
       Range = info->range,
       Colorspace = info->colorspace,
     };
+    var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoDataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
+    Module.Log($"Video output feed initialized, theoretical net bandwidth demand is {videoBandwidthMbps} Mpbs", ObsLogLevel.Info);
 
   }
 
