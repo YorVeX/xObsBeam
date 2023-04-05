@@ -4,6 +4,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using ObsInterop;
+
 namespace xObsBeam;
 
 public enum ObsLogLevel : int

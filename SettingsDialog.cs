@@ -7,6 +7,7 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using ObsInterop;
+
 namespace xObsBeam;
 
 public static class SettingsDialog

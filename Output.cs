@@ -1,10 +1,9 @@
 ﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
-using System.Net;
 using System.Runtime.InteropServices;
-using System.Text;
 using ObsInterop;
+
 namespace xObsBeam;
 
 public static class Output

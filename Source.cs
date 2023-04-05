@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 using System.Collections.Concurrent;
-using System.Net;
 using System.Runtime.InteropServices;
 using ObsInterop;
+
 namespace xObsBeam;
 
 public class Source

@@ -6,7 +6,6 @@ using System.Collections.Concurrent;
 using System.IO.Pipelines;
 using System.IO.Pipes;
 using System.Net.Sockets;
-using ObsInterop;
 
 namespace xObsBeam;
 

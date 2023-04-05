@@ -5,7 +5,6 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.Pipelines;
 using System.IO.Pipes;
-using System.Net;
 using System.Net.Sockets;
 
 namespace xObsBeam;
@@ -46,8 +45,6 @@ public class BeamReceiver
     get => _isConnected;
   }
 
-
-  //TODO: beside sockets and named pipes explore a memory mapped file approach, it's also a stream and can be used by PipeReader and PipeWriter
   public void Connect(string hostname, int port = BeamSender.DefaultPort)
   {
     Task.Run(() => ConnectAsync(hostname, port));

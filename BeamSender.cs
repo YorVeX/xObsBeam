@@ -1,9 +1,7 @@
 ﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
-using System.Buffers;
 using System.Collections.Concurrent;
-using System.IO.Pipelines;
 using System.IO.Pipes;
 using System.Net;
 using System.Net.Sockets;
@@ -14,7 +12,6 @@ namespace xObsBeam;
 public class BeamSender
 {
   public const int DefaultPort = 13629;
-
 
   ConcurrentDictionary<string, BeamSenderClient> _clients = new ConcurrentDictionary<string, BeamSenderClient>();
   ConcurrentDictionary<string, NamedPipeServerStream> _pipeServers = new ConcurrentDictionary<string, NamedPipeServerStream>();
