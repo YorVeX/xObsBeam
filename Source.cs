@@ -45,8 +45,6 @@ public class Source
       sourceInfo.create = &source_create;
       sourceInfo.get_width = &source_get_width;
       sourceInfo.get_height = &source_get_height;
-      sourceInfo.activate = &source_activate;
-      sourceInfo.deactivate = &source_deactivate;
       sourceInfo.show = &source_show;
       sourceInfo.hide = &source_hide;
       sourceInfo.destroy = &source_destroy;
@@ -139,29 +137,19 @@ public class Source
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-  public static unsafe void source_activate(void* data)
-  {
-    Module.Log("source_activate called", ObsLogLevel.Debug);
-    getSource(data).connect();
-  }
-
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-  public static unsafe void source_deactivate(void* data)
-  {
-    Module.Log("source_deactivate called", ObsLogLevel.Debug);
-    getSource(data).BeamReceiver.Disconnect();
-  }
-
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe void source_show(void* data)
   {
     Module.Log("source_show called", ObsLogLevel.Debug);
+    // the activate/deactivate events are not triggered by Studio Mode, so we need to connect/disconnect in show/hide events if the source should also work in Studio Mode
+    getSource(data).connect();
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe void source_hide(void* data)
   {
     Module.Log("source_hide called", ObsLogLevel.Debug);
+    // the activate/deactivate events are not triggered by Studio Mode, so we need to connect/disconnect in show/hide events if the source should also work in Studio Mode
+    getSource(data).BeamReceiver.Disconnect();
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
