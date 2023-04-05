@@ -64,7 +64,7 @@ public class Source
     return _sourceList[(*context).SourceId];
   }
 
-  private unsafe void Connect()
+  private unsafe void connect()
   {
     var context = (Context*)this.ContextPointer;
     var settings = context->Settings;
@@ -95,9 +95,7 @@ public class Source
         int targetPort = (int)ObsData.obs_data_get_int(settings, (sbyte*)propertyTargetPortId);
         BeamReceiver.Connect(targetHost, targetPort);
       }
-
     }
-
   }
   #endregion Helper methods
 
@@ -144,27 +142,26 @@ public class Source
   public static unsafe void source_activate(void* data)
   {
     Module.Log("source_activate called", ObsLogLevel.Debug);
+    getSource(data).connect();
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe void source_deactivate(void* data)
   {
     Module.Log("source_deactivate called", ObsLogLevel.Debug);
+    getSource(data).BeamReceiver.Disconnect();
   }
-
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe void source_show(void* data)
   {
     Module.Log("source_show called", ObsLogLevel.Debug);
-    getSource(data).Connect();
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe void source_hide(void* data)
   {
     Module.Log("source_hide called", ObsLogLevel.Debug);
-    getSource(data).BeamReceiver.Disconnect();
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -251,7 +248,7 @@ public class Source
       thisSource.BeamReceiver.Disconnect();
     var context = (Context*)data;
     if (Convert.ToBoolean(Obs.obs_source_showing(context->Source))) // auto-reconnect if the source is visible
-      thisSource.Connect();
+      thisSource.connect();
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -316,8 +313,14 @@ public class Source
   private unsafe void DisconnectedEventHandler(object? sender, EventArgs e)
   {
     var context = (Context*)this.ContextPointer;
+
+    // reset video output
     Obs.obs_source_output_video(context->Source, null);
-    //TODO: calling obs_source_output_audio the same way with a null frame causes an error in the OBS log, but not doing it and reconnecting (with a frame which then has a huge gap to the previous frame) leads to an error: 03:40:57.902: Audio timestamp for 'Beam Source' exceeded TS_SMOOTHING_THRESHOLD, diff=3037333112 ns, expected 106238793136084, input 106241830469196
+
+    // reset audio output
+    context->Audio->timestamp = 0;
+    context->Audio->frames = 0;
+    Obs.obs_source_output_audio(context->Source, context->Audio);
 
     if (Convert.ToBoolean(Obs.obs_source_showing(context->Source))) // auto-reconnect if the source is visible
     {
