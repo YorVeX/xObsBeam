@@ -48,21 +48,6 @@ public class BeamReceiver
 
 
   //TODO: beside sockets and named pipes explore a memory mapped file approach, it's also a stream and can be used by PipeReader and PipeWriter
-  public void Connect()
-  {
-    Task.Run(() => ConnectAsync());
-  }
-
-  public async Task ConnectAsync()
-  {
-    if ((_targetHostname == "") && (_pipeName == ""))
-      throw new InvalidOperationException("No connection target specified. Call Connect(address, port) or Connect(pipe name) first.");
-    if (_targetHostname != "")
-      await ConnectAsync(_targetHostname, _targetPort);
-    else
-      await ConnectAsync(_pipeName);
-  }
-
   public void Connect(string hostname, int port = BeamSender.DefaultPort)
   {
     Task.Run(() => ConnectAsync(hostname, port));

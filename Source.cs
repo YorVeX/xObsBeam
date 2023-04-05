@@ -327,7 +327,7 @@ public class Source
       Task.Delay(1000).ContinueWith(_ =>
       {
         if (Convert.ToBoolean(Obs.obs_source_showing(context->Source))) // some time has passed, check again whether the source is still visible
-          (sender as BeamReceiver)?.Connect(); // reconnect
+          connect(); // reconnect
       });
     }
 
