@@ -60,7 +60,6 @@ public static class Output
 
   public static unsafe void Start()
   {
-    //FIXME: OBS often crashes when starting the output, stopping it again, changing FPS (30 to 60 or vice versa) and then starting the output again
     if (!IsReady)
       return;
     else if (!IsActive)
