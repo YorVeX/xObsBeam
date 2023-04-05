@@ -24,13 +24,12 @@ class BeamSenderClient
   long _videoFrameCount = -1;
   long _audioFrameCount = -1;
   CancellationTokenSource _cancellationSource = new CancellationTokenSource();
-  Task _sendTask = Task.CompletedTask;
-  Task _receiveTask = Task.CompletedTask;
   string _clientId = "";
   Beam.VideoHeader _videoHeader;
   ArrayPool<byte> _videoDataPool;
   Beam.AudioHeader _audioHeader;
   ArrayPool<byte> _audioDataPool;
+  DateTime _lastFrameTime = DateTime.MaxValue;
 
   public string ClientId { get => _clientId; }
 
@@ -66,18 +65,15 @@ class BeamSenderClient
       throw new InvalidOperationException("No socket or pipe stream available.");
     _pipeWriter = PipeWriter.Create(_stream);
     _pipeReader = PipeReader.Create(_stream);
-    _sendTask = Task.Run(() => sendLoopAsync(_cancellationSource.Token));
-    _receiveTask = Task.Run(() => processDataLoopAsync(_socket, _cancellationSource.Token));
-
+    _ = Task.Run(() => sendLoopAsync(_cancellationSource.Token));
+    _ = Task.Run(() => receiveLoopAsync(_cancellationSource.Token));
   }
 
-  public void Disconnect(bool blocking = false)
+  public void Disconnect()
   {
     Module.Log($"<{_clientId}> Disconnecting client...", ObsLogLevel.Info);
     _cancellationSource.Cancel();
     _frameAvailable.Set();
-    if (blocking)
-      _sendTask.Wait();
   }
 
   public event EventHandler<EventArgs>? Disconnected;
@@ -87,18 +83,45 @@ class BeamSenderClient
     Task.Run(() => Disconnected?.Invoke(this, EventArgs.Empty));
   }
 
-  async Task processDataLoopAsync(Socket? socket, CancellationToken cancellationToken)
+  async Task checkReceiverAliveLoopAsync(CancellationToken cancellationToken)
+  {
+    try
+    {
+      while (!cancellationToken.IsCancellationRequested)
+      {
+        await Task.Delay(1000, cancellationToken);
+        if (_lastFrameTime < DateTime.UtcNow.AddSeconds(-1))
+        {
+          Module.Log($"<{_clientId}> Receiver timeout.", ObsLogLevel.Error);
+          Disconnect();
+          break;
+        }
+      }
+    }
+    catch (OperationCanceledException ex)
+    {
+      Module.Log($"<{_clientId}> checkReceiverAliveLoopAsync() exit through {ex.GetType().Name}.", ObsLogLevel.Debug);
+    }
+    catch (System.Exception ex)
+    {
+      Module.Log($"<{_clientId}> {ex.GetType().Name} while trying to process or retrieve data: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Debug);
+    }
+  }
+
+  async Task receiveLoopAsync(CancellationToken cancellationToken)
   {
     /*
-    The only reason for this method to exist is because the mere existence of a receiving channel on the underlying socket ensures proper disconnect detection also for the sender.
-    Therefore this method only logs debug messages and does not do anything else of impact, all error handling and closing code is done in the send loop.
-    As a side effect the frame information from the sender can also be useful for debugging purposes.
+    One reason to have this method is because the mere existence of an actively used receiving channel on the underlying socket ensures proper disconnect detection also for the sender.
+    Another is that it is used to implement timeout detection for cases where the connection is still open but the receiver is not reading data anymore.
+    As a side effect the frame timestamp information from the receiver can also be useful for debugging purposes.
     */
     if (_pipeReader == null)
       return;
     try
     {
-      Module.Log($"<{_clientId}> processDataLoopAsync() started.", ObsLogLevel.Debug);
+      Module.Log($"<{_clientId}> receiveLoopAsync() started.", ObsLogLevel.Debug);
+      _lastFrameTime = DateTime.UtcNow;
+      _ = Task.Run(() => checkReceiverAliveLoopAsync(cancellationToken));
       while (!cancellationToken.IsCancellationRequested)
       {
         ulong timestamp;
@@ -106,23 +129,20 @@ class BeamSenderClient
         if (readResult.IsCanceled || (readResult.Buffer.IsEmpty && readResult.IsCompleted))
         {
           if (readResult.IsCanceled)
-            Module.Log($"<{_clientId}> processDataLoopAsync() exit through cancellation.", ObsLogLevel.Debug);
+            Module.Log($"<{_clientId}> receiveLoopAsync() exit through cancellation.", ObsLogLevel.Debug);
           else
-            Module.Log($"<{_clientId}> processDataLoopAsync() exit through completion.", ObsLogLevel.Debug);
+            Module.Log($"<{_clientId}> receiveLoopAsync() exit through completion.", ObsLogLevel.Debug);
           break;
         }
         _pipeReader.AdvanceTo(Beam.GetTimestamp(readResult.Buffer, out timestamp), readResult.Buffer.End);
-        //TODO: there is still a slight chance of the sender not detecting a receiver disconnect when using sockets, check here every second whether the timestamp received was not longer than a second ago
+        _lastFrameTime = DateTime.UtcNow;
+
         // Module.Log($"<{_clientId}> Receiver is at video timestamp {timestamp}.", ObsLogLevel.Debug);
       }
     }
     catch (OperationCanceledException ex)
     {
-      Module.Log($"<{_clientId}> processDataLoopAsync() exit through {ex.GetType().Name}.", ObsLogLevel.Debug);
-    }
-    catch (IOException ex)
-    {
-      Module.Log($"<{_clientId}> {ex.GetType().Name} while trying to process or retrieve data: {ex.Message}", ObsLogLevel.Debug);
+      Module.Log($"<{_clientId}> receiveLoopAsync() exit through {ex.GetType().Name}.", ObsLogLevel.Debug);
     }
     catch (System.Exception ex)
     {
@@ -266,11 +286,13 @@ class BeamSenderClient
       Module.Log($"<{_clientId}> {ex.GetType().Name} in send loop: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
       try { _pipeWriter.Complete(ex); } catch { }
     }
+
+    Module.Log($"<{_clientId}> sendLoopAsync(): Exiting...", ObsLogLevel.Debug);
+    if (!_cancellationSource.IsCancellationRequested) // make sure that also all other loops exit now
+      _cancellationSource.Cancel();
     try { _pipeReader?.Complete(); } catch { }
     _pipeWriter = null;
     _pipeReader = null;
-
-    Module.Log($"<{_clientId}> sendLoopAsync(): Exiting...", ObsLogLevel.Debug);
     _frameQueue.Clear();
     if (_socket != null)
     {
