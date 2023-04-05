@@ -117,8 +117,8 @@ public class Source
     Context* context = (Context*)Marshal.AllocCoTaskMem(sizeof(Context));
     context->Settings = settings;
     context->Source = source;
-    context->Video = Module.bzalloc<obs_source_frame>(); //TODO: change this after this was implemented: https://github.com/kostya9/NetObsBindings/issues/13
-    context->Audio = Module.bzalloc<obs_source_audio>(); //TODO: change this after this was implemented: https://github.com/kostya9/NetObsBindings/issues/13
+    context->Video = ObsBmem.bzalloc<obs_source_frame>();
+    context->Audio = ObsBmem.bzalloc<obs_source_audio>();
     context->SourceId = ++_sourceCount;
     var thisSource = new Source();
     _sourceList.TryAdd(context->SourceId, thisSource);
