@@ -69,18 +69,6 @@ public static class Module
     ObsBmem.bfree(obsString);
     return managedString;
   }
-
-  /// <summary>Allocates memory for an unmanaged structure using OBS memory management and initializes all fields in it to zero.</summary>
-  /// <typeparam name="T">The type of the structure to allocate.</typeparam>
-  /// <returns>A pointer to the allocated memory.</returns>
-  /// <remarks>Use <see cref="ObsInterop.ObsBmem.bfree(void*)"/> to free the memory.</remarks>
-  public static unsafe T* bzalloc<T>() where T : unmanaged
-  {
-    int structSize = Marshal.SizeOf<T>();
-    var memory = (T*)ObsBmem.bmalloc((nuint)structSize);
-    new Span<byte>((byte*)memory, structSize).Clear();
-    return memory;
-  }
   #endregion Helper methods
 
   #region Event handlers
