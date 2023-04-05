@@ -17,8 +17,6 @@ class BeamSenderClient
   Socket? _socket;
   NamedPipeServerStream? _pipeStream;
   Stream? _stream;
-  PipeWriter? _pipeWriter;
-  PipeReader? _pipeReader;
   ConcurrentQueue<Beam.IBeamData> _frameQueue = new ConcurrentQueue<Beam.IBeamData>();
   AutoResetEvent _frameAvailable = new AutoResetEvent(false);
   long _videoFrameCount = -1;
@@ -63,10 +61,8 @@ class BeamSenderClient
       _stream = _pipeStream;
     else
       throw new InvalidOperationException("No socket or pipe stream available.");
-    _pipeWriter = PipeWriter.Create(_stream);
-    _pipeReader = PipeReader.Create(_stream);
-    _ = Task.Run(() => sendLoopAsync(_cancellationSource.Token));
-    _ = Task.Run(() => receiveLoopAsync(_cancellationSource.Token));
+    _ = Task.Run(() => sendLoopAsync(PipeWriter.Create(_stream), _cancellationSource.Token));
+    _ = Task.Run(() => receiveLoopAsync(PipeReader.Create(_stream), _cancellationSource.Token));
   }
 
   public void Disconnect()
@@ -108,14 +104,14 @@ class BeamSenderClient
     }
   }
 
-  async Task receiveLoopAsync(CancellationToken cancellationToken)
+  async Task receiveLoopAsync(PipeReader pipeReader, CancellationToken cancellationToken)
   {
     /*
     One reason to have this method is because the mere existence of an actively used receiving channel on the underlying socket ensures proper disconnect detection also for the sender.
     Another is that it is used to implement timeout detection for cases where the connection is still open but the receiver is not reading data anymore.
     As a side effect the frame timestamp information from the receiver can also be useful for debugging purposes.
     */
-    if (_pipeReader == null)
+    if (pipeReader == null)
       return;
     try
     {
@@ -125,16 +121,20 @@ class BeamSenderClient
       while (!cancellationToken.IsCancellationRequested)
       {
         ulong timestamp;
-        ReadResult readResult = await _pipeReader.ReadAtLeastAsync(8, cancellationToken);
+        ReadResult readResult = await pipeReader.ReadAtLeastAsync(8, cancellationToken);
         if (readResult.IsCanceled || (readResult.Buffer.IsEmpty && readResult.IsCompleted))
         {
           if (readResult.IsCanceled)
             Module.Log($"<{_clientId}> receiveLoopAsync() exit through cancellation.", ObsLogLevel.Debug);
           else
+          {
             Module.Log($"<{_clientId}> receiveLoopAsync() exit through completion.", ObsLogLevel.Debug);
+            _cancellationSource.Cancel();
+            _frameAvailable.Set();
+          }
           break;
         }
-        _pipeReader.AdvanceTo(Beam.GetTimestamp(readResult.Buffer, out timestamp), readResult.Buffer.End);
+        pipeReader.AdvanceTo(Beam.GetTimestamp(readResult.Buffer, out timestamp), readResult.Buffer.End);
         _lastFrameTime = DateTime.UtcNow;
 
         // Module.Log($"<{_clientId}> Receiver is at video timestamp {timestamp}.", ObsLogLevel.Debug);
@@ -148,9 +148,10 @@ class BeamSenderClient
     {
       Module.Log($"<{_clientId}> {ex.GetType().Name} while trying to process or retrieve data: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Debug);
     }
+    try { pipeReader.Complete(); } catch { }
   }
 
-  async Task sendLoopAsync(CancellationToken cancellationToken)
+  async Task sendLoopAsync(PipeWriter pipeWriter, CancellationToken cancellationToken)
   {
     /*
     We want to send data out as fast as possible, however, a small queue is still needed for two reasons:
@@ -160,7 +161,7 @@ class BeamSenderClient
        https://learn.microsoft.com/en-us/dotnet/standard/io/pipelines#pipewriter-common-problems
     */
 
-    if (_pipeWriter == null)
+    if (pipeWriter == null)
       return;
     try
     {
@@ -190,11 +191,11 @@ class BeamSenderClient
             try
             {
               // write video header data
-              var headerBytes = videoFrame.Header.WriteTo(_pipeWriter.GetMemory(Beam.VideoHeader.VideoHeaderDataSize).Span, videoFrame.Timestamp);
-              _pipeWriter.Advance(headerBytes);
+              var headerBytes = videoFrame.Header.WriteTo(pipeWriter.GetMemory(Beam.VideoHeader.VideoHeaderDataSize).Span, videoFrame.Timestamp);
+              pipeWriter.Advance(headerBytes);
 
               // write video frame data - need to slice videoFrame.Data, since the arrays we get from _videoDataPool are often bigger than what we requested
-              var writeResult = await _pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(videoFrame.Data).Slice(0, videoFrame.Header.DataSize), cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
+              var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(videoFrame.Data).Slice(0, videoFrame.Header.DataSize), cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
               _videoDataPool.Return(videoFrame.Data); // return video frame data to the memory pool
 
               if (logCycle >= fps)
@@ -238,11 +239,11 @@ class BeamSenderClient
             try
             {
               // write audio header data
-              var headerBytes = audioFrame.Header.WriteTo(_pipeWriter.GetMemory(Beam.AudioHeader.AudioHeaderDataSize).Span, audioFrame.Timestamp);
-              _pipeWriter.Advance(headerBytes);
+              var headerBytes = audioFrame.Header.WriteTo(pipeWriter.GetMemory(Beam.AudioHeader.AudioHeaderDataSize).Span, audioFrame.Timestamp);
+              pipeWriter.Advance(headerBytes);
 
               // write audio frame data - need to slice audioFrame.Data, since the arrays we get from the shared ArrayPool are often bigger than what we requested
-              var writeResult = await _pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(audioFrame.Data).Slice(0, audioFrame.Header.DataSize), cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
+              var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(audioFrame.Data).Slice(0, audioFrame.Header.DataSize), cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
               ArrayPool<byte>.Shared.Return(audioFrame.Data); // return audio frame data to the memory pool
               if (logCycle >= fps)
                 Module.Log($"<{_clientId}> Sent {headerBytes} + {audioFrame.Header.DataSize} bytes of audio data, queue length: {audioFrameCount}", ObsLogLevel.Debug);
@@ -279,20 +280,17 @@ class BeamSenderClient
         }
       }
       if (pipeWriterComplete)
-        _pipeWriter.Complete();
+        pipeWriter.Complete();
     }
     catch (System.Exception ex)
     {
       Module.Log($"<{_clientId}> {ex.GetType().Name} in send loop: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
-      try { _pipeWriter.Complete(ex); } catch { }
+      try { pipeWriter.Complete(ex); } catch { }
     }
 
     Module.Log($"<{_clientId}> sendLoopAsync(): Exiting...", ObsLogLevel.Debug);
     if (!_cancellationSource.IsCancellationRequested) // make sure that also all other loops exit now
       _cancellationSource.Cancel();
-    try { _pipeReader?.Complete(); } catch { }
-    _pipeWriter = null;
-    _pipeReader = null;
     _frameQueue.Clear();
     if (_socket != null)
     {
