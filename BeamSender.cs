@@ -1,6 +1,7 @@
 ﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Net;
@@ -11,6 +12,7 @@ namespace xObsBeam;
 
 public class BeamSender
 {
+  public const int MaxFrameQueueSize = 5;
   public const int DefaultPort = 13629;
 
   ConcurrentDictionary<string, BeamSenderClient> _clients = new ConcurrentDictionary<string, BeamSenderClient>();
@@ -19,6 +21,8 @@ public class BeamSender
   TcpListener _listener = new TcpListener(IPAddress.Loopback, DefaultPort);
   string _pipeName = "";
   CancellationTokenSource _listenCancellationSource = new CancellationTokenSource();
+  ArrayPool<byte>? _qoiVideoDataPool;
+  int _qoiVideoDataPoolMaxSize = 0;
   Beam.VideoHeader _videoHeader;
   Beam.AudioHeader _audioHeader;
   int _videoDataSize = 0;
@@ -51,8 +55,11 @@ public class BeamSender
       Colorspace = info->colorspace,
     };
     var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoDataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
-    Module.Log($"Video output feed initialized, theoretical net bandwidth demand is {videoBandwidthMbps} Mpbs", ObsLogLevel.Info);
+    Module.Log($"Video output feed initialized, theoretical uncompressed net bandwidth demand is {videoBandwidthMbps} Mpbs", ObsLogLevel.Info);
 
+    // QOI's theoretical max size for BGRA is 5x the size of the original image
+    _qoiVideoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength);
+    _qoiVideoDataPool = ArrayPool<byte>.Create(_qoiVideoDataPoolMaxSize, MaxFrameQueueSize);
   }
 
   public unsafe void SetAudioParameters(audio_output_info* info, uint frames)
@@ -201,6 +208,7 @@ public class BeamSender
       GC.Collect(); // potentially lots of queue data to collect
       _videoDataSize = 0;
       _audioDataSize = 0;
+      _qoiVideoDataPool = null;
 
       Module.Log($"Stopped BeamSender.", ObsLogLevel.Debug);
     }
@@ -212,9 +220,49 @@ public class BeamSender
 
   public unsafe void SendVideo(ulong timestamp, byte* data)
   {
-    // send the video data to all currently connected clients
-    foreach (var client in _clients.Values)
-      client.Enqueue(timestamp, data);
+    if (_clients.Count == 0)
+      return;
+
+    //TODO: QOI: make configurable whether to use QOI or not
+
+    //TODO: QOI: POC: encode only every 2nd or 3rd frame or 2 out of 3 - do bandwidth vs. CPU use tradeoff tests
+    //TODO: QOI: POC: optionally apply another compression algorithm on top of QOI at the cost of more CPU load, should give good results at least for reducing bandwidth as discussed here: https://github.com/phoboslab/qoi/issues/166
+    //TODO: QOI: OBS is BGRA, QOI is RGBA, do we need to swap the channels?
+
+    if (SettingsDialog.QoiCompression)
+    {
+      var encodedData = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
+      
+      //TODO: QOI: make this run on a separate thread/task (right now it's run on the main OBS thread it's called from)
+      int encodedDataLength = Qoi.Encode(data, _videoHeader.Width, _videoHeader.Height, 4, encodedData); // encode the frame with QOI
+      
+      var frameHeader = _videoHeader;
+      if (encodedDataLength >= _videoHeader.DataSize) // send uncompressed data if compressed would be bigger
+      {
+        Module.Log($"QOI: sending raw data, since QOI didn't reduce the size.", ObsLogLevel.Debug);
+        foreach (var client in _clients.Values)
+          client.Enqueue(timestamp, frameHeader, data);
+        _qoiVideoDataPool.Return(encodedData);
+        return;
+      }
+
+      frameHeader.Compression = Beam.CompressionTypes.Qoi;
+      frameHeader.DataSize = encodedDataLength;
+      // Module.Log($"QOI: {_videoHeader.DataSize} -> {frameHeader.DataSize} bytes.", ObsLogLevel.Debug);
+
+      // send the video data to all currently connected clients
+      foreach (var client in _clients.Values)
+        client.Enqueue(timestamp, frameHeader, encodedData);
+
+      // return the rented encoding data buffer to the pool, each client has created a copy of that data for its own use
+      _qoiVideoDataPool!.Return(encodedData);
+    }
+    else
+    {
+      var frameHeader = _videoHeader;
+      foreach (var client in _clients.Values)
+        client.Enqueue(timestamp, frameHeader, data);
+    }
   }
 
   public unsafe void SendAudio(ulong timestamp, int speakers, byte* data)

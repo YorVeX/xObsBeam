@@ -111,6 +111,8 @@ public static class Output
     _outputData = *obsOutputDataPointer;
     return (void*)mem;
 
+    //TODO: QOI: set the output to RGB using obs_output_set_video_conversion() when SettingsDialog.QoiCompression is enabled
+
     //TODO: try using obs_output_set_video_conversion() to request a specific video format (e.g. RGB) and see how it impacts performance - low priority, since most probably it's a negative impact
   }
 

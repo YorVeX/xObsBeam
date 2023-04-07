@@ -73,6 +73,15 @@ public static class SettingsDialog
     }
   }
 
+  public static unsafe bool QoiCompression
+  {
+    get
+    {
+      fixed (byte* propertyQoiCompressionId = "compression_qoi"u8)
+        return Convert.ToBoolean(ObsData.obs_data_get_bool(_settings, (sbyte*)propertyQoiCompressionId));
+    }
+  }
+
   public static unsafe bool UsePipe
   {
     get
@@ -177,6 +186,12 @@ public static class SettingsDialog
       propertyListenPortId = "listen_port"u8,
       propertyListenPortCaption = Module.ObsText("ListenPortCaption"),
       propertyListenPortText = Module.ObsText("ListenPortText"),
+      propertyCompressionQoiId = "compression_qoi"u8,
+      propertyCompressionQoiCaption = Module.ObsText("CompressionQOICaption"),
+      propertyCompressionQoiText = Module.ObsText("CompressionQOIText"),
+      propertyCompressionQoiLevelId = "compression_qoi_level"u8,
+      propertyCompressionQoiLevelCaption = Module.ObsText("CompressionQOILevelCaption"),
+      propertyCompressionQoiLevelText = Module.ObsText("CompressionQOILevelText"),
       propertyConnectionTypeId = "connection_type"u8,
       propertyConnectionTypeCaption = Module.ObsText("ConnectionTypeCaption"),
       propertyConnectionTypeText = Module.ObsText("ConnectionTypeText"),
@@ -190,6 +205,15 @@ public static class SettingsDialog
     {
       // enable or disable the output
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableCaption), (sbyte*)propertyEnableText);
+
+      // compression selection group
+      var compressionQoiPropertyGroup = ObsProperties.obs_properties_create();
+      var compressionQoiProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyCompressionQoiId, (sbyte*)propertyCompressionQoiCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionQoiPropertyGroup);
+      ObsProperties.obs_property_set_long_description(compressionQoiProperty, (sbyte*)propertyCompressionQoiText);
+      // compression level
+      var compressionQoiLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoiPropertyGroup, (sbyte*)propertyCompressionQoiLevelId, (sbyte*)propertyCompressionQoiLevelCaption, 1, 10, 1);
+      ObsProperties.obs_property_set_long_description(compressionQoiLevelProperty, (sbyte*)propertyCompressionQoiLevelText);
+      ObsProperties.obs_property_set_enabled(compressionQoiLevelProperty, Convert.ToByte(false)); //TODO: QOI: implemented skipping compression for frames
 
       // identifier configuration text box
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierCaption, obs_text_type.OBS_TEXT_DEFAULT), (sbyte*)propertyIdentifierText);
@@ -249,6 +273,7 @@ public static class SettingsDialog
       propertyEnableId = "enable"u8,
       propertyIdentifierId = "identifier"u8,
       propertyIdentifierDefaultText = "BeamSender"u8,
+      propertyCompressionQoiLevelId = "compression_qoi_level"u8,
       propertyConnectionTypePipeId = "connection_type_pipe"u8,
       propertyConnectionTypeSocketId = "connection_type_socket"u8,
       propertyAutomaticListenPortId = "auto_listen_port"u8,
@@ -257,6 +282,7 @@ public static class SettingsDialog
     {
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(false));
       ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierDefaultText);
+      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoiLevelId, 10);
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(true));
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(false));
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyAutomaticListenPortId, Convert.ToByte(false)); //TODO: PeerDiscovery: make this default to true as soon as peer discovery is implemented

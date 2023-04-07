@@ -12,6 +12,12 @@ namespace xObsBeam;
 public class Beam
 {
 
+  public enum CompressionTypes : int
+  {
+    None = 0,
+    Qoi = 1,
+  }
+
   #region helper methods
   /// <summary>Sequences could be split accross multiple spans, this method handles both split and non-split cases.</summary>
   public static Type GetBeamType(ReadOnlySequence<byte> sequence)
@@ -193,6 +199,7 @@ public class Beam
     static int _headerDataSize = -1;
 
     public Type Type = Type.Video;
+    public CompressionTypes Compression;
     public int DataSize;
     public uint Width;
     public uint Height;
@@ -227,7 +234,10 @@ public class Beam
       // read uint Type from the first 4 bytes in header
       reader.TryReadLittleEndian(out tempInt);
       Type = (Type)tempInt;
-      // read long video DataSize from the next 4 bytes in header
+      // read CompressionType enum from the next 4 bytes in header
+      reader.TryReadLittleEndian(out tempInt);
+      Compression = (CompressionTypes)tempInt;
+      // read int video DataSize from the next 4 bytes in header
       reader.TryReadLittleEndian(out DataSize);
       // read uint width from the next 4 bytes in header
       reader.TryReadLittleEndian(out tempInt);
@@ -267,6 +277,7 @@ public class Beam
     {
       int headerBytes = 0;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), (uint)Type); headerBytes += 4;
+      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Compression); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), DataSize); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Width); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Height); headerBytes += 4;
