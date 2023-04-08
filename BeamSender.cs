@@ -223,18 +223,15 @@ public class BeamSender
     if (_clients.Count == 0)
       return;
 
-    //TODO: QOI: make configurable whether to use QOI or not
-
     //TODO: QOI: POC: encode only every 2nd or 3rd frame or 2 out of 3 - do bandwidth vs. CPU use tradeoff tests
     //TODO: QOI: POC: optionally apply another compression algorithm on top of QOI at the cost of more CPU load, should give good results at least for reducing bandwidth as discussed here: https://github.com/phoboslab/qoi/issues/166
-    //TODO: QOI: OBS is BGRA, QOI is RGBA, do we need to swap the channels?
 
     if (SettingsDialog.QoiCompression)
     {
       var encodedData = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
       
       //TODO: QOI: make this run on a separate thread/task (right now it's run on the main OBS thread it's called from)
-      int encodedDataLength = Qoi.Encode(data, _videoHeader.Width, _videoHeader.Height, 4, encodedData); // encode the frame with QOI
+      int encodedDataLength = Qoi.Encode(data, 0, _videoHeader.DataSize, 4, encodedData); // encode the frame with QOI
       
       var frameHeader = _videoHeader;
       if (encodedDataLength >= _videoHeader.DataSize) // send uncompressed data if compressed would be bigger

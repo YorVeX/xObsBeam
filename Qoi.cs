@@ -34,13 +34,8 @@ class Qoi
   //TODO: explore options to work with frame difference based compression in addition, some ideas and a link to "QOV" here: https://github.com/phoboslab/qoi/issues/228 and here: https://github.com/nigeltao/qoi2-bikeshed/issues/37
 
   static int pixelHash(Pixel pixel) => (pixel.R * 3 + pixel.G * 5 + pixel.B * 7 + pixel.A * 11) % 64;
-
-  public static unsafe int Encode(byte* data, uint width, uint height, int channels, byte[] output)
+  public static unsafe int Encode(byte* data, int dataIndex, int dataSize, int channels, byte[] output)
   {
-    var dataSize = width * height * channels;
-    // var maxSize = width * height * (channels + 1) + PaddingLength;
-    // var output = new byte[maxSize];
-
     var writeIndex = 0;
 
     Pixel previous = default;
@@ -50,92 +45,89 @@ class Qoi
     byte run = 0;
     var finalPixelIndex = dataSize - channels;
 
-    unsafe
+    var seenBuffer = stackalloc Pixel[SeenPixelsBufferLength];
+
+    for (var readIndex = dataIndex; readIndex < dataSize; readIndex += channels)
     {
-      var seenBuffer = stackalloc Pixel[SeenPixelsBufferLength];
+      pixel.B = data[readIndex + 0];
+      pixel.G = data[readIndex + 1];
+      pixel.R = data[readIndex + 2];
 
-      for (var readIndex = 0; readIndex < dataSize; readIndex += channels)
+      if (channels == 4)
+        pixel.A = data[readIndex + 3];
+      else
+        pixel.A = previous.A;
+
+      if (pixel.Value == previous.Value)
       {
-        pixel.R = data[readIndex + 0];
-        pixel.G = data[readIndex + 1];
-        pixel.B = data[readIndex + 2];
-
-        if (channels == 4)
-          pixel.A = data[readIndex + 3];
-        else
-          pixel.A = previous.A;
-
-        if (pixel.Value == previous.Value)
+        run++;
+        if (run == MaxRunLength || readIndex == finalPixelIndex)
         {
-          run++;
-          if (run == MaxRunLength || readIndex == finalPixelIndex)
-          {
-            output[writeIndex++] = (byte)(QOI_OP_RUN | (run - 1));
-            run = 0;
-          }
+          output[writeIndex++] = (byte)(QOI_OP_RUN | (run - 1));
+          run = 0;
         }
+      }
+      else
+      {
+        if (run > 0)
+        {
+          output[writeIndex++] = (byte)(QOI_OP_RUN | (run - 1));
+          run = 0;
+        }
+
+        var hash = pixelHash(pixel);
+        if (seenBuffer[hash].Value == pixel.Value)
+          output[writeIndex++] = (byte)(QOI_OP_INDEX | hash);
         else
         {
-          if (run > 0)
-          {
-            output[writeIndex++] = (byte)(QOI_OP_RUN | (run - 1));
-            run = 0;
-          }
+          seenBuffer[hash] = pixel;
 
-          var hash = pixelHash(pixel);
-          if (seenBuffer[hash].Value == pixel.Value)
-            output[writeIndex++] = (byte)(QOI_OP_INDEX | hash);
-          else
+          if (pixel.A == previous.A)
           {
-            seenBuffer[hash] = pixel;
+            var vr = (sbyte)(pixel.R - previous.R);
+            var vg = (sbyte)(pixel.G - previous.G);
+            var vb = (sbyte)(pixel.B - previous.B);
 
-            if (pixel.A == previous.A)
+            var vg_r = (sbyte)(vr - vg);
+            var vg_b = (sbyte)(vb - vg);
+
+            if (
+                vr > -3 && vr < 2 &&
+                vg > -3 && vg < 2 &&
+                vb > -3 && vb < 2
+            )
             {
-              var vr = (sbyte)(pixel.R - previous.R);
-              var vg = (sbyte)(pixel.G - previous.G);
-              var vb = (sbyte)(pixel.B - previous.B);
-
-              var vg_r = (sbyte)(vr - vg);
-              var vg_b = (sbyte)(vb - vg);
-
-              if (
-                  vr > -3 && vr < 2 &&
-                  vg > -3 && vg < 2 &&
-                  vb > -3 && vb < 2
-              )
-              {
-                output[writeIndex++] = (byte)(QOI_OP_DIFF | (vr + 2) << 4 | (vg + 2) << 2 | (vb + 2));
-              }
-              else if (
-                  vg_r > -9 && vg_r < 8 &&
-                  vg > -33 && vg < 32 &&
-                  vg_b > -9 && vg_b < 8
-              )
-              {
-                output[writeIndex++] = (byte)(QOI_OP_LUMA | (vg + 32));
-                output[writeIndex++] = (byte)((vg_r + 8) << 4 | (vg_b + 8));
-              }
-              else
-              {
-                output[writeIndex++] = QOI_OP_RGB;
-                output[writeIndex++] = pixel.R;
-                output[writeIndex++] = pixel.G;
-                output[writeIndex++] = pixel.B;
-              }
+              output[writeIndex++] = (byte)(QOI_OP_DIFF | (vr + 2) << 4 | (vg + 2) << 2 | (vb + 2));
+            }
+            else if (
+                vg_r > -9 && vg_r < 8 &&
+                vg > -33 && vg < 32 &&
+                vg_b > -9 && vg_b < 8
+            )
+            {
+              output[writeIndex++] = (byte)(QOI_OP_LUMA | (vg + 32));
+              output[writeIndex++] = (byte)((vg_r + 8) << 4 | (vg_b + 8));
             }
             else
             {
-              output[writeIndex++] = QOI_OP_RGBA;
+              output[writeIndex++] = QOI_OP_RGB;
               output[writeIndex++] = pixel.R;
               output[writeIndex++] = pixel.G;
               output[writeIndex++] = pixel.B;
-              output[writeIndex++] = pixel.A;
             }
           }
+          else
+          {
+            output[writeIndex++] = QOI_OP_RGBA;
+            output[writeIndex++] = pixel.R;
+            output[writeIndex++] = pixel.G;
+            output[writeIndex++] = pixel.B;
+            output[writeIndex++] = pixel.A;
+          }
         }
-
-        previous = pixel;
       }
+
+      previous = pixel;
     }
 
     writeIndex += 7;
@@ -209,9 +201,9 @@ class Qoi
           seenBuffer[pixelHash(pixel) % 64] = pixel;
         }
 
-        output[outCursor + 0] = pixel.R;
+        output[outCursor + 0] = pixel.B;
         output[outCursor + 1] = pixel.G;
-        output[outCursor + 2] = pixel.B;
+        output[outCursor + 2] = pixel.R;
         output[outCursor + 3] = pixel.A;
       }
     }
