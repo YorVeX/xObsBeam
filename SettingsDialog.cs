@@ -241,6 +241,7 @@ public static class SettingsDialog
       // QOI compression options group
       var compressionQoiPropertyGroup = ObsProperties.obs_properties_create();
       var compressionQoiProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyCompressionQoiId, (sbyte*)propertyCompressionQoiCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionQoiPropertyGroup);
+      ObsProperties.obs_property_set_modified_callback(compressionQoiProperty, &CompressionEnabledEventHandler);
       ObsProperties.obs_property_set_long_description(compressionQoiProperty, (sbyte*)propertyCompressionQoiText);
       // compression level
       var compressionQoiLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoiPropertyGroup, (sbyte*)propertyCompressionQoiLevelId, (sbyte*)propertyCompressionQoiLevelCaption, 1, 10, 1);
@@ -359,6 +360,21 @@ public static class SettingsDialog
       }
     }
   }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte CompressionEnabledEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte*
+      propertyCompressionQoiId = "compression_qoi"u8,
+      propertyCompressionThreadingId = "compression_threading_model_group"u8
+    )
+    {
+      var qoiEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoiId));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionThreadingId), Convert.ToByte(qoiEnabled));
+      return Convert.ToByte(true);
+    }
+  }
+
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte AutomaticListenPortEnabledChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
