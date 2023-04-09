@@ -75,7 +75,7 @@ class Qoi
         {
           Qoi.EncodeAsyncArgs encodeAsyncArgs = (argument as Qoi.EncodeAsyncArgs)!;
           return Qoi.Encode(encodeAsyncArgs.Data, encodeAsyncArgs.StartIndex, encodeAsyncArgs.DataSize, encodeAsyncArgs.Channels, encodeAsyncArgs.Output, encodeAsyncArgs.AddPadding);
-        }, new Qoi.EncodeAsyncArgs(data, sliceIndex, sliceDataSize, 4, sliceDataBuffers[taskIndex], ((taskIndex + 1) == sliceCount))
+        }, new Qoi.EncodeAsyncArgs(data, sliceIndex, sliceDataSize, channels, sliceDataBuffers[taskIndex], ((taskIndex + 1) == sliceCount))
       );
 
       sliceIndex += sliceDataSize;
