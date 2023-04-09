@@ -293,7 +293,16 @@ public class BeamReceiver
               _width = videoHeader.Width;
               _height = videoHeader.Height;
             }
-            OnVideoFrameReceived(new Beam.BeamVideoData(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray()));
+            
+            if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
+            {
+              var frame = new Beam.BeamVideoData(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray());
+              //TODO: QOI: just as for QOI encoding use an ArrayPool<byte> buffer as the target, the challenge is to pre-reserve the right size that is only known after the first packet is received and the raw data size is known
+              frame.Data = Qoi.Decode(frame.Data, (videoHeader.Width * videoHeader.Height * 4));
+              OnVideoFrameReceived(frame);
+            }
+            else
+              OnVideoFrameReceived(new Beam.BeamVideoData(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray()));
 
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(videoHeader.DataSize), readResult.Buffer.End);
