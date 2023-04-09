@@ -5,7 +5,11 @@ OBS plugin to transmit lossless (raw or [QOI](https://qoiformat.org) compressed)
 
 ## Prerequisites
 - OBS 29+ 64 bit
-- Currently only working on Windows (tested only on Windows 10, but Windows 11 should also work)
+- Windows
+  - tested only on Windows 10, but Windows 11 should also work
+- Linux
+  - not tested
+  - binary build created on Ubuntu 20.04 WSL environment, therefore linked against glibc 2.31
 
 ## Use cases
 
@@ -25,7 +29,7 @@ Standard setups (i.e. typical 1 Gbps consumer network gear) will almost always w
 Transmitting sources with low resolution and/or low FPS through the network could actually be feasible even over a standard 1 Gbps network, e.g. for a retro game or a cam feed of an old webcam that you want to include. Especially If also the source PC is "retro" it helps a lot to save on CPU sources by not having to compress the data or using the CPU friendly QOI compression.
 
 ### High bandwidth network
-For enthusiast or semi-professional setups with expensive network devices it be feasible to transmit raw video feeds over a network.
+For enthusiast or semi-professional setups with expensive network devices it could be feasible to transmit raw video feeds over a network.
 
 Here is some example configurations and their necessary bandwidths for the video feed (audio usually is negligible), exact numbers might vary a bit between xObsBeam versions but it helps to get a general idea:
 
@@ -88,9 +92,8 @@ Now you can show the new Beam source (click the eye icon next to it) and it shou
 - **Q**: Why is the plugin file so big compared to other plugins for the little bit it does, will this cause issues?
   - **A**: Unlike other plugins it's not written directly in C++ but in C# using .NET 7 and NativeAOT (for more details read on in the section for developers). This produces some overhead in the actual plugin file, however, the code that matters for functionality of this plugin should be just as efficient and fast as code directly written in C++ so there's no reason to worry about performance on your system.
 
-- **Q**: Will there be a version for other operating systems, e.g. Linux or MacOS?
-  - **A**: The project can already be built on Linux and produce a plugin file, however, trying to load it makes OBS crash on startup and I don't know why, since I don't have any Linux debugging experience. If you think you can help this would be much appreciated, [please start here](https://github.com/YorVeX/ObsCSharpExample/issues/2).
-  MacOS is even more complicated, since it [is currently only supported by the next preview version of .NET 8](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/#platformarchitecture-restrictions), although people [do already successfully create builds](https://github.com/dotnet/runtime/issues/79253) with it. This will also need help from the community, I won't work on that myself.
+- **Q**: Will there be a version for MacOS?
+  - **A**: NativeAOT [doesn't support cross-compiling](https://github.com/dotnet/runtime/blob/main/src/coreclr/nativeaot/docs/compiling.md#cross-architecture-compilation) and I don't have a Mac, so I currently can't compile it, let alone test it. You can try to compile it yourself, but note that MacOS [is currently only supported by the next preview version of .NET 8](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/#platformarchitecture-restrictions), although people [do already successfully create builds](https://github.com/dotnet/runtime/issues/79253) with it.
 
 - **Q**: Will there be a 32 bit version of this plugin?
   - **A**: No. Feel free to try and compile it for x86 targets yourself, last time I checked it wasn't fully supported in NativeAOT.

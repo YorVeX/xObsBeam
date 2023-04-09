@@ -8,11 +8,11 @@
     <StripSymbols>true</StripSymbols>
     <PublishAot>true</PublishAot>
     <Authors>https://github.com/YorVeX</Authors>
-    <AssemblyVersion>0.3.0.0</AssemblyVersion>
+    <AssemblyVersion>0.4.0.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="NetObsBindings" Version="0.0.1.32-alpha" />
+    <PackageReference Include="NetObsBindings" Version="0.0.1.33-alpha" />
     <PackageReference Include="System.IO.Pipelines" Version="7.0.0" />
   </ItemGroup>
 

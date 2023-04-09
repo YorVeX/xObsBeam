@@ -32,7 +32,7 @@ public static class Module
       logLevel = ObsLogLevel.Info;
     // need to escape %, otherwise they are treated as format items, but since we provide null as arguments list this crashes OBS
     fixed (byte* logMessagePtr = Encoding.UTF8.GetBytes("[" + ModuleName + "] " + text.Replace("%", "%%")))
-      ObsBase.blogva((int)logLevel, (sbyte*)logMessagePtr, null);
+      ObsBase.blog((int)logLevel, (sbyte*)logMessagePtr);
   }
 
   public static byte[] ObsText(string identifier, params object[] args)
