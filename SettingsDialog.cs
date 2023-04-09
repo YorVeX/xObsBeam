@@ -215,6 +215,8 @@ public static class SettingsDialog
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
       propertyCompressionQoiLevelCaption = Module.ObsText("CompressionQOILevelCaption"),
       propertyCompressionQoiLevelText = Module.ObsText("CompressionQOILevelText"),
+      propertyCompressionQoiNoBgraWarningId = "compression_qoi_nobgra_warning"u8,
+      propertyCompressionQoiNoBgraWarningText = Module.ObsText("CompressionQOINoBGRAWarningText"),
       propertyCompressionThreadingId = "compression_threading_model_group"u8,
       propertyCompressionThreadingCaption = Module.ObsText("CompressionThreadingCaption"),
       propertyCompressionThreadingText = Module.ObsText("CompressionThreadingText"),
@@ -247,6 +249,11 @@ public static class SettingsDialog
       var compressionQoiLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoiPropertyGroup, (sbyte*)propertyCompressionQoiLevelId, (sbyte*)propertyCompressionQoiLevelCaption, 1, 10, 1);
       ObsProperties.obs_property_set_long_description(compressionQoiLevelProperty, (sbyte*)propertyCompressionQoiLevelText);
       ObsProperties.obs_property_set_enabled(compressionQoiLevelProperty, Convert.ToByte(false)); //TODO: QOI: implement skipping compression for frames
+      // warning message shown when QOI is enabled but output is not set to BGRA color format
+      var compressionQoiNoBgraWarningProperty = ObsProperties.obs_properties_add_text(compressionQoiPropertyGroup, (sbyte*)propertyCompressionQoiNoBgraWarningId, (sbyte*)propertyCompressionQoiNoBgraWarningText, obs_text_type.OBS_TEXT_INFO);
+      ObsProperties.obs_property_text_set_info_type(compressionQoiNoBgraWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
+      ObsProperties.obs_property_set_visible(compressionQoiNoBgraWarningProperty, Convert.ToByte(false));
+      ObsProperties.obs_property_set_modified_callback(compressionQoiProperty, &CompressionNoBgraWarningEventHandler);
 
       // compression threading options group
       var compressionThreadingPropertyGroup = ObsProperties.obs_properties_create();
@@ -432,6 +439,33 @@ public static class SettingsDialog
       Module.Log("Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
       return Convert.ToByte(true);
     }
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte CompressionNoBgraWarningEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte*
+      propertyQoiCompressionId = "compression_qoi"u8,
+      propertyCompressionQoiNoBgraWarningId = "compression_qoi_nobgra_warning"u8
+    )
+    {
+      var compressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyQoiCompressionId));
+      bool showBgraWarning = false;
+      if (compressionEnabled)
+      {
+        obs_video_info* obsVideoInfo = ObsBmem.bzalloc<obs_video_info>();
+        if (Convert.ToBoolean(Obs.obs_get_video_info(obsVideoInfo)))
+        {
+          if ((obsVideoInfo != null) && (obsVideoInfo->output_format != video_format.VIDEO_FORMAT_BGRA))
+            showBgraWarning = true;
+        }
+        ObsBmem.bfree(obsVideoInfo);
+      }
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionQoiNoBgraWarningId), Convert.ToByte(showBgraWarning));
+    }
+
+
+    return Convert.ToByte(true);
   }
 
 

@@ -185,9 +185,15 @@ public static class Output
       // the good news is that in the case of this plugin it doesn't matter too much, since it's our own output we know which settings we changed
       try
       {
-        //FIXME: this doesn't work, apparently the BGRA output we get from obs_output_get_video_conversion() differs from the one that we get when globally setting the output format to BGRA
-        // if (SettingsDialog.QoiCompression)
-        // _videoInfo->format = video_format.VIDEO_FORMAT_BGRA;
+        if (SettingsDialog.QoiCompression)
+        {
+          //FIXME: this doesn't work, apparently the BGRA output we get from obs_output_get_video_conversion() differs from the one that we get when globally setting the output format to BGRA
+          // _videoInfo->format = video_format.VIDEO_FORMAT_BGRA;
+
+          // instead we just warn the user about it
+          if (_videoInfo->format != video_format.VIDEO_FORMAT_BGRA)
+            Module.Log(Module.ObsTextString("CompressionQOINoBGRAWarningText"), ObsLogLevel.Warning);
+        }
         _beamSender.SetVideoParameters(_videoInfo, frame->linesize);
         startSenderIfPossible();
       }
