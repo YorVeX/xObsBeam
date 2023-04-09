@@ -1,5 +1,5 @@
 # xObsBeam
-OBS plugin to transmit raw, uncompressed video and audio feeds between OBS instances. An alternative to NDI and Teleport for local data transmission.
+OBS plugin to transmit lossless (raw or [QOI](https://qoiformat.org) compressed) video and audio feeds between OBS instances. An alternative to NDI and Teleport for local data transmission.
 
 ![image](https://user-images.githubusercontent.com/528974/229695123-33b165ba-019a-48ce-9197-3d203627352b.png)
 
@@ -7,22 +7,27 @@ OBS plugin to transmit raw, uncompressed video and audio feeds between OBS insta
 - OBS 29+ 64 bit
 - Currently only working on Windows (tested only on Windows 10, but Windows 11 should also work)
 
-## Use case
-### Compression and resource usage
-Both [NDI](https://github.com/obs-ndi/obs-ndi) and [Teleport](https://github.com/fzwoch/obs-teleport) do the same as this plugin, but transmit their video feeds using a lossy compression. They do this for a good reason, it saves a tremendous amount of bandwidth while at the same time to the human eye losing almost no visual quality (despite the term "lossy"). But while the visual quality shouldn't be of much concern, it also comes with a performance hit, since CPU and/or GPU resources are needed to do the compression work.
+## Use cases
 
-### Local transmission
-A use case where this seems unnecessary is when transmitting data from one OBS instance to another within the same machine (so no network between them). E.g. when the first OBS instance is for recording and it sends the feed to a second OBS instance for streaming, which adds some panels, alerts, animations and other effects only for the stream which shouldn't be visible in the recording (other solutions to achieve that currently don't seem to be really stable). In that case both encoding and decoding work would hit the same machine.
+This plugin transmits a video and audio feed from one OBS instance to another. The video feed can be compressed using [QOI](https://qoiformat.org) with minimal (and very stable) CPU usage or even transmitted raw with no added compression CPU usage at all but at the expense of extreme bandwidth needs. The most common scenario would be transmitting audio and video feeds from OBS on a gaming PC to OBS on a streaming PC.
 
-### Notes on performance
-If you are hoping that this solution has zero resource usage you will be disappointed. Beside the obvious memory needs to store several uncompressed frames on both sender and receiver side (a small queue is always needed) a significant amount of CPU usage is already caused at the moment where you activate any output plugin in OBS, even if the plugin is not doing anything with that data at all. Also managing and transferring vast amounts of data takes some resources. However, it will still be less than when encoding/compression would be added on top of this.
+Both [NDI](https://github.com/obs-ndi/obs-ndi) and [Teleport](https://github.com/fzwoch/obs-teleport) in comparison transmit their video feeds using a lossy compression (albeit almost visually lossless to be fair) and most of the time have lower bandwidth needs than this plugin.
 
-### Enthusiasts, edge cases and unteachable people
-While the main idea is to use this for local transmission this plugin technically also works when used over a network, so that enthusiasts with expensive network setups can play around with and might actually make it work for them. And at least transmitting sources with low resolution and/or low FPS through the network could actually be feasible even over a standard 1 Gbps network, e.g. for a retro game or a cam feed of an old webcam that you want to include.
-Also there are these unteachable people who keep on asking for uncompressed transmission despite being told multiple times that it's not a good idea, insisting that their great 1 Gbps connection will certainly be able to handle it. They're in for a disappointing experience, but at least now you can point them somewhere to try and see for themselves (be warned that for this reason GitHub issues using this plugin on network are likely to be closed without investigation).
+No solution is better or worse in general, it's just different tradeoffs regarding CPU/GPU usage, bandwidth needs and quality. What works best in a given scenario depends (among other things) on the specific use case and available resources.
 
-### Bandwidth
-Here is some example configurations and their necessary bandwidths for the video feed (audio usually is negligible):
+### Raw local transmission
+The obvious case where compression seems unnecessary is when transmitting data from one OBS instance to another within the same machine (so no network between them). E.g. when the first OBS instance is for recording and it sends the feed to a second OBS instance for streaming, which adds some panels, alerts, animations and other effects only for the stream which shouldn't be visible in the recording (other solutions to achieve that currently don't seem to be really stable). In that case both encoding and decoding work would also hit the same machine.
+
+### Standard setups
+Standard setups (i.e. typical 1 Gbps consumer network gear) will almost always want to use the QOI compression. You get a truly lossless video feed with low CPU usage on the bright side, but be warned that QOI has some worst case scenarios where bandwidth usage could have significant spikes. Make sure to run tests with various scenarios and see whether your setup is up for the task.
+
+### "Small" sources
+Transmitting sources with low resolution and/or low FPS through the network could actually be feasible even over a standard 1 Gbps network, e.g. for a retro game or a cam feed of an old webcam that you want to include. Especially If also the source PC is "retro" it helps a lot to save on CPU sources by not having to compress the data or using the CPU friendly QOI compression.
+
+### High bandwidth network
+For enthusiast or semi-professional setups with expensive network devices it be feasible to transmit raw video feeds over a network.
+
+Here is some example configurations and their necessary bandwidths for the video feed (audio usually is negligible), exact numbers might vary a bit between xObsBeam versions but it helps to get a general idea:
 
 | Resolution | FPS | NV12/I420 bandwidth | I444/P010/I010 bandwidth | BGRA bandwidth |
 | --- | --- | --- | --- | --- |
@@ -39,12 +44,13 @@ Here is some example configurations and their necessary bandwidths for the video
 
 Remember that NV12 is the OBS default. If you choose a different color format also the load on the sender will increase in addition to the bandwidth demand.
 
-If you want to get this number for your specific configuration just start the Beam output and check the OBS log, it will show a line like this:
+If you want to get this number for your specific configuration just start the Beam output without compression and check the OBS log, it will show a line like this:
 `[xObsBeam] Video output feed initialized, theoretical net bandwidth demand is 632 Mpbs`
 
 Note that this is the theoretical **minimum net bandwidth** that is needed on a network. To measure your available net bandwidth you can use a tool like [iperf](https://iperf.fr), e.g. for a 2.5 Gbps connection it could be something like 2.37 Gbps.
 
 In addition there still needs to be enough headroom available for spikes that can occur at any time and of course for all other traffic that wants to use the same interface. Depending on how sensitive this traffic is and how good all involved network devices are (switch, router, network card, cable, the chain is as good as its weakest link) other traffic might suffer long before you get even close to any theoretical limits, e.g. if you play a latency sensitive game on a cheap router your latency might already double our triple when only using half of theoretically available bandwidth or less because of how network packets are prioritized. Also other traffic originators might have spikes too.
+
 
 ## Usage
 Install the same version of the plugin (different versions are never guaranteed to be compatible to each other) into all OBS instances that you want to transmit video/audio feeds between.
@@ -54,7 +60,7 @@ One OBS instance will be the sender, on this instance go to the OBS main menu an
 
 ![image](https://user-images.githubusercontent.com/528974/229874785-8a504ebf-a743-4714-8acd-39651784d1c9.png)
 
-A dialog will appear where you can configure the sender identifier and how the sender will accept receiver connections. Named pipe connection is the recommended connection type, as it has the least overhead and therefore should come with the smallest resource impact.
+A dialog will appear where you can configure the sender identifier and how the sender will accept receiver connections. Named pipe connection is the recommended connection type, as it has the least overhead and therefore should come with the smallest resource impact. Compression configuration depends on the setup and use case, read above sections for more information.
 
 ![image](https://user-images.githubusercontent.com/528974/229875292-ef1cd3e0-4249-4b37-81e0-874c39b7282b.png)
 
