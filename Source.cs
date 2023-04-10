@@ -328,7 +328,7 @@ public class Source
     // did the frame format or size change?
     if ((context->Video->width != videoFrame.Header.Width) || (context->Video->height != videoFrame.Header.Height) || (context->Video->format != videoFrame.Header.Format))
     {
-      Module.Log("VideoFrameReceivedEventHandler(): Frame format or size changed, reinitializing", ObsLogLevel.Debug);
+      Module.Log($"VideoFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Video->format} {context->Video->width}x{context->Video->height} -> {videoFrame.Header.Format} {videoFrame.Header.Width}x{videoFrame.Header.Height})", ObsLogLevel.Debug);
 
       // initialize the frame base settings with the new frame format and size
       context->Video->format = videoFrame.Header.Format;
@@ -369,7 +369,7 @@ public class Source
     // did the frame format or size change?
     if ((context->Audio->samples_per_sec != audioFrame.Header.SampleRate) || (context->Audio->frames != audioFrame.Header.Frames) || (context->Audio->speakers != audioFrame.Header.Speakers) || (context->Audio->format != audioFrame.Header.Format))
     {
-      Module.Log("AudioFrameReceivedEventHandler(): Frame format or size changed, reinitializing", ObsLogLevel.Debug);
+      Module.Log($"AudioFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Audio->format} {context->Audio->samples_per_sec} {context->Audio->speakers} {context->Audio->frames} -> {audioFrame.Header.Format} {audioFrame.Header.SampleRate} {audioFrame.Header.Speakers} {audioFrame.Header.Frames})", ObsLogLevel.Debug);
 
       // initialize the frame base settings with the new frame format and size
       context->Audio->samples_per_sec = audioFrame.Header.SampleRate;
