@@ -108,3 +108,5 @@ Refer to the [building instructions for my example plugin](https://github.com/Yo
 
 ## Credits
 Many thanks to [kostya9](https://github.com/kostya9) for laying the groundwork of C# OBS Studio plugin creation, without him this plugin (and hopefully many more C# plugins following in the future) wouldn't exist. Read about his ventures into this area in his blog posts [here](https://sharovarskyi.com/blog/posts/dotnet-obs-plugin-with-nativeaot/) and [here](https://sharovarskyi.com/blog/posts/clangsharp-dotnet-interop-bindings/). 
+
+Also thanks to [fzwoch](https://github.com/fzwoch) for his wonderful [Teleport](https://github.com/fzwoch/obs-teleport)) plugin and for many interesting discussions on Discord that helped me along the way of creating this and other plugins.
