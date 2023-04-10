@@ -310,8 +310,6 @@ public static class SettingsDialog
       ObsProperties.obs_property_set_enabled(automaticListenPortProperty, Convert.ToByte(false)); //TODO: PeerDiscovery: remove this as soon as peer discovery is implemented
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_int(properties, (sbyte*)propertyListenPortId, (sbyte*)propertyListenPortCaption, 1024, 65535, 1), (sbyte*)propertyListenPortText);
 
-
-
     }
     return properties;
   }
@@ -326,6 +324,7 @@ public static class SettingsDialog
       propertyIdentifierDefaultText = "BeamSender"u8,
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
       propertyCompressionThreadingSyncId = "compression_threading_sync"u8,
+      propertyCompressionThreadingThreadCountId = "compression_threading_thread_count"u8,
       propertyConnectionTypePipeId = "connection_type_pipe"u8,
       propertyConnectionTypeSocketId = "connection_type_socket"u8,
       propertyAutomaticListenPortId = "auto_listen_port"u8,
@@ -336,6 +335,7 @@ public static class SettingsDialog
       ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierDefaultText);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoiLevelId, 10);
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionThreadingSyncId, Convert.ToByte(true));
+      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionThreadingThreadCountId, 1);
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(true));
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(false));
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyAutomaticListenPortId, Convert.ToByte(false)); //TODO: PeerDiscovery: make this default to true as soon as peer discovery is implemented
