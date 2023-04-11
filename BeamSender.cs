@@ -169,7 +169,9 @@ public class BeamSender
   public async void Start(string identifier, string pipeName)
   {
     if (_videoDataSize == 0)
-      throw new InvalidOperationException("Video data size is unknown. Call SetParameters() before calling Start().");
+      throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
+    if (_audioDataSize == 0)
+      throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
 
     _pipeName = pipeName;
 
