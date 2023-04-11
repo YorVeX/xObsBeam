@@ -64,7 +64,7 @@ One OBS instance will be the sender, on this instance go to the OBS main menu an
 
 ![image](https://user-images.githubusercontent.com/528974/229874785-8a504ebf-a743-4714-8acd-39651784d1c9.png)
 
-A dialog will appear where you can configure the sender identifier and how the sender will accept receiver connections. Named pipe connection is the recommended connection type, as it has the least overhead and therefore should come with the smallest resource impact. Compression configuration depends on the setup and use case, read above sections for more information.
+A dialog will appear where you can configure the sender identifier and how the sender will accept receiver connections. Named pipe connection is the recommended connection type for local (within the same machine) connections, as it has the least overhead and therefore should come with the smallest resource impact. If you need to connect receiver and sender from different machines you need to use a TCP socket connection. Compression configuration depends on the setup and use case, read above sections for more information.
 
 ![image](https://user-images.githubusercontent.com/528974/229875292-ef1cd3e0-4249-4b37-81e0-874c39b7282b.png)
 
