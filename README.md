@@ -8,7 +8,7 @@ OBS plugin to transmit lossless (raw or [QOI](https://qoiformat.org) compressed)
 - Windows
   - tested only on Windows 10, but Windows 11 should also work
 - Linux
-  - not tested
+  - not regularly tested
   - binary build created on Ubuntu 20.04 WSL environment, therefore linked against glibc 2.31
 
 ## Use cases
