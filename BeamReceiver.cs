@@ -45,12 +45,12 @@ public class BeamReceiver
     get => _isConnected;
   }
 
-  public void Connect(string hostname, int port = BeamSender.DefaultPort)
+  public void Connect(string hostname, int port)
   {
     Task.Run(() => ConnectAsync(hostname, port));
   }
 
-  public async Task ConnectAsync(string hostname, int port = BeamSender.DefaultPort)
+  public async Task ConnectAsync(string hostname, int port)
   {
     if (_isConnecting || _isConnected)
       return;
@@ -102,18 +102,17 @@ public class BeamReceiver
     }
     _isConnecting = false;
   }
-  public void Connect(string hostname, string pipeName)
+  public void Connect(string pipeName)
   {
-    Task.Run(() => ConnectAsync(hostname, pipeName));
+    Task.Run(() => ConnectAsync(pipeName));
   }
 
-  public async Task ConnectAsync(string hostname, string pipeName)
+  public async Task ConnectAsync(string pipeName)
   {
     if (_isConnecting || _isConnected)
       return;
 
     _isConnecting = true;
-    _targetHostname = hostname;
     _pipeName = pipeName;
     while (_pipeName != "")
     {
@@ -122,7 +121,7 @@ public class BeamReceiver
         _cancellationSource.Dispose();
         _cancellationSource = new CancellationTokenSource();
       }
-      var pipeStream = new NamedPipeClientStream(hostname, pipeName, PipeDirection.InOut, System.IO.Pipes.PipeOptions.Asynchronous);
+      var pipeStream = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, System.IO.Pipes.PipeOptions.Asynchronous);
       try
       {
         Module.Log($"Connecting to {_pipeName}...", ObsLogLevel.Debug);

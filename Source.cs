@@ -77,13 +77,10 @@ public class Source
       var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
       if (connectionTypePipe)
       {
-        string targetHost = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyTargetHostId))!;
-        if (string.IsNullOrEmpty(targetHost) || targetHost.ToLowerInvariant() == "localhost" || targetHost == "127.0.0.1")
-          targetHost = "."; // pipes don't work with "localhost" or "127.0.0.1", local connection is signalled by "."
         string targetPipeName = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyTargetPipeNameId))!;
         if (string.IsNullOrEmpty(targetPipeName))
           targetPipeName = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_default_string(settings, (sbyte*)propertyTargetPipeNameId))!;
-        BeamReceiver.Connect(targetHost, targetPipeName);
+        BeamReceiver.Connect(targetPipeName);
       }
       else
       {
@@ -288,10 +285,12 @@ public class Source
   private static unsafe void connectionTypeChanged(bool connectionTypePipe, obs_properties* properties)
   {
     fixed (byte*
+      propertyTargetHostId = "host"u8,
       propertyTargetPipeNameId = "pipe_name"u8,
       propertyTargetPortId = "port"u8
     )
     {
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetHostId), Convert.ToByte(!connectionTypePipe));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetPipeNameId), Convert.ToByte(connectionTypePipe));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetPortId), Convert.ToByte(!connectionTypePipe));
       Module.Log("Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
