@@ -1,5 +1,5 @@
 # xObsBeam
-OBS plugin to transmit lossless (raw or [QOI](https://qoiformat.org) compressed) video and audio feeds between OBS instances. An alternative to NDI and Teleport for local data transmission.
+OBS plugin to transmit lossless (raw or [QOI](https://qoiformat.org) compressed) video and audio feeds between OBS instances. An alternative to NDI and Teleport for A/V transmission.
 
 ![image](https://user-images.githubusercontent.com/528974/229695123-33b165ba-019a-48ce-9197-3d203627352b.png)
 
