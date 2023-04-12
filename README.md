@@ -66,7 +66,7 @@ One OBS instance will be the sender, on this instance go to the OBS main menu an
 
 A dialog will appear where you can configure the sender identifier and how the sender will accept receiver connections. Named pipe connection is the recommended connection type for local (within the same machine) connections, as it has the least overhead and therefore should come with the smallest resource impact. If you need to connect receiver and sender from different machines you need to use a TCP socket connection. Compression configuration depends on the setup and use case, read above sections for more information.
 
-![image](https://user-images.githubusercontent.com/528974/231031223-fa17dfe7-2478-4358-9c12-9986a8817eb7.png)
+![image](https://user-images.githubusercontent.com/528974/231322501-9bcd3efe-dde1-4d71-944e-7046f246fec4.png)
 
 Check the "Enable Beam output" box if you want your output to be active now. Press OK to save the settings.
 
