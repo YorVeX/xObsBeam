@@ -220,6 +220,9 @@ public static class SettingsDialog
       // enable or disable the output
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableCaption), (sbyte*)propertyEnableText);
 
+      // identifier configuration text box
+      ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierCaption, obs_text_type.OBS_TEXT_DEFAULT), (sbyte*)propertyIdentifierText);
+
       // QOI compression options group
       var compressionQoiPropertyGroup = ObsProperties.obs_properties_create();
       var compressionQoiProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyCompressionQoiId, (sbyte*)propertyCompressionQoiCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionQoiPropertyGroup);
@@ -233,11 +236,8 @@ public static class SettingsDialog
       ObsProperties.obs_property_text_set_info_type(compressionQoiNoBgraWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
       ObsProperties.obs_property_set_visible(compressionQoiNoBgraWarningProperty, Convert.ToByte(false));
       ObsProperties.obs_property_set_modified_callback(compressionQoiProperty, &CompressionNoBgraWarningEventHandler);
-      var compressionQoiMainThreadProperty = ObsProperties.obs_properties_add_bool(compressionQoiPropertyGroup, (sbyte*)propertyCompressionQoiMainThreadId, (sbyte*)propertyCompressionQoiMainThreadCaption);
-      ObsProperties.obs_property_set_long_description(compressionQoiMainThreadProperty, (sbyte*)propertyCompressionQoiMainThreadText);
-
-      // identifier configuration text box
-      ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierCaption, obs_text_type.OBS_TEXT_DEFAULT), (sbyte*)propertyIdentifierText);
+      // compress from OBS render thread option
+      ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_bool(compressionQoiPropertyGroup, (sbyte*)propertyCompressionQoiMainThreadId, (sbyte*)propertyCompressionQoiMainThreadCaption), (sbyte*)propertyCompressionQoiMainThreadText);
 
       // connection type selection group
       var connectionTypePropertyGroup = ObsProperties.obs_properties_create();
