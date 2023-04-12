@@ -126,6 +126,11 @@ public class Source
   public static unsafe void source_destroy(void* data)
   {
     Module.Log("source_destroy called", ObsLogLevel.Debug);
+    var thisSource = getSource(data);
+    thisSource.BeamReceiver.Disconnect();
+    thisSource.BeamReceiver.Disconnected -= thisSource.DisconnectedEventHandler;
+    thisSource.BeamReceiver.VideoFrameReceived -= thisSource.VideoFrameReceivedEventHandler;
+    thisSource.BeamReceiver.AudioFrameReceived -= thisSource.AudioFrameReceivedEventHandler;
     var context = (Context*)data;
     ObsBmem.bfree(context->Video);
     ObsBmem.bfree(context->Audio);
