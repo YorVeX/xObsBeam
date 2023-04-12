@@ -228,7 +228,6 @@ public class BeamSender
       _listenCancellationSource.Cancel();
       foreach (var client in _clients.Values)
         client.Disconnect();
-      GC.Collect(); // potentially lots of queue data to collect
       _videoDataSize = 0;
       _audioDataSize = 0;
       _qoiVideoDataPool = null;

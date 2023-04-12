@@ -64,6 +64,12 @@ public static class Output
     else if (!IsActive)
     {
       Module.Log("Starting output...");
+      
+      // recreate output, otherwise OBS settings changes like resolution will lead to a crash upon output start
+      Obs.obs_output_release(_outputData.Output);
+      fixed (byte* id = "Beam Output"u8)
+        Obs.obs_output_create((sbyte*)id, (sbyte*)id, null, null);
+      
       Obs.obs_output_start(_outputData.Output);
       Module.Log("Output started.");
     }
@@ -81,6 +87,7 @@ public static class Output
     else
       Module.Log("Output not stopped, wasn't running.");
   }
+  
   public static unsafe void Dispose()
   {
     Obs.obs_output_release(_outputData.Output);
