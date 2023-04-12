@@ -35,7 +35,7 @@ class Qoi
 
   static int pixelHash(Pixel pixel) => (pixel.R * 3 + pixel.G * 5 + pixel.B * 7 + pixel.A * 11) % 64;
 
-  public static unsafe int Encode(byte* data, int startIndex, int dataSize, int channels, byte[] output, bool addPadding)
+  public static unsafe int Encode(byte* data, int startIndex, int dataSize, int channels, byte[] output)
   {
     var writeIndex = 0;
 
@@ -130,11 +130,8 @@ class Qoi
 
       previous = pixel;
     }
-    if (addPadding)
-    {
-      writeIndex += 7;
-      output[writeIndex++] = 1;
-    }
+    writeIndex += 7;
+    output[writeIndex++] = 1;
     return writeIndex;
   }
 

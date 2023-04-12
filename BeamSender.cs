@@ -256,7 +256,7 @@ public class BeamSender
         {
           int encodedDataLength = 0;
           var frameHeader = _videoHeader;
-          encodedDataLength = Qoi.Encode(compressionData, 0, _videoHeader.DataSize, 4, encodedData, true); // encode the frame with QOI
+          encodedDataLength = Qoi.Encode(compressionData, 0, _videoHeader.DataSize, 4, encodedData); // encode the frame with QOI
           if (encodedDataLength >= _videoDataSize) // send uncompressed data if compressed would be bigger
           {
             Module.Log($"QOI: sending raw data, since QOI didn't reduce the size.", ObsLogLevel.Debug);
