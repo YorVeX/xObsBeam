@@ -22,9 +22,7 @@ public class BeamSender
   string _pipeName = "";
   CancellationTokenSource _listenCancellationSource = new CancellationTokenSource();
   ArrayPool<byte>? _qoiVideoDataPool;
-  ArrayPool<byte>? _qoiVideoDataSlicesPool;
   int _qoiVideoDataPoolMaxSize = 0;
-  int _qoiVideoDataSlicesPoolMaxSize = 0;
   Beam.VideoHeader _videoHeader;
   Beam.AudioHeader _audioHeader;
   int _videoDataSize = 0;
@@ -32,8 +30,7 @@ public class BeamSender
   int _audioBytesPerSample = 0;
 
   bool _qoiCompression = false;
-  bool _compressionThreadingSync = false;
-  int _compressionThreadCount = 0;
+  bool _compressionThreadingSync = true;
 
   public unsafe void SetVideoParameters(video_output_info* info, uint* linesize)
   {
@@ -63,32 +60,27 @@ public class BeamSender
 
     // cache settings values
     _qoiCompression = SettingsDialog.QoiCompression;
-    _compressionThreadingSync = SettingsDialog.CompressionThreadingSync;
-    _compressionThreadCount = SettingsDialog.CompressionThreadCount;
+    _compressionThreadingSync = SettingsDialog.QoiCompressionMainThread;
 
     // QOI's theoretical max size for BGRA is 5x the size of the original image
     if (_qoiCompression)
     {
       _qoiVideoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength);
-      _qoiVideoDataSlicesPoolMaxSize = (int)(_qoiVideoDataPoolMaxSize / _compressionThreadCount) + 1 + Qoi.PaddingLength;
-      _qoiVideoDataPoolMaxSize += Qoi.PaddingLength;
       _qoiVideoDataPool = ArrayPool<byte>.Create(_qoiVideoDataPoolMaxSize, MaxFrameQueueSize);
-      _qoiVideoDataSlicesPool = ArrayPool<byte>.Create(_qoiVideoDataSlicesPoolMaxSize, MaxFrameQueueSize * _compressionThreadCount);
     }
     else
     {
       // allow potential previous compression buffers to be garbage collected
       _qoiVideoDataPool = null;
-      _qoiVideoDataSlicesPool = null;
     }
-    
+
     if (!_qoiCompression)
     {
       var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoDataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
-      Module.Log($"Video output feed initialized, theoretical uncompressed net bandwidth demand is {videoBandwidthMbps} Mpbs", ObsLogLevel.Info);
+      Module.Log($"Video output feed initialized, theoretical uncompressed net bandwidth demand is {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
     }
     else
-      Module.Log($"Video output feed initialized with QOI compression. Sync to main thread: {_compressionThreadingSync}. Compression threads: {_compressionThreadCount}.", ObsLogLevel.Info);
+      Module.Log($"Video output feed initialized with QOI compression. Sync to render thread: {_compressionThreadingSync}.", ObsLogLevel.Info);
   }
 
   public unsafe void SetAudioParameters(audio_output_info* info, uint frames)
@@ -265,17 +257,7 @@ public class BeamSender
         {
           int encodedDataLength = 0;
           var frameHeader = _videoHeader;
-          if (_compressionThreadCount > 1)
-          {
-            byte[][] compressedDataSlices = new byte[_compressionThreadCount][];
-            for (int sliceIndex = 0; sliceIndex < compressedDataSlices.Length; sliceIndex++)
-              compressedDataSlices[sliceIndex] = _qoiVideoDataSlicesPool!.Rent(_qoiVideoDataSlicesPoolMaxSize);
-            encodedDataLength = Qoi.Encode(compressionData, _videoHeader.DataSize, 4, encodedData, compressedDataSlices); // encode the frame with QOI
-            for (int sliceIndex = 0; sliceIndex < compressedDataSlices.Length; sliceIndex++)
-              _qoiVideoDataSlicesPool!.Return(compressedDataSlices[sliceIndex]);
-          }
-          else
-            encodedDataLength = Qoi.Encode(compressionData, 0, _videoHeader.DataSize, 4, encodedData, true); // encode the frame with QOI
+          encodedDataLength = Qoi.Encode(compressionData, 0, _videoHeader.DataSize, 4, encodedData, true); // encode the frame with QOI
           if (encodedDataLength >= _videoDataSize) // send uncompressed data if compressed would be bigger
           {
             Module.Log($"QOI: sending raw data, since QOI didn't reduce the size.", ObsLogLevel.Debug);

@@ -35,68 +35,6 @@ class Qoi
 
   static int pixelHash(Pixel pixel) => (pixel.R * 3 + pixel.G * 5 + pixel.B * 7 + pixel.A * 11) % 64;
 
-  private unsafe class EncodeAsyncArgs
-  {
-    public byte* Data;
-    public int StartIndex;
-    public int DataSize;
-    public int Channels;
-    public byte[] Output;
-    public bool AddPadding;
-
-    public EncodeAsyncArgs(byte* data, int startIndex, int dataSize, int channels, byte[] output, bool addPadding)
-    {
-      this.Data = data;
-      this.StartIndex = startIndex;
-      this.DataSize = dataSize;
-      this.Channels = channels;
-      this.Output = output;
-      this.AddPadding = addPadding;
-    }
-  }
-
-  public static unsafe int Encode(byte* data, int dataSize, int channels, byte[] output, byte[][] sliceDataBuffers)
-  {
-    int compressedDataLength = 0;
-
-    int sliceIndex = 0;
-    int sliceCount = sliceDataBuffers.Length;
-    int sliceDataSize = dataSize / sliceCount;
-    int remainingDataSize = dataSize;
-    var compressTasks = new Task<int>[sliceCount];
-    for (int taskIndex = 0; taskIndex < sliceCount; taskIndex++)
-    {
-      //TODO: QOI: POC: optionally compress only X out of all slices
-      if ((taskIndex + 1) == sliceCount)
-        sliceDataSize = remainingDataSize;
-
-      // this "argument passing magic" is necessary because otherwise sliceIndex and sliceDataSize would be changed by the time the task is executed
-      compressTasks[taskIndex] = Task<int>.Factory.StartNew((argument) =>
-        {
-          Qoi.EncodeAsyncArgs encodeAsyncArgs = (argument as Qoi.EncodeAsyncArgs)!;
-          return Qoi.Encode(encodeAsyncArgs.Data, encodeAsyncArgs.StartIndex, encodeAsyncArgs.DataSize, encodeAsyncArgs.Channels, encodeAsyncArgs.Output, encodeAsyncArgs.AddPadding);
-        }, new Qoi.EncodeAsyncArgs(data, sliceIndex, sliceDataSize, channels, sliceDataBuffers[taskIndex], ((taskIndex + 1) == sliceCount))
-      );
-
-      sliceIndex += sliceDataSize;
-      remainingDataSize -= sliceDataSize;
-    }
-
-    // stitch the slices of compressed data together in compressedData
-    int compressedDataSliceIndex = 0;
-    for (int taskIndex = 0; taskIndex < sliceCount; taskIndex++)
-    {
-      compressTasks[taskIndex].Wait(); // block the main OBS thread so that the "data" array stays valid and accessible while the tasks are still running in parallel
-      var compressedDataSlice = sliceDataBuffers[taskIndex];
-      int compressedDataSliceLength = compressTasks[taskIndex].Result;
-      compressedDataLength += compressedDataSliceLength;
-      Buffer.BlockCopy(compressedDataSlice, 0, output, compressedDataSliceIndex, compressedDataSliceLength);
-      compressedDataSliceIndex += compressedDataSliceLength;
-    }
-
-    return compressedDataLength;
-
-  }
   public static unsafe int Encode(byte* data, int startIndex, int dataSize, int channels, byte[] output, bool addPadding)
   {
     var writeIndex = 0;
