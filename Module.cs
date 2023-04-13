@@ -26,6 +26,7 @@ public static class Module
   static unsafe text_lookup* _textLookupModule = null;
 
   #region Helper methods
+
   public static unsafe void Log(string text, ObsLogLevel logLevel = ObsLogLevel.Info)
   {
     if (DebugLog && (logLevel == ObsLogLevel.Debug))
@@ -33,6 +34,22 @@ public static class Module
     // need to escape %, otherwise they are treated as format items, but since we provide null as arguments list this crashes OBS
     fixed (byte* logMessagePtr = Encoding.UTF8.GetBytes("[" + ModuleName + "] " + text.Replace("%", "%%")))
       ObsBase.blog((int)logLevel, (sbyte*)logMessagePtr);
+  }
+
+  public static void UnhandledExceptionEventHandler(object sender, UnhandledExceptionEventArgs e)
+  {
+    if (e.ExceptionObject is Exception)
+    {
+      var ex = (Exception)e.ExceptionObject;
+      Log($"Unhandled {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
+    }
+    else
+      Log($"Unknown unhandled exception object: {e.ExceptionObject}", ObsLogLevel.Error);
+  }
+
+  public static void UnobservedTaskExceptionEventHandler(object? sender, UnobservedTaskExceptionEventArgs e)
+  {
+    Log($"Unobserved task exception: {e.Exception.Message}\n{e.Exception.StackTrace}", ObsLogLevel.Error);
   }
 
   public static byte[] ObsText(string identifier, params object[] args)
@@ -125,6 +142,10 @@ public static class Module
   public static unsafe bool obs_module_load()
   {
     Log("Loading module...", ObsLogLevel.Debug);
+
+    // register handlers for otherwise unhandled exceptions so that at least a log message is written
+    AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionEventHandler;
+    TaskScheduler.UnobservedTaskException += UnobservedTaskExceptionEventHandler;
 
     ObsFrontendApi.obs_frontend_add_event_callback(&FrontendEvent, null);
 
