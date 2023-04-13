@@ -163,6 +163,7 @@ class BeamSenderClient
       uint frameCycle = 1;
       ulong totalBytes = 0;
       bool pipeWriterComplete = true;
+      _frameQueue.Clear();
 
       Module.Log($"<{_clientId}> sendLoopAsync() started.", ObsLogLevel.Debug);
       Interlocked.Increment(ref _videoFrameCount); // this first increment from -1 to 0 signalizes that the send loop is ready to process the queue
@@ -324,7 +325,7 @@ class BeamSenderClient
       Module.Log($"<{_clientId}> Warning: Send queue size {videoFrameCount} ({_frameQueue.Count}) at video frame {timestamp}.", ObsLogLevel.Warning);
     else if (videoFrameCount < 0)
     {
-      Module.Log($"<{_clientId}> Send queue not ready yet at video frame {timestamp}.", ObsLogLevel.Debug);
+      Module.Log($"<{_clientId}> Send queue not ready at video frame {timestamp}.", ObsLogLevel.Debug);
       return;
     }
 
@@ -351,7 +352,7 @@ class BeamSenderClient
       Module.Log($"<{_clientId}> Warning: Send queue size {videoFrameCount} ({_frameQueue.Count}) at video frame {timestamp}.", ObsLogLevel.Warning);
     else if (videoFrameCount < 0)
     {
-      Module.Log($"<{_clientId}> Send queue not ready yet at video frame {timestamp}.", ObsLogLevel.Debug);
+      Module.Log($"<{_clientId}> Send queue not ready at video frame {timestamp}.", ObsLogLevel.Debug);
       return;
     }
 
@@ -372,7 +373,7 @@ class BeamSenderClient
     }
     else if (videoFrameCount < 0)
     {
-      Module.Log($"<{_clientId}> Send queue not ready yet at audio frame {timestamp}.", ObsLogLevel.Debug);
+      Module.Log($"<{_clientId}> Send queue not ready at audio frame {timestamp}.", ObsLogLevel.Debug);
       return;
     }
 

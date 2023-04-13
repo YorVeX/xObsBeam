@@ -240,6 +240,37 @@ public class BeamSender
     }
   }
 
+  private unsafe void sendQoiCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* compressionData)
+  {
+    var encodedData = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
+    try
+    {
+      int encodedDataLength = 0;
+      encodedDataLength = Qoi.Encode(compressionData, 0, videoHeader.DataSize, 4, encodedData); // encode the frame with QOI
+      if (encodedDataLength >= videoHeader.DataSize) // send uncompressed data if compressed would be bigger
+      {
+        Module.Log($"QOI: sending raw data, since QOI didn't reduce the size.", ObsLogLevel.Warning);
+        foreach (var client in _clients.Values)
+          client.Enqueue(timestamp, videoHeader, compressionData); //TODO: test this scenario by simulating it, will otherwise probably not happen a lot
+        return;
+      }
+      videoHeader.Compression = Beam.CompressionTypes.Qoi;
+      videoHeader.DataSize = encodedDataLength;
+      foreach (var client in _clients.Values)
+        client.Enqueue(timestamp, videoHeader, encodedData);
+    }
+    catch (System.Exception ex)
+    {
+      Module.Log($"{ex.GetType().Name} in sendCompressed(): {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
+      throw;
+    }
+    finally
+    {
+      // return the rented encoding data buffer to the pool, each client has created a copy of that data for its own use
+      _qoiVideoDataPool!.Return(encodedData);
+    }
+  }
+
   public unsafe void SendVideo(ulong timestamp, byte* data)
   {
     if (_clients.Count == 0)
@@ -249,58 +280,27 @@ public class BeamSender
     if (_qoiCompression)
     {
       //TODO: QOI: POC: optionally apply another compression algorithm on top of QOI at the cost of more CPU load, should give good results at least for reducing bandwidth as discussed here: https://github.com/phoboslab/qoi/issues/166
-      void sendQoiCompressed(byte* compressionData)
-      {
-        var encodedData = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
-        try
-        {
-          int encodedDataLength = 0;
-          var frameHeader = _videoHeader;
-          encodedDataLength = Qoi.Encode(compressionData, 0, _videoHeader.DataSize, 4, encodedData); // encode the frame with QOI
-          if (encodedDataLength >= _videoDataSize) // send uncompressed data if compressed would be bigger
-          {
-            Module.Log($"QOI: sending raw data, since QOI didn't reduce the size.", ObsLogLevel.Debug);
-            foreach (var client in _clients.Values)
-              client.Enqueue(timestamp, frameHeader, compressionData);
-            return;
-          }
-          frameHeader.Compression = Beam.CompressionTypes.Qoi;
-          frameHeader.DataSize = encodedDataLength;
-          foreach (var client in _clients.Values)
-            client.Enqueue(timestamp, frameHeader, encodedData);
-        }
-        catch (System.Exception ex)
-        {
-          Module.Log($"{ex.GetType().Name} in sendCompressed(): {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
-          throw;
-        }
-        finally
-        {
-          // return the rented encoding data buffer to the pool, each client has created a copy of that data for its own use
-          _qoiVideoDataPool!.Return(encodedData);
-        }
-      }
 
       if (_compressionThreadingSync)
-        sendQoiCompressed(data); // in sync with this main thread, hence the unmanaged data array stays valid and can directly be used
+        sendQoiCompressed(timestamp, _videoHeader, data); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
       else
       {
-        // not in sync with this main thread, need a copy of the unmanaged data array
+        // will not run in sync with this OBS render thread, need a copy of the unmanaged data array
         var managedDataCopy = new ReadOnlySpan<byte>(data, _videoDataSize).ToArray();
-        Task.Run(() =>
+        var beamVideoData = new Beam.BeamVideoData(_videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
+        Task.Factory.StartNew(state =>
         {
-          var localManagedDataCopy = managedDataCopy; // move the data copy to the thread-local context so that it isn't lost when the main thread returns
-          fixed (byte* dataCopy = managedDataCopy)
-            sendQoiCompressed(dataCopy); // in sync with this main thread, hence the unmanaged data array stays valid and can directly be used
-        });
+          var capturedBeamVideoData = (Beam.BeamVideoData)state!;
+          fixed (byte* videoData = capturedBeamVideoData.Data)
+            sendQoiCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData);
+        }, beamVideoData);
       }
       return;
     }
     else
     {
-      var frameHeader = _videoHeader;
       foreach (var client in _clients.Values)
-        client.Enqueue(timestamp, frameHeader, data);
+        client.Enqueue(timestamp, _videoHeader, data);
     }
   }
 
