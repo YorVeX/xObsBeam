@@ -240,7 +240,7 @@ public class BeamSender
     }
   }
 
-  private unsafe void sendQoiCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* compressionData)
+  private unsafe void sendQoiCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* compressionData, bool blockOnFrameQueueLimitReached)
   {
     var encodedData = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
     try
@@ -251,13 +251,13 @@ public class BeamSender
       {
         Module.Log($"QOI: sending raw data, since QOI didn't reduce the size.", ObsLogLevel.Warning);
         foreach (var client in _clients.Values)
-          client.Enqueue(timestamp, videoHeader, compressionData); //TODO: test this scenario by simulating it, will otherwise probably not happen a lot
+          client.Enqueue(timestamp, videoHeader, compressionData, blockOnFrameQueueLimitReached); //TODO: test this scenario by simulating it, will otherwise probably not happen a lot
         return;
       }
       videoHeader.Compression = Beam.CompressionTypes.Qoi;
       videoHeader.DataSize = encodedDataLength;
       foreach (var client in _clients.Values)
-        client.Enqueue(timestamp, videoHeader, encodedData);
+        client.Enqueue(timestamp, videoHeader, encodedData, blockOnFrameQueueLimitReached);
     }
     catch (System.Exception ex)
     {
@@ -282,7 +282,7 @@ public class BeamSender
       //TODO: QOI: POC: optionally apply another compression algorithm on top of QOI at the cost of more CPU load, should give good results at least for reducing bandwidth as discussed here: https://github.com/phoboslab/qoi/issues/166
 
       if (_compressionThreadingSync)
-        sendQoiCompressed(timestamp, _videoHeader, data); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
+        sendQoiCompressed(timestamp, _videoHeader, data, true); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
       else
       {
         // will not run in sync with this OBS render thread, need a copy of the unmanaged data array
@@ -292,7 +292,7 @@ public class BeamSender
         {
           var capturedBeamVideoData = (Beam.BeamVideoData)state!;
           fixed (byte* videoData = capturedBeamVideoData.Data)
-            sendQoiCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData);
+            sendQoiCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, false);
         }, beamVideoData);
       }
       return;
@@ -300,7 +300,7 @@ public class BeamSender
     else
     {
       foreach (var client in _clients.Values)
-        client.Enqueue(timestamp, _videoHeader, data);
+        client.Enqueue(timestamp, _videoHeader, data, true);
     }
   }
 

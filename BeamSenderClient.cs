@@ -309,16 +309,19 @@ class BeamSenderClient
     Module.Log($"<{_clientId}> Disconnected.", ObsLogLevel.Info);
   }
 
-  public unsafe void Enqueue(ulong timestamp, Beam.VideoHeader videoHeader, byte[] videoData)
+  public unsafe void Enqueue(ulong timestamp, Beam.VideoHeader videoHeader, byte[] videoData, bool blockOnFrameQueueLimitReached)
   {
     long videoFrameCount = Interlocked.Read(ref _videoFrameCount);
     if (videoFrameCount > 5)
     {
-      int frameSleepTime = (int)Math.Ceiling((1 / (double)videoHeader.Fps * 1000));
-      Module.Log($"<{_clientId}> Error: Send queue size {videoFrameCount} ({_frameQueue.Count}), skipping video frame {timestamp}.", ObsLogLevel.Error);
-      Module.Log($"<{_clientId}> Blocking the OBS rendering pipeline for {frameSleepTime} ms.", ObsLogLevel.Debug);
-      // intentionally block the OBS rendering pipeline for a full frame, making the skipped/lagged frames visible also in OBS stats so that it becomes transparent to the user
-      Thread.Sleep(frameSleepTime);
+      if (blockOnFrameQueueLimitReached)
+      {
+        int frameSleepTime = (int)Math.Ceiling((1 / (double)videoHeader.Fps * 1000));
+        Module.Log($"<{_clientId}> Error: Send queue size {videoFrameCount} ({_frameQueue.Count}), skipping video frame {timestamp}.", ObsLogLevel.Error);
+        Module.Log($"<{_clientId}> Blocking the OBS rendering pipeline for {frameSleepTime} ms.", ObsLogLevel.Debug);
+        // intentionally block the OBS rendering pipeline for a full frame, making the skipped/lagged frames visible also in OBS stats so that it becomes transparent to the user
+        Thread.Sleep(frameSleepTime);
+      }
       return;
     }
     else if (videoFrameCount > 1)
@@ -336,16 +339,19 @@ class BeamSenderClient
     _frameAvailable.Set();
   }
 
-  public unsafe void Enqueue(ulong timestamp, Beam.VideoHeader videoHeader, byte* videoData)
+  public unsafe void Enqueue(ulong timestamp, Beam.VideoHeader videoHeader, byte* videoData, bool blockOnFrameQueueLimitReached)
   {
     long videoFrameCount = Interlocked.Read(ref _videoFrameCount);
     if (videoFrameCount > 5)
     {
-      int frameSleepTime = (int)Math.Ceiling((1 / (double)videoHeader.Fps * 1000));
-      Module.Log($"<{_clientId}> Error: Send queue size {videoFrameCount} ({_frameQueue.Count}), skipping video frame {timestamp}.", ObsLogLevel.Error);
-      Module.Log($"<{_clientId}> Blocking the OBS rendering pipeline for {frameSleepTime} ms.", ObsLogLevel.Debug);
-      // intentionally block the OBS rendering pipeline for a full frame, making the skipped/lagged frames visible also in OBS stats so that it becomes transparent to the user
-      Thread.Sleep(frameSleepTime);
+      if (blockOnFrameQueueLimitReached)
+      {
+        int frameSleepTime = (int)Math.Ceiling((1 / (double)videoHeader.Fps * 1000));
+        Module.Log($"<{_clientId}> Error: Send queue size {videoFrameCount} ({_frameQueue.Count}), skipping video frame {timestamp}.", ObsLogLevel.Error);
+        Module.Log($"<{_clientId}> Blocking the OBS rendering pipeline for {frameSleepTime} ms.", ObsLogLevel.Debug);
+        // intentionally block the OBS rendering pipeline for a full frame, making the skipped/lagged frames visible also in OBS stats so that it becomes transparent to the user
+        Thread.Sleep(frameSleepTime);
+      }
       return;
     }
     else if (videoFrameCount > 1)
