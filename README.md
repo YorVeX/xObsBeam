@@ -98,6 +98,9 @@ Now you can show the new Beam source (click the eye icon next to it) and it shou
 - **Q**: Will there be a 32 bit version of this plugin?
   - **A**: No. Feel free to try and compile it for x86 targets yourself, last time I checked it wasn't fully supported in NativeAOT.
 
+- **Q**: Does this work with all color formats and color spaces including HDR?
+  - **A**: It should work fine when not using compression for every available OBS color format/space setting including HDR, since OBS data is just transferred 1:1. QOI compression, however, [is designed only for RGB(A)](https://qoiformat.org/qoi-specification.pdf). Its basic logic on byte level will still achieve some compression in most scenarios, but results may vary a lot, hence xObsBeam will show a warning when you enable QOI on any other color format than BGRA.
+
 
 ## For developers
 ### C#
