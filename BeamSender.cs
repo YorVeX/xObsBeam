@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Net;
 using System.Net.Sockets;
+using K4os.Compression.LZ4;
 using ObsInterop;
 
 namespace xObsBeam;
@@ -23,6 +24,8 @@ public class BeamSender
   CancellationTokenSource _listenCancellationSource = new CancellationTokenSource();
   ArrayPool<byte>? _qoiVideoDataPool;
   int _qoiVideoDataPoolMaxSize = 0;
+  ArrayPool<byte>? _lz4VideoDataPool;
+  int _lz4VideoDataPoolMaxSize = 0;
   Beam.VideoHeader _videoHeader;
   Beam.AudioHeader _audioHeader;
   int _videoDataSize = 0;
@@ -31,6 +34,7 @@ public class BeamSender
 
   bool _qoiCompression = false;
   bool _compressionThreadingSync = true;
+  bool _lz4Compression = true; //HACK: LZ4: for testing just preset to true, make this dynamic from settings later
 
   public unsafe void SetVideoParameters(video_output_info* info, uint* linesize)
   {
@@ -74,6 +78,18 @@ public class BeamSender
       _qoiVideoDataPool = null;
     }
 
+    if (_lz4Compression)
+    {
+      _lz4VideoDataPoolMaxSize = LZ4Codec.MaximumOutputSize(_videoDataSize);
+      _lz4VideoDataPool = ArrayPool<byte>.Create(_lz4VideoDataPoolMaxSize, MaxFrameQueueSize);
+    }
+    else
+    {
+      // allow potential previous compression buffers to be garbage collected
+      _lz4VideoDataPool = null;
+    }
+
+    //TODO: LZ4: add a similar message for LZ4 compression
     if (!_qoiCompression)
     {
       var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoDataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
@@ -270,11 +286,43 @@ public class BeamSender
     }
   }
 
+  private unsafe void sendLz4Compressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* compressionData, bool blockOnFrameQueueLimitReached)
+  {
+    var encodedData = _lz4VideoDataPool!.Rent(_lz4VideoDataPoolMaxSize);
+    try
+    {
+
+      int encodedDataLength = 0;
+      fixed (byte* encodedDataPointer = encodedData)
+        encodedDataLength = LZ4Codec.Encode(compressionData, videoHeader.DataSize, encodedDataPointer, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
+      if (encodedDataLength >= videoHeader.DataSize) // send uncompressed data if compressed would be bigger
+      {
+        Module.Log($"LZ4: sending raw data, since LZ4 didn't reduce the size.", ObsLogLevel.Warning);
+        foreach (var client in _clients.Values)
+          client.Enqueue(timestamp, videoHeader, compressionData, blockOnFrameQueueLimitReached); //TODO: test this scenario by simulating it, will otherwise probably not happen a lot
+        return;
+      }
+      videoHeader.Compression = Beam.CompressionTypes.Lz4;
+      videoHeader.DataSize = encodedDataLength;
+      foreach (var client in _clients.Values)
+        client.Enqueue(timestamp, videoHeader, encodedData, blockOnFrameQueueLimitReached);
+    }
+    catch (System.Exception ex)
+    {
+      Module.Log($"{ex.GetType().Name} in sendCompressed(): {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
+      throw;
+    }
+    finally
+    {
+      // return the rented encoding data buffer to the pool, each client has created a copy of that data for its own use
+      _lz4VideoDataPool!.Return(encodedData);
+    }
+  }
+
   public unsafe void SendVideo(ulong timestamp, byte* data)
   {
     if (_clients.Count == 0)
       return;
-
 
     if (_qoiCompression)
     {
@@ -292,6 +340,24 @@ public class BeamSender
           var capturedBeamVideoData = (Beam.BeamVideoData)state!;
           fixed (byte* videoData = capturedBeamVideoData.Data)
             sendQoiCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, false);
+        }, beamVideoData);
+      }
+      return;
+    }
+    else if (_lz4Compression)
+    {
+      if (_compressionThreadingSync)
+        sendLz4Compressed(timestamp, _videoHeader, data, true); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
+      else
+      {
+        // will not run in sync with this OBS render thread, need a copy of the unmanaged data array
+        var managedDataCopy = new ReadOnlySpan<byte>(data, _videoDataSize).ToArray();
+        var beamVideoData = new Beam.BeamVideoData(_videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
+        Task.Factory.StartNew(state =>
+        {
+          var capturedBeamVideoData = (Beam.BeamVideoData)state!;
+          fixed (byte* videoData = capturedBeamVideoData.Data)
+            sendLz4Compressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, false);
         }, beamVideoData);
       }
       return;

@@ -16,6 +16,8 @@ public class Beam
   {
     None = 0,
     Qoi = 1,
+    Lz4 = 2,
+    QoiLz4 = 3,
   }
 
   #region helper methods

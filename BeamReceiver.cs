@@ -6,6 +6,7 @@ using System.Buffers.Binary;
 using System.IO.Pipelines;
 using System.IO.Pipes;
 using System.Net.Sockets;
+using K4os.Compression.LZ4;
 
 namespace xObsBeam;
 
@@ -293,15 +294,21 @@ public class BeamReceiver
               _height = videoHeader.Height;
             }
             
+            var frame = new Beam.BeamVideoData(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray());
             if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
             {
-              var frame = new Beam.BeamVideoData(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray());
-              //TODO: QOI: just as for QOI encoding use an ArrayPool<byte> buffer as the target, the challenge is to pre-reserve the right size that is only known after the first packet is received and the raw data size is known
+              //TODO: QOI: just as for QOI encoding use an ArrayPool<byte> buffer as the target, the challenge is to pre-reserve the right size that is only known after the first packet is received
               frame.Data = Qoi.Decode(frame.Data, (videoHeader.Width * videoHeader.Height * 4));
-              OnVideoFrameReceived(frame);
             }
-            else
-              OnVideoFrameReceived(new Beam.BeamVideoData(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray()));
+            else if (videoHeader.Compression == Beam.CompressionTypes.Lz4)
+            {
+              byte[] lz4TargetBuffer = new byte[(videoHeader.Width * videoHeader.Height * 4)];
+              int decompressedSize = LZ4Codec.Decode(frame.Data, 0, videoHeader.DataSize, lz4TargetBuffer, 0, lz4TargetBuffer.Length);
+              frame.Data = lz4TargetBuffer;
+              if (decompressedSize != lz4TargetBuffer.Length)
+                Module.Log($"LZ4 decompression failed, expected {lz4TargetBuffer.Length} bytes, got {decompressedSize} bytes.", ObsLogLevel.Error);
+            }
+            OnVideoFrameReceived(frame);
 
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(videoHeader.DataSize), readResult.Buffer.End);
