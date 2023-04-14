@@ -156,7 +156,9 @@ public static class Module
     Output.Register();
     Output.Create();
 
-    Log("Module loaded.", ObsLogLevel.Debug);
+    var assemblyName = System.Reflection.Assembly.GetExecutingAssembly().GetName();
+    Version version = assemblyName.Version!;
+    Log($"Version {version.Major}.{version.Minor}.{version.Build} loaded.", ObsLogLevel.Info);
     return true;
   }
 
