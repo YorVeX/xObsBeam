@@ -24,6 +24,7 @@ class BeamSenderClient
   Beam.AudioHeader _audioHeader;
   ArrayPool<byte> _audioDataPool;
   DateTime _lastFrameTime = DateTime.MaxValue;
+  ManualResetEvent _sendLoopExited = new ManualResetEvent(false);
 
   public string ClientId { get => _clientId; }
 
@@ -64,6 +65,8 @@ class BeamSenderClient
     Module.Log($"<{_clientId}> Disconnecting client...", ObsLogLevel.Info);
     _cancellationSource.Cancel();
     _frameAvailable.Set();
+    if (!_sendLoopExited.WaitOne(1000))
+      Module.Log($"<{_clientId}> Disconnecting client timed out.", ObsLogLevel.Error);
   }
 
   public event EventHandler<EventArgs>? Disconnected;
@@ -154,159 +157,165 @@ class BeamSenderClient
        As part of this processing the next call to PipeWriter.GetMemory() would be made, but: "Calling GetMemory or GetSpan while there's an incomplete call to FlushAsync isn't safe.", see:
        https://learn.microsoft.com/en-us/dotnet/standard/io/pipelines#pipewriter-common-problems
     */
-
-    if (pipeWriter == null)
-      return;
     try
     {
-      uint fps = 30;
-      uint frameCycle = 1;
-      ulong totalBytes = 0;
-      bool pipeWriterComplete = true;
-      _frameQueue.Clear();
-
-      Module.Log($"<{_clientId}> sendLoopAsync() started.", ObsLogLevel.Debug);
-      Interlocked.Increment(ref _videoFrameCount); // this first increment from -1 to 0 signalizes that the send loop is ready to process the queue
-      Interlocked.Increment(ref _audioFrameCount); // this first increment from -1 to 0 signalizes that the send loop is ready to process the queue
-      while (!cancellationToken.IsCancellationRequested)
+      try
       {
-        // wait for the next signal if the queue is empty right now
-        _frameAvailable.WaitOne();
-        if (cancellationToken.IsCancellationRequested)
-          break;
-        if (_frameQueue.TryDequeue(out var frame))
+        if (pipeWriter == null)
+          return;
+        uint fps = 30;
+        uint frameCycle = 1;
+        ulong totalBytes = 0;
+        bool pipeWriterComplete = true;
+        _frameQueue.Clear();
+
+        Module.Log($"<{_clientId}> sendLoopAsync() started.", ObsLogLevel.Debug);
+        Interlocked.Increment(ref _videoFrameCount); // this first increment from -1 to 0 signalizes that the send loop is ready to process the queue
+        Interlocked.Increment(ref _audioFrameCount); // this first increment from -1 to 0 signalizes that the send loop is ready to process the queue
+        while (!cancellationToken.IsCancellationRequested)
         {
-          if (frame is Beam.BeamVideoData videoFrame)
+          // wait for the next signal if the queue is empty right now
+          _frameAvailable.WaitOne();
+          if (cancellationToken.IsCancellationRequested)
+            break;
+          if (_frameQueue.TryDequeue(out var frame))
           {
-            Interlocked.Decrement(ref _videoFrameCount);
-
-            if ((videoFrame.Header.Fps > 0) && (fps != videoFrame.Header.Fps))
+            if (frame is Beam.BeamVideoData videoFrame)
             {
-              totalBytes = 0;
-              frameCycle = 1;
-              fps = videoFrame.Header.Fps;
-            }
+              Interlocked.Decrement(ref _videoFrameCount);
 
-            // write video data
-            try
-            {
-              // write video header data
-              var headerBytes = videoFrame.Header.WriteTo(pipeWriter.GetMemory(Beam.VideoHeader.VideoHeaderDataSize).Span, videoFrame.Timestamp);
-              pipeWriter.Advance(headerBytes);
-
-              // write video frame data - need to slice videoFrame.Data, since the arrays we get from _videoDataPool are often bigger than what we requested
-              var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(videoFrame.Data).Slice(0, videoFrame.Header.DataSize), cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
-              _videoDataPool.Return(videoFrame.Data); // return video frame data to the memory pool
-
-              totalBytes += (ulong)headerBytes + (ulong)videoFrame.Header.DataSize;
-              if (frameCycle >= fps)
+              if ((videoFrame.Header.Fps > 0) && (fps != videoFrame.Header.Fps))
               {
-                var mBitsPerSecond = (totalBytes * 8) / 1000000;
-                Module.Log($"<{_clientId}> Sent {headerBytes} + {videoFrame.Header.DataSize} bytes of video data ({mBitsPerSecond} mbps), queue length: {_frameQueue.Count()}", ObsLogLevel.Debug);
                 totalBytes = 0;
+                frameCycle = 1;
+                fps = videoFrame.Header.Fps;
               }
-              if (writeResult.IsCanceled || writeResult.IsCompleted)
+
+              // write video data
+              try
               {
-                if (writeResult.IsCanceled)
-                  Module.Log($"<{_clientId}> sendLoopAsync() exit through cancellation.", ObsLogLevel.Debug);
-                else
-                  Module.Log($"<{_clientId}> sendLoopAsync() exit through completion.", ObsLogLevel.Debug);
+                // write video header data
+                var headerBytes = videoFrame.Header.WriteTo(pipeWriter.GetMemory(Beam.VideoHeader.VideoHeaderDataSize).Span, videoFrame.Timestamp);
+                pipeWriter.Advance(headerBytes);
+
+                // write video frame data - need to slice videoFrame.Data, since the arrays we get from _videoDataPool are often bigger than what we requested
+                var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(videoFrame.Data).Slice(0, videoFrame.Header.DataSize), cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
+                _videoDataPool.Return(videoFrame.Data); // return video frame data to the memory pool
+
+                totalBytes += (ulong)headerBytes + (ulong)videoFrame.Header.DataSize;
+                if (frameCycle >= fps)
+                {
+                  var mBitsPerSecond = (totalBytes * 8) / 1000000;
+                  Module.Log($"<{_clientId}> Sent {headerBytes} + {videoFrame.Header.DataSize} bytes of video data ({mBitsPerSecond} mbps), queue length: {_frameQueue.Count()}", ObsLogLevel.Debug);
+                  totalBytes = 0;
+                }
+                if (writeResult.IsCanceled || writeResult.IsCompleted)
+                {
+                  if (writeResult.IsCanceled)
+                    Module.Log($"<{_clientId}> sendLoopAsync() exit through cancellation.", ObsLogLevel.Debug);
+                  else
+                    Module.Log($"<{_clientId}> sendLoopAsync() exit through completion.", ObsLogLevel.Debug);
+                  break;
+                }
+
+              }
+              catch (OperationCanceledException ex)
+              {
+                // happens when cancellation token is signalled
+                Module.Log($"<{_clientId}> sendLoopAsync() exit through {ex.GetType().Name}.", ObsLogLevel.Debug);
                 break;
               }
-
-            }
-            catch (OperationCanceledException ex)
-            {
-              // happens when cancellation token is signalled
-              Module.Log($"<{_clientId}> sendLoopAsync() exit through {ex.GetType().Name}.", ObsLogLevel.Debug);
-              break;
-            }
-            catch (IOException ex)
-            {
-              // happens when the receiver closes the connection
-              Module.Log($"<{_clientId}> Lost connection to receiver ({ex.GetType().Name}) while trying to send video data.", ObsLogLevel.Error);
-              pipeWriterComplete = false; // this would internally try to flush and by this throw another exception
-              break;
-            }
-            catch (System.Exception ex)
-            {
-              Module.Log($"<{_clientId}> sendLoopAsync(): {ex.GetType().Name} sending video data: {ex.Message}", ObsLogLevel.Error);
-              break;
-            }
-            if (frameCycle++ >= fps)
-              frameCycle = 1;
-          }
-          else if (frame is Beam.BeamAudioData audioFrame)
-          {
-            long audioFrameCount = Interlocked.Decrement(ref _audioFrameCount);
-
-            // write audio data
-            try
-            {
-              // write audio header data
-              var headerBytes = audioFrame.Header.WriteTo(pipeWriter.GetMemory(Beam.AudioHeader.AudioHeaderDataSize).Span, audioFrame.Timestamp);
-              pipeWriter.Advance(headerBytes);
-
-              // write audio frame data - need to slice audioFrame.Data, since the arrays we get from the shared ArrayPool are often bigger than what we requested
-              var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(audioFrame.Data).Slice(0, audioFrame.Header.DataSize), cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
-              ArrayPool<byte>.Shared.Return(audioFrame.Data); // return audio frame data to the memory pool
-              if (frameCycle >= fps)
-                Module.Log($"<{_clientId}> Sent {headerBytes} + {audioFrame.Header.DataSize} bytes of audio data, queue length: {audioFrameCount}", ObsLogLevel.Debug);
-              if (writeResult.IsCanceled || writeResult.IsCompleted)
+              catch (IOException ex)
               {
-                if (writeResult.IsCanceled)
-                  Module.Log($"<{_clientId}> sendLoopAsync() exit through cancellation.", ObsLogLevel.Debug);
-                else
-                  Module.Log($"<{_clientId}> sendLoopAsync() exit through completion.", ObsLogLevel.Debug);
+                // happens when the receiver closes the connection
+                Module.Log($"<{_clientId}> Lost connection to receiver ({ex.GetType().Name}) while trying to send video data.", ObsLogLevel.Error);
+                pipeWriterComplete = false; // this would internally try to flush and by this throw another exception
+                break;
+              }
+              catch (System.Exception ex)
+              {
+                Module.Log($"<{_clientId}> sendLoopAsync(): {ex.GetType().Name} sending video data: {ex.Message}", ObsLogLevel.Error);
+                break;
+              }
+              if (frameCycle++ >= fps)
+                frameCycle = 1;
+            }
+            else if (frame is Beam.BeamAudioData audioFrame)
+            {
+              long audioFrameCount = Interlocked.Decrement(ref _audioFrameCount);
+
+              // write audio data
+              try
+              {
+                // write audio header data
+                var headerBytes = audioFrame.Header.WriteTo(pipeWriter.GetMemory(Beam.AudioHeader.AudioHeaderDataSize).Span, audioFrame.Timestamp);
+                pipeWriter.Advance(headerBytes);
+
+                // write audio frame data - need to slice audioFrame.Data, since the arrays we get from the shared ArrayPool are often bigger than what we requested
+                var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(audioFrame.Data).Slice(0, audioFrame.Header.DataSize), cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
+                ArrayPool<byte>.Shared.Return(audioFrame.Data); // return audio frame data to the memory pool
+                if (frameCycle >= fps)
+                  Module.Log($"<{_clientId}> Sent {headerBytes} + {audioFrame.Header.DataSize} bytes of audio data, queue length: {audioFrameCount}", ObsLogLevel.Debug);
+                if (writeResult.IsCanceled || writeResult.IsCompleted)
+                {
+                  if (writeResult.IsCanceled)
+                    Module.Log($"<{_clientId}> sendLoopAsync() exit through cancellation.", ObsLogLevel.Debug);
+                  else
+                    Module.Log($"<{_clientId}> sendLoopAsync() exit through completion.", ObsLogLevel.Debug);
+                  break;
+                }
+              }
+              catch (OperationCanceledException ex)
+              {
+                Module.Log($"<{_clientId}> sendLoopAsync() exit through {ex.GetType().Name}.", ObsLogLevel.Debug);
+                break;
+              }
+              catch (IOException ex)
+              {
+                // happens when the receiver closes the connection
+                Module.Log($"<{_clientId}> Lost connection to receiver ({ex.GetType().Name}) while trying to send audio data.", ObsLogLevel.Error);
+                pipeWriterComplete = false; // this would internally try to flush and by this throw another exception
+                break;
+              }
+              catch (System.Exception ex)
+              {
+                Module.Log($"<{_clientId}> sendLoopAsync(): {ex.GetType().Name} sending audio data: {ex.Message}", ObsLogLevel.Error);
                 break;
               }
             }
-            catch (OperationCanceledException ex)
-            {
-              Module.Log($"<{_clientId}> sendLoopAsync() exit through {ex.GetType().Name}.", ObsLogLevel.Debug);
-              break;
-            }
-            catch (IOException ex)
-            {
-              // happens when the receiver closes the connection
-              Module.Log($"<{_clientId}> Lost connection to receiver ({ex.GetType().Name}) while trying to send audio data.", ObsLogLevel.Error);
-              pipeWriterComplete = false; // this would internally try to flush and by this throw another exception
-              break;
-            }
-            catch (System.Exception ex)
-            {
-              Module.Log($"<{_clientId}> sendLoopAsync(): {ex.GetType().Name} sending audio data: {ex.Message}", ObsLogLevel.Error);
-              break;
-            }
-          }
 
-          if (_frameQueue.Count() > 0)
-            _frameAvailable.Set(); // make sure the send loop continues immediately if there is more data in the queue
+            if (_frameQueue.Count() > 0)
+              _frameAvailable.Set(); // make sure the send loop continues immediately if there is more data in the queue
+          }
         }
+        if (pipeWriterComplete)
+          pipeWriter.Complete();
       }
-      if (pipeWriterComplete)
-        pipeWriter.Complete();
-    }
-    catch (System.Exception ex)
-    {
-      Module.Log($"<{_clientId}> {ex.GetType().Name} in send loop: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
-      try { pipeWriter.Complete(ex); } catch { }
-    }
+      catch (System.Exception ex)
+      {
+        Module.Log($"<{_clientId}> {ex.GetType().Name} in send loop: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
+        try { pipeWriter.Complete(ex); } catch { }
+      }
 
-    Module.Log($"<{_clientId}> sendLoopAsync(): Exiting...", ObsLogLevel.Debug);
-    if (!_cancellationSource.IsCancellationRequested) // make sure that also all other loops exit now
-      _cancellationSource.Cancel();
-    _frameQueue.Clear();
-    if (_socket != null)
-    {
-      _socket.Shutdown(SocketShutdown.Both);
-      _socket.Disconnect(false);
-      if (_socket.Connected)
-        _socket.Close();
+      Module.Log($"<{_clientId}> sendLoopAsync(): Exiting...", ObsLogLevel.Debug);
+      if (!_cancellationSource.IsCancellationRequested) // make sure that also all other loops exit now
+        _cancellationSource.Cancel();
+      _frameQueue.Clear();
+      if (_socket != null)
+      {
+        _socket.Shutdown(SocketShutdown.Both);
+        _socket.Disconnect(false);
+        if (_socket.Connected)
+          _socket.Close();
+      }
+      _stream?.Close();
+      OnDisconnected();
+      Module.Log($"<{_clientId}> Disconnected.", ObsLogLevel.Info);
     }
-    _stream?.Close();
-    OnDisconnected();
-    Module.Log($"<{_clientId}> Disconnected.", ObsLogLevel.Info);
+    finally
+    {
+      _sendLoopExited.Set();
+    }
   }
 
   public unsafe void Enqueue(ulong timestamp, Beam.VideoHeader videoHeader, byte[] videoData, bool blockOnFrameQueueLimitReached)
