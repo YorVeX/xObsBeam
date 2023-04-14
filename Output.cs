@@ -158,7 +158,6 @@ public static class Output
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe void output_stop(void* data, ulong ts)
   {
-    //BUG: crashes sometimes when a client is connected and the output is stopped, it doesn't matter whether QOI is enabled or not, also if BeamSender.Stop() isn't called it still crashes
     Module.Log("output_stop called", ObsLogLevel.Debug);
     Obs.obs_output_end_data_capture(_outputData.Output);
     _beamSender.Stop();

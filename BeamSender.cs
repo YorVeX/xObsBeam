@@ -230,7 +230,6 @@ public class BeamSender
         client.Disconnect();
       _videoDataSize = 0;
       _audioDataSize = 0;
-      _qoiVideoDataPool = null;
 
       Module.Log($"Stopped BeamSender.", ObsLogLevel.Debug);
     }
