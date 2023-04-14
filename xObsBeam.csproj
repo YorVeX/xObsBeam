@@ -8,7 +8,7 @@
     <StripSymbols>true</StripSymbols>
     <PublishAot>true</PublishAot>
     <Authors>https://github.com/YorVeX</Authors>
-    <AssemblyVersion>0.4.2.0</AssemblyVersion>
+    <AssemblyVersion>0.4.3.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>
