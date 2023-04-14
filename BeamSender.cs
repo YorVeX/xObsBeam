@@ -34,7 +34,7 @@ public class BeamSender
 
   bool _qoiCompression = false;
   bool _compressionThreadingSync = true;
-  bool _lz4Compression = true; //HACK: LZ4: for testing just preset to true, make this dynamic from settings later
+  bool _lz4Compression = false; //HACK: LZ4: for testing just preset to true, make this dynamic from settings later
 
   public unsafe void SetVideoParameters(video_output_info* info, uint* linesize)
   {
@@ -89,14 +89,11 @@ public class BeamSender
       _lz4VideoDataPool = null;
     }
 
-    //TODO: LZ4: add a similar message for LZ4 compression
-    if (!_qoiCompression)
-    {
-      var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoDataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
+    var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoDataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
+    if (!_qoiCompression && !_lz4Compression)
       Module.Log($"Video output feed initialized, theoretical uncompressed net bandwidth demand is {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
-    }
     else
-      Module.Log($"Video output feed initialized with QOI compression. Sync to render thread: {_compressionThreadingSync}.", ObsLogLevel.Info);
+      Module.Log($"Video output feed initialized with {(_qoiCompression ? (_lz4Compression ? "QOI + LZ4" : "QOI") : "LZ4")} compression. Sync to render thread: {_compressionThreadingSync}. Theoretical uncompressed net bandwidth demand would be {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
   }
 
   public unsafe void SetAudioParameters(audio_output_info* info, uint frames)
@@ -319,53 +316,114 @@ public class BeamSender
     }
   }
 
+  private unsafe void sendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataQoi, byte[]? encodedDataLz4, bool blockOnFrameQueueLimitReached)
+  {
+    try
+    {
+      int encodedDataLength = 0;
+      
+      // apply QOI compression if enabled
+      if (encodedDataQoi != null)
+      {
+        encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedDataQoi); // encode the frame with QOI
+
+        if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
+        {
+          videoHeader.Compression = Beam.CompressionTypes.Qoi;
+          videoHeader.DataSize = encodedDataLength;
+        }
+      }
+
+      // apply LZ4 compression if enabled
+      if (encodedDataLz4 != null)
+      {
+        //TODO: LZ4: offer different LZ4 compression levels in the settings
+        if (videoHeader.Compression == Beam.CompressionTypes.Qoi) // if QOI was applied before, compress the QOI data
+        {
+          fixed (byte* sourceData = encodedDataQoi, targetData = encodedDataLz4)
+            encodedDataLength = LZ4Codec.Encode(sourceData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
+        }
+        else // if QOI was not applied before, compress the raw data
+        {
+          fixed (byte* targetData = encodedDataLz4)
+            encodedDataLength = LZ4Codec.Encode(rawData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
+        }
+
+        if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
+        {
+          videoHeader.Compression = (videoHeader.Compression == Beam.CompressionTypes.Qoi) ? Beam.CompressionTypes.QoiLz4 : Beam.CompressionTypes.Lz4;
+          if (videoHeader.Compression == Beam.CompressionTypes.QoiLz4) // if QOI was applied before, compress the QOI data
+            videoHeader.QoiDataSize = videoHeader.DataSize; // remember the size of the QOI data
+          videoHeader.DataSize = encodedDataLength;
+        }
+      }
+
+      switch (videoHeader.Compression)
+      {
+        case Beam.CompressionTypes.Qoi:
+          foreach (var client in _clients.Values)
+            client.Enqueue(timestamp, videoHeader, encodedDataQoi!, blockOnFrameQueueLimitReached);
+          break;
+        case Beam.CompressionTypes.Lz4:
+        case Beam.CompressionTypes.QoiLz4:
+          foreach (var client in _clients.Values)
+            client.Enqueue(timestamp, videoHeader, encodedDataLz4!, blockOnFrameQueueLimitReached);
+          break;
+        default:
+          foreach (var client in _clients.Values)
+            client.Enqueue(timestamp, videoHeader, rawData, blockOnFrameQueueLimitReached);
+          break;
+      }
+
+    }
+    catch (System.Exception ex)
+    {
+      Module.Log($"{ex.GetType().Name} in sendCompressed(): {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
+      throw;
+    }
+    finally
+    {
+      // return the rented encoding data buffers to the pool, each client has created a copy of that data for its own use
+      if (encodedDataQoi != null)
+        _qoiVideoDataPool?.Return(encodedDataQoi);
+      if (encodedDataLz4 != null)
+        _lz4VideoDataPool?.Return(encodedDataLz4);
+    }
+  }
+
   public unsafe void SendVideo(ulong timestamp, byte* data)
   {
     if (_clients.Count == 0)
       return;
 
-    if (_qoiCompression)
-    {
-      //TODO: QOI: POC: optionally apply another compression algorithm on top of QOI at the cost of more CPU load, should give good results at least for reducing bandwidth as discussed here: https://github.com/phoboslab/qoi/issues/166
-
-      if (_compressionThreadingSync)
-        sendQoiCompressed(timestamp, _videoHeader, data, true); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
-      else
-      {
-        // will not run in sync with this OBS render thread, need a copy of the unmanaged data array
-        var managedDataCopy = new ReadOnlySpan<byte>(data, _videoDataSize).ToArray();
-        var beamVideoData = new Beam.BeamVideoData(_videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
-        Task.Factory.StartNew(state =>
-        {
-          var capturedBeamVideoData = (Beam.BeamVideoData)state!;
-          fixed (byte* videoData = capturedBeamVideoData.Data)
-            sendQoiCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, false);
-        }, beamVideoData);
-      }
-      return;
-    }
-    else if (_lz4Compression)
-    {
-      if (_compressionThreadingSync)
-        sendLz4Compressed(timestamp, _videoHeader, data, true); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
-      else
-      {
-        // will not run in sync with this OBS render thread, need a copy of the unmanaged data array
-        var managedDataCopy = new ReadOnlySpan<byte>(data, _videoDataSize).ToArray();
-        var beamVideoData = new Beam.BeamVideoData(_videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
-        Task.Factory.StartNew(state =>
-        {
-          var capturedBeamVideoData = (Beam.BeamVideoData)state!;
-          fixed (byte* videoData = capturedBeamVideoData.Data)
-            sendLz4Compressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, false);
-        }, beamVideoData);
-      }
-      return;
-    }
-    else
+    // no compression of any kind, just enqueue the raw data right away from the original unmanaged memory
+    if (!_qoiCompression && !_lz4Compression)
     {
       foreach (var client in _clients.Values)
         client.Enqueue(timestamp, _videoHeader, data, true);
+      return;
+    }
+
+    byte[]? encodedDataLz4 = null;
+    byte[]? encodedDataQoi = null;
+    if (_qoiCompression)
+      encodedDataQoi = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
+    if (_lz4Compression)
+      encodedDataLz4 = _lz4VideoDataPool!.Rent(_lz4VideoDataPoolMaxSize);
+
+    if (_compressionThreadingSync)
+      sendCompressed(timestamp, _videoHeader, data, encodedDataQoi, encodedDataLz4, true); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
+    else
+    {
+      // will not run in sync with this OBS render thread, need a copy of the unmanaged data array
+      var managedDataCopy = new ReadOnlySpan<byte>(data, _videoDataSize).ToArray();
+      var beamVideoData = new Beam.BeamVideoData(_videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
+      Task.Factory.StartNew(state =>
+      {
+        var capturedBeamVideoData = (Beam.BeamVideoData)state!;
+        fixed (byte* videoData = capturedBeamVideoData.Data)
+          sendCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, encodedDataQoi, encodedDataLz4, false);
+      }, beamVideoData);
     }
   }
 

@@ -203,6 +203,7 @@ public class Beam
     public Type Type = Type.Video;
     public CompressionTypes Compression;
     public int DataSize;
+    public int QoiDataSize;
     public uint Width;
     public uint Height;
     public uint[] Linesize = new uint[MAX_AV_PLANES];
@@ -241,6 +242,8 @@ public class Beam
       Compression = (CompressionTypes)tempInt;
       // read int video DataSize from the next 4 bytes in header
       reader.TryReadLittleEndian(out DataSize);
+      // read int video QoiDataSize from the next 4 bytes in header
+      reader.TryReadLittleEndian(out QoiDataSize);
       // read uint width from the next 4 bytes in header
       reader.TryReadLittleEndian(out tempInt);
       Width = (uint)tempInt;
@@ -281,6 +284,7 @@ public class Beam
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), (uint)Type); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Compression); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), DataSize); headerBytes += 4;
+      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), QoiDataSize); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Width); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Height); headerBytes += 4;
       for (int i = 0; i < VideoHeader.MAX_AV_PLANES; i++)
