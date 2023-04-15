@@ -33,8 +33,9 @@ public class BeamSender
   int _audioBytesPerSample = 0;
 
   bool _qoiCompression = false;
+  bool _lz4Compression = false;
+  LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
   bool _compressionThreadingSync = true;
-  bool _lz4Compression = false; //HACK: LZ4: for testing just preset to true, make this dynamic from settings later
 
   public unsafe void SetVideoParameters(video_output_info* info, uint* linesize)
   {
@@ -64,7 +65,9 @@ public class BeamSender
 
     // cache settings values
     _qoiCompression = SettingsDialog.QoiCompression;
-    _compressionThreadingSync = SettingsDialog.QoiCompressionMainThread;
+    _lz4Compression = SettingsDialog.Lz4Compression;
+    _lz4CompressionLevel = SettingsDialog.Lz4CompressionLevel;
+    _compressionThreadingSync = SettingsDialog.CompressionMainThread;
 
     // QOI's theoretical max size for BGRA is 5x the size of the original image
     if (_qoiCompression)
@@ -93,7 +96,10 @@ public class BeamSender
     if (!_qoiCompression && !_lz4Compression)
       Module.Log($"Video output feed initialized, theoretical uncompressed net bandwidth demand is {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
     else
-      Module.Log($"Video output feed initialized with {(_qoiCompression ? (_lz4Compression ? "QOI + LZ4" : "QOI") : "LZ4")} compression. Sync to render thread: {_compressionThreadingSync}. Theoretical uncompressed net bandwidth demand would be {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
+    {
+      string lz4WithLevelString = $"LZ4 ({SettingsDialog.Lz4CompressionLevel})";
+      Module.Log($"Video output feed initialized with {(_qoiCompression ? (_lz4Compression ? "QOI + " + lz4WithLevelString : "QOI") : lz4WithLevelString)} compression. Sync to render thread: {_compressionThreadingSync}. Theoretical uncompressed net bandwidth demand would be {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
+    }
   }
 
   public unsafe void SetAudioParameters(audio_output_info* info, uint frames)
@@ -252,76 +258,12 @@ public class BeamSender
     }
   }
 
-  private unsafe void sendQoiCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* compressionData, bool blockOnFrameQueueLimitReached)
-  {
-    var encodedData = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
-    try
-    {
-      int encodedDataLength = 0;
-      encodedDataLength = Qoi.Encode(compressionData, 0, videoHeader.DataSize, 4, encodedData); // encode the frame with QOI
-      if (encodedDataLength >= videoHeader.DataSize) // send uncompressed data if compressed would be bigger
-      {
-        Module.Log($"QOI: sending raw data, since QOI didn't reduce the size.", ObsLogLevel.Warning);
-        foreach (var client in _clients.Values)
-          client.Enqueue(timestamp, videoHeader, compressionData, blockOnFrameQueueLimitReached); //TODO: test this scenario by simulating it, will otherwise probably not happen a lot
-        return;
-      }
-      videoHeader.Compression = Beam.CompressionTypes.Qoi;
-      videoHeader.DataSize = encodedDataLength;
-      foreach (var client in _clients.Values)
-        client.Enqueue(timestamp, videoHeader, encodedData, blockOnFrameQueueLimitReached);
-    }
-    catch (System.Exception ex)
-    {
-      Module.Log($"{ex.GetType().Name} in sendCompressed(): {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
-      throw;
-    }
-    finally
-    {
-      // return the rented encoding data buffer to the pool, each client has created a copy of that data for its own use
-      _qoiVideoDataPool!.Return(encodedData);
-    }
-  }
-
-  private unsafe void sendLz4Compressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* compressionData, bool blockOnFrameQueueLimitReached)
-  {
-    var encodedData = _lz4VideoDataPool!.Rent(_lz4VideoDataPoolMaxSize);
-    try
-    {
-
-      int encodedDataLength = 0;
-      fixed (byte* encodedDataPointer = encodedData)
-        encodedDataLength = LZ4Codec.Encode(compressionData, videoHeader.DataSize, encodedDataPointer, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
-      if (encodedDataLength >= videoHeader.DataSize) // send uncompressed data if compressed would be bigger
-      {
-        Module.Log($"LZ4: sending raw data, since LZ4 didn't reduce the size.", ObsLogLevel.Warning);
-        foreach (var client in _clients.Values)
-          client.Enqueue(timestamp, videoHeader, compressionData, blockOnFrameQueueLimitReached); //TODO: test this scenario by simulating it, will otherwise probably not happen a lot
-        return;
-      }
-      videoHeader.Compression = Beam.CompressionTypes.Lz4;
-      videoHeader.DataSize = encodedDataLength;
-      foreach (var client in _clients.Values)
-        client.Enqueue(timestamp, videoHeader, encodedData, blockOnFrameQueueLimitReached);
-    }
-    catch (System.Exception ex)
-    {
-      Module.Log($"{ex.GetType().Name} in sendCompressed(): {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
-      throw;
-    }
-    finally
-    {
-      // return the rented encoding data buffer to the pool, each client has created a copy of that data for its own use
-      _lz4VideoDataPool!.Return(encodedData);
-    }
-  }
-
   private unsafe void sendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataQoi, byte[]? encodedDataLz4, bool blockOnFrameQueueLimitReached)
   {
     try
     {
       int encodedDataLength = 0;
-      
+
       // apply QOI compression if enabled
       if (encodedDataQoi != null)
       {
@@ -337,16 +279,15 @@ public class BeamSender
       // apply LZ4 compression if enabled
       if (encodedDataLz4 != null)
       {
-        //TODO: LZ4: offer different LZ4 compression levels in the settings
         if (videoHeader.Compression == Beam.CompressionTypes.Qoi) // if QOI was applied before, compress the QOI data
         {
           fixed (byte* sourceData = encodedDataQoi, targetData = encodedDataLz4)
-            encodedDataLength = LZ4Codec.Encode(sourceData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
+            encodedDataLength = LZ4Codec.Encode(sourceData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, _lz4CompressionLevel);
         }
         else // if QOI was not applied before, compress the raw data
         {
           fixed (byte* targetData = encodedDataLz4)
-            encodedDataLength = LZ4Codec.Encode(rawData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
+            encodedDataLength = LZ4Codec.Encode(rawData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, _lz4CompressionLevel);
         }
 
         if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
