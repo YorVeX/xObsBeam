@@ -128,6 +128,15 @@ public static class SettingsDialog
     }
   }
 
+  public static unsafe int QoiCompressionLevel
+  {
+    get
+    {
+      fixed (byte* propertyCompressionQoiLevelId = "compression_qoi_level"u8)
+        return (int)ObsData.obs_data_get_int(_settings, (sbyte*)propertyCompressionQoiLevelId);
+    }
+  }
+
   public static unsafe bool CompressionMainThread
   {
     get
@@ -287,9 +296,7 @@ public static class SettingsDialog
       ObsProperties.obs_property_set_long_description(compressionQoiProperty, (sbyte*)propertyCompressionQoiText);
       ObsProperties.obs_property_set_modified_callback(compressionQoiProperty, &CompressionSettingChangedEventHandler);
       // compression level
-      var compressionQoiLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoiPropertyGroup, (sbyte*)propertyCompressionQoiLevelId, (sbyte*)propertyCompressionQoiLevelCaption, 1, 10, 1);
-      ObsProperties.obs_property_set_long_description(compressionQoiLevelProperty, (sbyte*)propertyCompressionQoiLevelText);
-      ObsProperties.obs_property_set_enabled(compressionQoiLevelProperty, Convert.ToByte(false)); //TODO: QOI: implement skipping compression for frames
+      ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_int_slider(compressionQoiPropertyGroup, (sbyte*)propertyCompressionQoiLevelId, (sbyte*)propertyCompressionQoiLevelCaption, 1, 10, 1), (sbyte*)propertyCompressionQoiLevelText);
       // warning message shown when QOI is enabled but output is not set to BGRA color format
       var compressionQoiNoBgraWarningProperty = ObsProperties.obs_properties_add_text(compressionQoiPropertyGroup, (sbyte*)propertyCompressionQoiNoBgraWarningId, (sbyte*)propertyCompressionQoiNoBgraWarningText, obs_text_type.OBS_TEXT_INFO);
       ObsProperties.obs_property_text_set_info_type(compressionQoiNoBgraWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);

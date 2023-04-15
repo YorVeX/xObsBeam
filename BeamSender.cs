@@ -26,13 +26,16 @@ public class BeamSender
   int _qoiVideoDataPoolMaxSize = 0;
   ArrayPool<byte>? _lz4VideoDataPool;
   int _lz4VideoDataPoolMaxSize = 0;
+  int _qoiFrameCycle = 1;
   Beam.VideoHeader _videoHeader;
   Beam.AudioHeader _audioHeader;
   int _videoDataSize = 0;
   int _audioDataSize = 0;
   int _audioBytesPerSample = 0;
 
+  // cached compression settings
   bool _qoiCompression = false;
+  int _qoiSkipEveryXFrame = 0;
   bool _lz4Compression = false;
   LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
   bool _compressionThreadingSync = true;
@@ -74,6 +77,11 @@ public class BeamSender
     {
       _qoiVideoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength);
       _qoiVideoDataPool = ArrayPool<byte>.Create(_qoiVideoDataPoolMaxSize, MaxFrameQueueSize);
+      _qoiFrameCycle = 1; // reset the QOI frame cycle for the frame skipping feature
+      if (SettingsDialog.QoiCompressionLevel == 10)
+        _qoiSkipEveryXFrame = 0;
+      else
+        _qoiSkipEveryXFrame = SettingsDialog.QoiCompressionLevel + 1;
     }
     else
     {
@@ -345,10 +353,17 @@ public class BeamSender
       return;
     }
 
+    // prepare compression buffers
     byte[]? encodedDataLz4 = null;
     byte[]? encodedDataQoi = null;
-    if (_qoiCompression)
+    if (_qoiCompression && (_qoiFrameCycle != _qoiSkipEveryXFrame))
       encodedDataQoi = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
+    if (_qoiSkipEveryXFrame > 0) // is QOI frame skipping enabled?
+    {
+      _qoiFrameCycle++;
+      if (_qoiFrameCycle > _qoiSkipEveryXFrame)
+        _qoiFrameCycle = 1;
+    }
     if (_lz4Compression)
       encodedDataLz4 = _lz4VideoDataPool!.Rent(_lz4VideoDataPoolMaxSize);
 
