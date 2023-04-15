@@ -1,5 +1,5 @@
 # xObsBeam
-OBS plugin to transmit lossless (raw or [QOI](https://qoiformat.org) compressed) video and audio feeds between OBS instances. An alternative to NDI and Teleport for A/V transmission.
+OBS plugin to transmit lossless (raw or [QOI](https://qoiformat.org)/[LZ4](https://github.com/lz4/lz4) compressed) video and audio feeds between OBS instances. An alternative to NDI and Teleport for A/V transmission.
 
 ![image](https://user-images.githubusercontent.com/528974/229695123-33b165ba-019a-48ce-9197-3d203627352b.png)
 
@@ -13,20 +13,20 @@ OBS plugin to transmit lossless (raw or [QOI](https://qoiformat.org) compressed)
 
 ## Use cases
 
-This plugin transmits a video and audio feed from one OBS instance to another. The video feed can be compressed using [QOI](https://qoiformat.org) with minimal (and very stable) CPU usage or even transmitted raw with no added compression CPU usage at all but at the expense of extreme bandwidth needs. The most common scenario would be transmitting audio and video feeds from OBS on a gaming PC to OBS on a streaming PC.
+This plugin transmits a video and audio feed from one OBS instance to another. The video feed can be compressed using [QOI](https://qoiformat.org) and/or [LZ4](https://github.com/lz4/lz4) with minimal CPU usage or even transmitted raw with no added compression CPU usage at all but at the expense of extreme bandwidth needs. In all cases the transmission is completely [lossless](https://en.wikipedia.org/wiki/Lossless_compression). The most common scenario would be transmitting audio and video feeds from OBS on a gaming PC to OBS on a streaming PC.
 
 Both [NDI](https://github.com/obs-ndi/obs-ndi) and [Teleport](https://github.com/fzwoch/obs-teleport) in comparison transmit their video feeds using a lossy compression (albeit almost visually lossless to be fair) and most of the time have lower bandwidth needs than this plugin.
 
-No solution is better or worse in general, it's just different tradeoffs regarding CPU/GPU usage, bandwidth needs and quality. What works best in a given scenario depends (among other things) on the specific use case and available resources.
+No solution is better or worse in general, it's just different tradeoffs regarding CPU/GPU usage, bandwidth needs and quality. What works best in a given scenario depends (among other things) on the specific use case and available resources. It's also very hard to predict how it will perform for any given setup, so it's best to test it out and play with the settings.
 
 ### Raw local transmission
 The obvious case where compression seems unnecessary is when transmitting data from one OBS instance to another within the same machine (so no network between them). E.g. when the first OBS instance is for recording and it sends the feed to a second OBS instance for streaming, which adds some panels, alerts, animations and other effects only for the stream which shouldn't be visible in the recording (other solutions to achieve that currently don't seem to be really stable). In that case both encoding and decoding work would also hit the same machine.
 
 ### Standard setups
-Standard setups (i.e. typical 1 Gbps consumer network gear) will almost always want to use the QOI compression. You get a truly lossless video feed with low CPU usage on the bright side, but be warned that QOI has some worst case scenarios where bandwidth usage could have significant spikes. Make sure to run tests with various scenarios and see whether your setup is up for the task.
+Standard setups (i.e. typical 1 Gbps consumer network gear) will almost always want to use the QOI compression and maybe LZ4 compression at FAST level in addition. You get a truly lossless video feed with low CPU usage on the bright side, but be warned that QOI/LZ4 have some worst case scenarios where bandwidth usage could have significant spikes. Make sure to run tests with various scenarios and see whether your setup is up for the task.
 
 ### "Small" sources
-Transmitting sources with low resolution and/or low FPS through the network could actually be feasible even over a standard 1 Gbps network, e.g. for a retro game or a cam feed of an old webcam that you want to include. Especially If also the source PC is "retro" it helps a lot to save on CPU sources by not having to compress the data or using the CPU friendly QOI compression.
+Transmitting sources with low resolution and/or low FPS through the network could actually be feasible even over a standard 1 Gbps network, e.g. for a retro game or a cam feed of an old webcam that you want to include. Especially when also the source PC is "retro" it helps a lot to save on CPU sources by not having to compress the data or using the CPU friendly QOI/LZ4 compressions.
 
 ### High bandwidth network
 For enthusiast or semi-professional setups with expensive network devices it could be feasible to transmit raw video feeds over a network.
@@ -54,6 +54,8 @@ If you want to get this number for your specific configuration just start the Be
 Note that this is the theoretical **minimum net bandwidth** that is needed on a network. To measure your available net bandwidth you can use a tool like [iperf](https://iperf.fr), e.g. for a 2.5 Gbps connection it could be something like 2.37 Gbps.
 
 In addition there still needs to be enough headroom available for spikes that can occur at any time and of course for all other traffic that wants to use the same interface. Depending on how sensitive this traffic is and how good all involved network devices are (switch, router, network card, cable, the chain is as good as its weakest link) other traffic might suffer long before you get even close to any theoretical limits, e.g. if you play a latency sensitive game on a cheap router your latency might already double our triple when only using half of theoretically available bandwidth or less because of how network packets are prioritized. Also other traffic originators might have spikes too.
+
+If it's just that little bit of extra bandwidth that you lack to get it working, you can try to use only LZ4 at FAST level, it could e.g. bring an 800 Mbps feed down to 600 Mbps with very low CPU usage if you're lucky.
 
 
 ## Usage
@@ -99,12 +101,21 @@ Now you can show the new Beam source (click the eye icon next to it) and it shou
   - **A**: No. Feel free to try and compile it for x86 targets yourself, last time I checked it wasn't fully supported in NativeAOT.
 
 - **Q**: Does this work with all color formats and color spaces including HDR?
-  - **A**: It should work fine when not using compression for every available OBS color format/space setting including HDR, since OBS data is just transferred 1:1. QOI compression, however, [is designed only for RGB(A)](https://qoiformat.org/qoi-specification.pdf). Its basic logic on byte level will still achieve some compression in most scenarios, but results may vary a lot, hence xObsBeam will show a warning when you enable QOI on any other color format than BGRA.
+  - **A**: It should work fine when not using compression for every available OBS color format/space setting including HDR, since OBS data is just transferred 1:1. This is also true when using LZ4 compression. QOI compression, however, [is designed only for RGB(A)](https://qoiformat.org/qoi-specification.pdf). Its basic logic on byte level will still achieve some compression in most scenarios, but results may vary a lot, hence xObsBeam will show a warning when you enable QOI on any other color format than BGRA.
 
 
 ## For developers
 ### C#
-OBS Classic still had a [CLR Host Plugin](https://obsproject.com/forum/resources/clr-host-plugin.21/), but with OBS Studio writing plugins in C# wasn't possible anymore. This has changed as of recently as you can see.
+OBS Classic still had a [CLR Host Plugin](https://obsproject.com/forum/resources/clr-host-plugin.21/), but with OBS Studio writing plugins in C# wasn't possible anymore. This has changed as of recently as you can see, this plugin is fully written in C#.
+
+### Used libraries/technologies
+This plugin uses the following libraries/technologies:
+- [System.IO.Pipelines](https://docs.microsoft.com/en-us/dotnet/api/system.io.pipelines?view=net-7.0) PipeWriter/PipeReader for high-efficiency data transfer between sender and receiver
+- [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) for LZ4 compression
+- [QOI](https://qoiformat.org)
+
+Compression is simply applied to each frame separately, QOI is not a video codec anyway and LZ4 not even tailored for images. It just so happens that [QOI is compressible](https://github.com/phoboslab/qoi/issues/166) and LZ4 is a very fast compression algorithm, creating a good combination to further reduce bandwidth needs while still staying lossless and keeping CPU usage low.
+
 
 ### Building
 Refer to the [building instructions for my example plugin](https://github.com/YorVeX/ObsCSharpExample#building), they will also apply here.
