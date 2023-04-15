@@ -6,6 +6,7 @@ using System.Buffers.Binary;
 using System.IO.Pipelines;
 using System.IO.Pipes;
 using System.Net.Sockets;
+using K4os.Compression.LZ4;
 
 namespace xObsBeam;
 
@@ -292,16 +293,25 @@ public class BeamReceiver
               _width = videoHeader.Width;
               _height = videoHeader.Height;
             }
-            
-            if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
+
+            var frame = new Beam.BeamVideoData(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray());
+            if ((videoHeader.Compression == Beam.CompressionTypes.Lz4) || (videoHeader.Compression == Beam.CompressionTypes.QoiLz4))
             {
-              var frame = new Beam.BeamVideoData(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray());
-              //TODO: QOI: just as for QOI encoding use an ArrayPool<byte> buffer as the target, the challenge is to pre-reserve the right size that is only known after the first packet is received and the raw data size is known
-              frame.Data = Qoi.Decode(frame.Data, (videoHeader.Width * videoHeader.Height * 4));
-              OnVideoFrameReceived(frame);
+              int lz4TargetBufferSize = 0;
+              if (videoHeader.Compression == Beam.CompressionTypes.QoiLz4)
+                lz4TargetBufferSize = videoHeader.QoiDataSize;
+              else
+                lz4TargetBufferSize = (int)(videoHeader.Width * videoHeader.Height * 4);
+
+              byte[] lz4TargetBuffer = new byte[lz4TargetBufferSize]; //TODO: LZ4: just as for compression use an ArrayPool<byte> buffer as the target, the challenge is to pre-reserve the right size that is only known after the first packet is received
+              int decompressedSize = LZ4Codec.Decode(frame.Data, 0, videoHeader.DataSize, lz4TargetBuffer, 0, lz4TargetBufferSize);
+              frame.Data = lz4TargetBuffer;
+              if (decompressedSize != lz4TargetBufferSize)
+                Module.Log($"LZ4 decompression failed, expected {lz4TargetBuffer.Length} bytes, got {decompressedSize} bytes.", ObsLogLevel.Error);
             }
-            else
-              OnVideoFrameReceived(new Beam.BeamVideoData(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray()));
+            if ((videoHeader.Compression == Beam.CompressionTypes.Qoi) || (videoHeader.Compression == Beam.CompressionTypes.QoiLz4))
+              frame.Data = Qoi.Decode(frame.Data, (videoHeader.Width * videoHeader.Height * 4)); //TODO: QOI: just as for compression use an ArrayPool<byte> buffer as the target, the challenge is to pre-reserve the right size that is only known after the first packet is received
+            OnVideoFrameReceived(frame);
 
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(videoHeader.DataSize), readResult.Buffer.End);
