@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using K4os.Compression.LZ4;
 using ObsInterop;
 
@@ -266,6 +267,7 @@ public class BeamSender
     }
   }
 
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
   private unsafe void sendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataQoi, byte[]? encodedDataLz4, bool blockOnFrameQueueLimitReached)
   {
     try
