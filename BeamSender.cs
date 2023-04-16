@@ -38,6 +38,7 @@ public class BeamSender
   bool _qoiCompression = false;
   int _qoiSkipEveryXFrame = 0;
   bool _lz4Compression = false;
+  bool _lz4CompressionSyncQoiSkips = true;
   LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
   bool _compressionThreadingSync = true;
 
@@ -72,6 +73,7 @@ public class BeamSender
     _lz4Compression = SettingsDialog.Lz4Compression;
     _lz4CompressionLevel = SettingsDialog.Lz4CompressionLevel;
     _compressionThreadingSync = SettingsDialog.CompressionMainThread;
+    _lz4CompressionSyncQoiSkips = SettingsDialog.Lz4CompressionSyncQoiSkips;
 
     // QOI's theoretical max size for BGRA is 5x the size of the original image
     if (_qoiCompression)
@@ -358,7 +360,9 @@ public class BeamSender
     // prepare compression buffers
     byte[]? encodedDataLz4 = null;
     byte[]? encodedDataQoi = null;
-    if (_qoiCompression && (_qoiFrameCycle != _qoiSkipEveryXFrame))
+    bool skipQoiFrame = (_qoiFrameCycle == _qoiSkipEveryXFrame);
+    bool skipLz4Frame = (_lz4CompressionSyncQoiSkips && skipQoiFrame);
+    if (_qoiCompression && !skipQoiFrame)
       encodedDataQoi = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
     if (_qoiSkipEveryXFrame > 0) // is QOI frame skipping enabled?
     {
@@ -366,7 +370,7 @@ public class BeamSender
       if (_qoiFrameCycle > _qoiSkipEveryXFrame)
         _qoiFrameCycle = 1;
     }
-    if (_lz4Compression)
+    if (_lz4Compression && !skipLz4Frame)
       encodedDataLz4 = _lz4VideoDataPool!.Rent(_lz4VideoDataPoolMaxSize);
 
     if (_compressionThreadingSync)
