@@ -61,7 +61,57 @@ If it's just that little bit of extra bandwidth that you lack to get it working,
 ## Usage
 Install the same version of the plugin (different versions are never guaranteed to be compatible to each other) into all OBS instances that you want to transmit video/audio feeds between.
 
-### Sender
+### Installation
+Before installing make sure that OBS is not running.
+
+<details>
+<summary>🟦 Windows</summary>
+
+Open an Explorer window and into the address bar paste this and press enter:
+
+`%APPDATA%\obs-studio`
+
+This will redirect to a location like C:\Users\<YourWindowsUsername>\AppData\Roaming\obs-studio. Extract the files from the downloaded .7z file to this folder (= copy the contained obs-plugins and data folders to it). This will install the plugin for the current Windows user.
+
+If you need to install the plugin for all users on the system you can also extract the downloaded .7z file (= copy the contained obs-plugins and data folders) into the OBS Studio installation directory. The default location for this is
+
+`C:\Program Files\obs-studio`
+
+This needs admin permissions.
+
+</details>
+
+<details>
+<summary>🐧 Linux</summary>
+
+The folder structure in the downloaded .7z file is prepared so that you can extract the file (= copy the contained files) into your user home and on many systems this will just work already.
+
+However, depending on the distribution and OBS installation method (manual, distro repo, snap, flatpak...) the location of this folder can vary, so if it doesn't work from the user home you might have to look around a bit.
+
+Example locations for the plugin .so (and .so.dbg) file are:
+
+- `~/.config/obs-studio/plugins/` (The structure the .7z is prepared for)
+- `/usr/lib/obs-plugins/`
+- `/usr/lib/x86_64-linux-gnu/obs-plugins/`
+- `/usr/share/obs/obs-plugins/`
+- `~/.local/share/flatpak/app/com.obsproject.Studio/x86_64/stable/active/files/lib/obs-plugins/`
+- `/var/lib/flatpak/app/com.obsproject.Studio/x86_64/stable/active/files/lib/obs-plugins/`
+
+Unfortunately the expected location of the locale, which can be found in the data folder, can vary also.
+
+If you get missing locale errors from the plugin you can try to copy the "locale" folder found inside the data folder to:
+
+- `/usr/share/obs/obs-plugins/<plugin name>/locale`
+- `~/.local/share/flatpak/app/com.obsproject.Studio/x86_64/stable/active/files/share/obs/obs-plugins/<plugin name>/locale`
+- `/var/lib/flatpak/app/com.obsproject.Studio/x86_64/stable/active/files/share/obs/obs-plugins/<plugin name>/locale`
+
+If in doubt, please check where other "en-US.ini" files are located on your system.
+
+</details>
+
+The steps to update an older version of the plugin to a newer version are the same, except that during file extraction you need to confirm overwriting existing files in addition.
+
+### Sender configuration
 One OBS instance will be the sender, on this instance go to the OBS main menu and select Tools -> Beam.
 
 ![image](https://user-images.githubusercontent.com/528974/229874785-8a504ebf-a743-4714-8acd-39651784d1c9.png)
@@ -76,7 +126,7 @@ Note that as soon as the output is active your resource usage from OBS will go u
 
 An output is currently the only way to send data. A filter based sender solution to send only the data of a single source might be added to xObsBeam as a new feature later.
 
-### Receiver
+### Receiver configuration
 At least one OBS instance will be the receiver (multiple receivers can connect to a sender), on a receiver instance add a new source of type Beam.
 
 ![image](https://user-images.githubusercontent.com/528974/229876072-47b20f3b-bac9-4b5d-ba99-8738aa43a14d.png)
