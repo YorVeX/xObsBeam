@@ -135,14 +135,12 @@ class Qoi
     return writeIndex;
   }
 
-  public static byte[] Decode(ReadOnlySpan<byte> input, long outSize)
+  public static void Decode(ReadOnlySpan<byte> input, long inSize, byte[] output, long outSize)
   {
     var inCursor = 0;
 
-    var output = new byte[outSize];
-
     var run = 0;
-    var chunksLen = input.Length - PaddingLength;
+    var chunksLen = inSize - PaddingLength;
 
     Pixel pixel = default;
     pixel.A = 255;
@@ -154,9 +152,7 @@ class Qoi
       for (var outCursor = 0; outCursor < outSize; outCursor += 4)
       {
         if (run > 0)
-        {
           run--;
-        }
         else if (inCursor < chunksLen)
         {
           int b1 = input[inCursor++];
@@ -194,9 +190,7 @@ class Qoi
             pixel.B += (byte)(vg - 8 + (b2 & 0x0f));
           }
           else if ((b1 & QOI_MASK_2) == QOI_OP_RUN)
-          {
             run = b1 & 0x3f;
-          }
 
           seenBuffer[pixelHash(pixel) % 64] = pixel;
         }
@@ -207,8 +201,6 @@ class Qoi
         output[outCursor + 3] = pixel.A;
       }
     }
-
-    return output;
   }
 
 

@@ -364,6 +364,7 @@ public class Source
       }
       Obs.obs_source_output_video(context->Source, context->Video);
     }
+    this.BeamReceiver.RawDataBufferPool.Return(videoFrame.Data);
     return Task.CompletedTask;
   }
   private unsafe Task AudioFrameReceivedEventHandler(object? sender, Beam.BeamAudioData audioFrame)

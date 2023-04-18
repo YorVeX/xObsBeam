@@ -20,7 +20,13 @@ public class BeamReceiver
   string _pipeName = "";
   bool _isConnecting = false;
   bool _isConnected = false;
+  ArrayPool<byte> _rawDataBufferPool = ArrayPool<byte>.Create();
 
+  public ArrayPool<byte> RawDataBufferPool
+  {
+    get => _rawDataBufferPool;
+  }
+  
   uint _width;
   public uint Width
   {
@@ -239,6 +245,20 @@ public class BeamReceiver
     ulong lastVideoTimestamp = 0;
     ulong lastAudioTimestamp = 0;
 
+    int maxVideoDataSize = 0;
+    byte[] receivedFrameData = Array.Empty<byte>();
+    byte[] lz4DecompressBuffer = Array.Empty<byte>();
+
+    lock (_sizeLock)
+    {
+      if ((_width > 0) && (_height > 0)) // could still be set from a previous run, in this case use this information to initialize the buffers already
+      {
+        maxVideoDataSize = (int)(_width * _height * 4);
+        receivedFrameData = new byte[maxVideoDataSize];
+        lz4DecompressBuffer = new byte[maxVideoDataSize];
+      }
+    }
+
     while (!cancellationToken.IsCancellationRequested)
     {
       try
@@ -288,30 +308,53 @@ public class BeamReceiver
               break;
             }
 
+            bool sizeChanged = false;
             lock (_sizeLock)
             {
+              sizeChanged = ((_width != videoHeader.Width) || (_height != videoHeader.Height));
               _width = videoHeader.Width;
               _height = videoHeader.Height;
             }
-
-            var frame = new Beam.BeamVideoData(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray());
-            if ((videoHeader.Compression == Beam.CompressionTypes.Lz4) || (videoHeader.Compression == Beam.CompressionTypes.QoiLz4))
+            if (sizeChanged) // re-allocate the arrays matching the new necessary size
             {
-              int lz4TargetBufferSize = 0;
-              if (videoHeader.Compression == Beam.CompressionTypes.QoiLz4)
-                lz4TargetBufferSize = videoHeader.QoiDataSize;
-              else
-                lz4TargetBufferSize = (int)(videoHeader.Width * videoHeader.Height * 4);
-
-              byte[] lz4TargetBuffer = new byte[lz4TargetBufferSize]; //TODO: LZ4: just as for compression use an ArrayPool<byte> buffer as the target, the challenge is to pre-reserve the right size that is only known after the first packet is received
-              int decompressedSize = LZ4Codec.Decode(frame.Data, 0, videoHeader.DataSize, lz4TargetBuffer, 0, lz4TargetBufferSize);
-              frame.Data = lz4TargetBuffer;
-              if (decompressedSize != lz4TargetBufferSize)
-                Module.Log($"LZ4 decompression failed, expected {lz4TargetBuffer.Length} bytes, got {decompressedSize} bytes.", ObsLogLevel.Error);
+              maxVideoDataSize = (int)(videoHeader.Width * videoHeader.Height * 4);
+              receivedFrameData = new byte[maxVideoDataSize];
+              lz4DecompressBuffer = new byte[maxVideoDataSize];
+              _rawDataBufferPool = ArrayPool<byte>.Create(maxVideoDataSize, 2); // in ideal case one that is still being processed by the async event handler and another one that is used here
             }
-            if ((videoHeader.Compression == Beam.CompressionTypes.Qoi) || (videoHeader.Compression == Beam.CompressionTypes.QoiLz4))
-              frame.Data = Qoi.Decode(frame.Data, (videoHeader.Width * videoHeader.Height * 4)); //TODO: QOI: just as for compression use an ArrayPool<byte> buffer as the target, the challenge is to pre-reserve the right size that is only known after the first packet is received
-            OnVideoFrameReceived(frame);
+
+            var rawDataBuffer = _rawDataBufferPool.Rent(maxVideoDataSize);
+            if (videoHeader.Compression == Beam.CompressionTypes.None)
+              readResult.Buffer.Slice(0, videoHeader.DataSize).CopyTo(rawDataBuffer);
+            else
+            {
+              readResult.Buffer.Slice(0, videoHeader.DataSize).CopyTo(receivedFrameData);
+
+              // need to decompress both LZ4 and QOI
+              if (videoHeader.Compression == Beam.CompressionTypes.QoiLz4)
+              {
+                // decompress LZ4 first
+                int decompressedSize = LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, lz4DecompressBuffer, 0, videoHeader.QoiDataSize);
+                if (decompressedSize != videoHeader.QoiDataSize)
+                  Module.Log($"LZ4 decompression failed, expected {videoHeader.QoiDataSize} bytes (QOI), got {decompressedSize} bytes.", ObsLogLevel.Error);
+
+                // now decompress QOI
+                Qoi.Decode(lz4DecompressBuffer, videoHeader.QoiDataSize, rawDataBuffer, maxVideoDataSize);
+
+              }
+              // need to decompress LZ4 only
+              else if (videoHeader.Compression == Beam.CompressionTypes.Lz4)
+              {
+                int decompressedSize = LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, rawDataBuffer, 0, maxVideoDataSize);
+                if (decompressedSize != maxVideoDataSize)
+                  Module.Log($"LZ4 decompression failed, expected {maxVideoDataSize} bytes, got {decompressedSize} bytes.", ObsLogLevel.Error);
+              }
+              // need to decompress QOI only
+              else if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
+                Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
+            }
+
+            OnVideoFrameReceived(new Beam.BeamVideoData(videoHeader, rawDataBuffer));
 
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(videoHeader.DataSize), readResult.Buffer.End);
