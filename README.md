@@ -124,6 +124,8 @@ It doesn't seem reasonable to ever use higher LZ4 compression levels than FAST b
 
 For the "Compress from OBS render thread" option the rule of thumb would be to leave it enabled as long as you're not dropping frames in any of the OBS instances, if you do, then disable that option (will be more likely to be necessary the higher the compression level you pick).
 
+In any case I would be happy about reports of your experimentation results in the OBS forum.
+
 ![image](https://user-images.githubusercontent.com/528974/231322501-9bcd3efe-dde1-4d71-944e-7046f246fec4.png)
 
 Check the "Enable Beam output" box if you want your output to be active now. Press OK to save the settings.
