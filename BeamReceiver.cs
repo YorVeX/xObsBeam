@@ -12,6 +12,8 @@ namespace xObsBeam;
 
 public class BeamReceiver
 {
+  public const int HighQueueSizeWarning = 5;
+
   CancellationTokenSource _cancellationSource = new CancellationTokenSource();
   Task _processDataLoopTask = Task.CompletedTask;
   object _sizeLock = new object();
@@ -26,7 +28,7 @@ public class BeamReceiver
   {
     get => _rawDataBufferPool;
   }
-  
+
   uint _width;
   public uint Width
   {
@@ -241,7 +243,7 @@ public class BeamReceiver
 
     Dictionary<ulong, Beam.BeamVideoData> videoDataCache = new Dictionary<ulong, Beam.BeamVideoData>();
     Queue<ulong> videoDataCacheOrder = new Queue<ulong>();
-      
+
     uint fps = 30;
     uint logCycle = 0;
 
@@ -375,7 +377,7 @@ public class BeamReceiver
                   Module.Log("processDataLoopAsync() exit from sending through completion.", ObsLogLevel.Debug);
                 break;
               }
-              
+
               // process the frame
               OnVideoFrameReceived(beamVideoData);
               if (videoDataCacheOrder.Count > 0)
@@ -385,6 +387,8 @@ public class BeamReceiver
             {
               videoDataCache.Add(videoHeader.Timestamp, beamVideoData);
               Module.Log($"Video data: Received frame {videoHeader.Timestamp} out of order, queued ({videoDataCache.Count}).", ObsLogLevel.Debug);
+              if (videoDataCacheOrder.Count >= HighQueueSizeWarning) // queue getting full?
+                Module.Log($"Warning: Receive queue size {videoDataCacheOrder.Count} at video frame {videoHeader.Timestamp}.", ObsLogLevel.Warning);
             }
 
             // check if there are more frames in the cache that can be processed now that the current frame is out of the way
@@ -394,7 +398,7 @@ public class BeamReceiver
               Module.Log($"Video data: Processing frame {beamVideoData.Header.Timestamp} from cache ({videoDataCache.Count}).", ObsLogLevel.Debug);
               videoDataCache.Remove(beamVideoData.Header.Timestamp);
               OnVideoFrameReceived(beamVideoData);
-              
+
               // tell the sender the cached frame timestamp that is processed
               var timestampBuffer = pipeWriter.GetMemory(8);
               BinaryPrimitives.WriteUInt64LittleEndian(timestampBuffer.Span, videoHeader.Timestamp);

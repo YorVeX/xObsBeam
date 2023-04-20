@@ -64,12 +64,12 @@ public static class Output
     else if (!IsActive)
     {
       Module.Log("Starting output...");
-      
+
       // recreate output, otherwise OBS settings changes like resolution will lead to a crash upon output start
       Obs.obs_output_release(_outputData.Output);
       fixed (byte* id = "Beam Output"u8)
         Obs.obs_output_create((sbyte*)id, (sbyte*)id, null, null);
-      
+
       Obs.obs_output_start(_outputData.Output);
       Module.Log("Output started.");
     }
@@ -87,7 +87,7 @@ public static class Output
     else
       Module.Log("Output not stopped, wasn't running.");
   }
-  
+
   public static unsafe void Dispose()
   {
     Obs.obs_output_release(_outputData.Output);
@@ -136,7 +136,7 @@ public static class Output
 
     if (!Convert.ToBoolean(Obs.obs_output_can_begin_data_capture(_outputData.Output, ObsOutput.OBS_OUTPUT_AV)))
       return Convert.ToByte(false);
-    
+
     // QOI can only work with BGRA format, force this on the output if QOI is enabled
     //FIXME: this doesn't work, apparently the BGRA output we get from obs_output_get_video_conversion() differs from the one that we get when globally setting the output format to BGRA
     // leads to a flickering feed of a frozen frame mixed with full green frames

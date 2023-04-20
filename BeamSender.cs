@@ -385,7 +385,7 @@ public class BeamSender
       var videoInfo = new Beam.BeamVideoInfo(_videoInfoHeader, timestamp);
       foreach (var client in _clients.Values)
         client.EnqueueVideoInfo(timestamp, videoInfo);
-      
+
       // will not run in sync with this OBS render thread, need a copy of the unmanaged data array
       var managedDataCopy = new ReadOnlySpan<byte>(data, _videoDataSize).ToArray();
       var beamVideoData = new Beam.BeamVideoData(_videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
