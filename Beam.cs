@@ -141,15 +141,29 @@ public class Beam
 
   public interface IBeamData
   {
-    Type Type { get; }
+    Type Type { get; set; }
+    ulong Timestamp { get; }
+  }
+
+  public struct BeamVideoInfo : IBeamData
+  {
+    public Type Type { get; set; } = Type.VideoInfo;
+    public readonly VideoHeader Header;
+    public readonly ulong Timestamp { get; }
+
+    public BeamVideoInfo(VideoHeader header, ulong timestamp)
+    {
+      Header = header;
+      Timestamp = timestamp;
+    }
   }
 
   public struct BeamVideoData : IBeamData
   {
-    public Type Type { get; } = Type.Video;
-    public VideoHeader Header;
-    public byte[] Data;
-    public ulong Timestamp;
+    public Type Type { get; set; } = Type.Video;
+    public readonly VideoHeader Header;
+    public readonly byte[] Data;
+    public readonly ulong Timestamp { get; }
 
     public BeamVideoData(VideoHeader header, byte[] data)
     {
@@ -167,10 +181,10 @@ public class Beam
 
   public struct BeamAudioData : IBeamData
   {
-    public Type Type { get; } = Type.Audio;
-    public AudioHeader Header;
-    public byte[] Data;
-    public ulong Timestamp;
+    public Type Type { get; set; } = Type.Audio;
+    public readonly AudioHeader Header;
+    public readonly byte[] Data;
+    public readonly ulong Timestamp { get; }
 
     public BeamAudioData(AudioHeader header, byte[] data)
     {
@@ -188,8 +202,10 @@ public class Beam
 
   public enum Type : uint
   {
-    Video = 0,
-    Audio = 1
+    Undefined = 0,
+    VideoInfo = 1,
+    Video = 2,
+    Audio = 3
   }
 
 
@@ -273,7 +289,7 @@ public class Beam
       Timestamp = (ulong)timestamp;
 
       // log the values that have been read
-      // Module.Log($"Video DataSize: {DataSize}, Width: {Width}, Height: {Height}, Linesize: {Linesize}, Format: {Format}, Range: {Range}, Rimestamp: {Timestamp}", ObsLogLevel.Debug);
+      // Module.Log($"Video Type: {Type}, Compression: {Compression}, DataSize: {DataSize}, QoiDataSize: {QoiDataSize}, Width: {Width}, Height: {Height}, FPS: {Fps}, Format: {Format}, Range: {Range}, Colorspace: {Colorspace}, Timestamp: {Timestamp}", ObsLogLevel.Debug);
 
       return reader.Position;
     }

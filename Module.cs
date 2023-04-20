@@ -31,7 +31,7 @@ public static class Module
   {
     if (DebugLog && (logLevel == ObsLogLevel.Debug))
       logLevel = ObsLogLevel.Info;
-    // need to escape %, otherwise they are treated as format items, but since we provide null as arguments list this crashes OBS
+    // need to escape %, otherwise they are treated as format items
     fixed (byte* logMessagePtr = Encoding.UTF8.GetBytes("[" + ModuleName + "] " + text.Replace("%", "%%")))
       ObsBase.blog((int)logLevel, (sbyte*)logMessagePtr);
   }

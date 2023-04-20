@@ -180,7 +180,35 @@ class BeamSenderClient
             break;
           if (_frameQueue.TryDequeue(out var frame))
           {
-            if (frame is Beam.BeamVideoData videoFrame)
+            if (frame is Beam.BeamVideoInfo videoInfo)
+            {
+              // write video info
+              try
+              {
+                var headerBytes = videoInfo.Header.WriteTo(pipeWriter.GetMemory(Beam.VideoHeader.VideoHeaderDataSize).Span, videoInfo.Timestamp);
+                pipeWriter.Advance(headerBytes);
+                totalBytes += (ulong)headerBytes;
+              }
+              catch (OperationCanceledException ex)
+              {
+                // happens when cancellation token is signalled
+                Module.Log($"<{_clientId}> sendLoopAsync() exit through {ex.GetType().Name}.", ObsLogLevel.Debug);
+                break;
+              }
+              catch (IOException ex)
+              {
+                // happens when the receiver closes the connection
+                Module.Log($"<{_clientId}> Lost connection to receiver ({ex.GetType().Name}) while trying to send video info.", ObsLogLevel.Error);
+                pipeWriterComplete = false; // this would internally try to flush and by this throw another exception
+                break;
+              }
+              catch (System.Exception ex)
+              {
+                Module.Log($"<{_clientId}> sendLoopAsync(): {ex.GetType().Name} sending video info: {ex.Message}", ObsLogLevel.Error);
+                break;
+              }
+            }
+            else if (frame is Beam.BeamVideoData videoFrame)
             {
               Interlocked.Decrement(ref _videoFrameCount);
 
@@ -318,7 +346,13 @@ class BeamSenderClient
     }
   }
 
-  public unsafe void Enqueue(ulong timestamp, Beam.VideoHeader videoHeader, byte[] videoData, bool blockOnFrameQueueLimitReached)
+  public unsafe void EnqueueVideoInfo(ulong timestamp, Beam.IBeamData videoInfo)
+  {
+    _frameQueue.Enqueue(videoInfo);
+    _frameAvailable.Set();
+  }
+
+  public unsafe void EnqueueVideoFrame(ulong timestamp, Beam.VideoHeader videoHeader, byte[] videoData, bool blockOnFrameQueueLimitReached)
   {
     long videoFrameCount = Interlocked.Read(ref _videoFrameCount);
     if (videoFrameCount > 5)
@@ -348,7 +382,7 @@ class BeamSenderClient
     _frameAvailable.Set();
   }
 
-  public unsafe void Enqueue(ulong timestamp, Beam.VideoHeader videoHeader, byte* videoData, bool blockOnFrameQueueLimitReached)
+  public unsafe void EnqueueVideoFrame(ulong timestamp, Beam.VideoHeader videoHeader, byte* videoData, bool blockOnFrameQueueLimitReached)
   {
     long videoFrameCount = Interlocked.Read(ref _videoFrameCount);
     if (videoFrameCount > 5)
@@ -378,7 +412,7 @@ class BeamSenderClient
     _frameAvailable.Set();
   }
 
-  public unsafe void Enqueue(ulong timestamp, byte* audioData, int speakers, int audioBytesPerSample)
+  public unsafe void EnqueueAudio(ulong timestamp, byte* audioData, int speakers, int audioBytesPerSample)
   {
     long videoFrameCount = Interlocked.Read(ref _videoFrameCount);
     if (videoFrameCount > BeamSender.MaxFrameQueueSize)

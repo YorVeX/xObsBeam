@@ -237,8 +237,11 @@ public class BeamReceiver
     var videoHeader = new Beam.VideoHeader();
     var audioHeader = new Beam.AudioHeader();
 
-    int biggestHeaderSize = Math.Max(Beam.VideoHeader.VideoHeaderDataSize, Beam.AudioHeader.AudioHeaderDataSize);
+    int videoHeaderSize = Beam.VideoHeader.VideoHeaderDataSize;
 
+    Dictionary<ulong, Beam.BeamVideoData> videoDataCache = new Dictionary<ulong, Beam.BeamVideoData>();
+    Queue<ulong> videoDataCacheOrder = new Queue<ulong>();
+      
     uint fps = 30;
     uint logCycle = 0;
 
@@ -263,7 +266,7 @@ public class BeamReceiver
     {
       try
       {
-        ReadResult readResult = await pipeReader.ReadAtLeastAsync(biggestHeaderSize, cancellationToken);
+        ReadResult readResult = await pipeReader.ReadAtLeastAsync(videoHeaderSize, cancellationToken);
         if (readResult.IsCanceled || (readResult.Buffer.IsEmpty && readResult.IsCompleted))
         {
           if (readResult.IsCanceled)
@@ -274,8 +277,12 @@ public class BeamReceiver
         }
 
         var beamType = Beam.GetBeamType(readResult.Buffer);
-
-        if (beamType == Beam.Type.Video)
+        if (beamType == Beam.Type.VideoInfo)
+        {
+          pipeReader.AdvanceTo(videoHeader.FromSequence(readResult.Buffer), readResult.Buffer.End);
+          videoDataCacheOrder.Enqueue(videoHeader.Timestamp); // remember the order of the video frames
+        }
+        else if (beamType == Beam.Type.Video)
         {
           // read and validate header information
           pipeReader.AdvanceTo(videoHeader.FromSequence(readResult.Buffer), readResult.Buffer.End);
@@ -287,8 +294,6 @@ public class BeamReceiver
             Module.Log($"Video data: Received header {videoHeader.Timestamp}, diff: {headerDiff}", ObsLogLevel.Debug);
           if (videoHeader.Timestamp > lastVideoTimestamp)
             lastVideoTimestamp = videoHeader.Timestamp;
-          else
-            Module.Log($"Video data: Received frame {videoHeader.Timestamp} out of order, expected > {lastVideoTimestamp}.", ObsLogLevel.Warning);
           if (videoHeader.DataSize <= 0)
           {
             Module.Log($"Video data: Header reports invalid data size of {videoHeader.DataSize} bytes, aborting connection.", ObsLogLevel.Error);
@@ -354,24 +359,59 @@ public class BeamReceiver
                 Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
             }
 
-            OnVideoFrameReceived(new Beam.BeamVideoData(videoHeader, rawDataBuffer));
+            var beamVideoData = new Beam.BeamVideoData(videoHeader, rawDataBuffer);
+            if ((videoDataCacheOrder.Count == 0) || videoHeader.Timestamp == videoDataCacheOrder.Peek())
+            {
+              // tell the sender the current frame timestamp that is processed
+              var timestampBuffer = pipeWriter.GetMemory(8);
+              BinaryPrimitives.WriteUInt64LittleEndian(timestampBuffer.Span, videoHeader.Timestamp);
+              pipeWriter.Advance(8);
+              var writeResult = await pipeWriter.FlushAsync(cancellationToken);
+              if (writeResult.IsCanceled || writeResult.IsCompleted)
+              {
+                if (writeResult.IsCanceled)
+                  Module.Log("processDataLoopAsync() exit from sending through cancellation.", ObsLogLevel.Debug);
+                else
+                  Module.Log("processDataLoopAsync() exit from sending through completion.", ObsLogLevel.Debug);
+                break;
+              }
+              
+              // process the frame
+              OnVideoFrameReceived(beamVideoData);
+              if (videoDataCacheOrder.Count > 0)
+                videoDataCacheOrder.Dequeue();
+            }
+            else // the frame that was just received is not the next one to be displayed, so cache it
+            {
+              videoDataCache.Add(videoHeader.Timestamp, beamVideoData);
+              Module.Log($"Video data: Received frame {videoHeader.Timestamp} out of order, queued ({videoDataCache.Count}).", ObsLogLevel.Debug);
+            }
+
+            // check if there are more frames in the cache that can be processed now that the current frame is out of the way
+            while ((videoDataCacheOrder.Count > 0) && videoDataCache.ContainsKey(videoDataCacheOrder.Peek()))
+            {
+              beamVideoData = videoDataCache[videoDataCacheOrder.Dequeue()];
+              Module.Log($"Video data: Processing frame {beamVideoData.Header.Timestamp} from cache ({videoDataCache.Count}).", ObsLogLevel.Debug);
+              videoDataCache.Remove(beamVideoData.Header.Timestamp);
+              OnVideoFrameReceived(beamVideoData);
+              
+              // tell the sender the cached frame timestamp that is processed
+              var timestampBuffer = pipeWriter.GetMemory(8);
+              BinaryPrimitives.WriteUInt64LittleEndian(timestampBuffer.Span, videoHeader.Timestamp);
+              pipeWriter.Advance(8);
+              var writeResult = await pipeWriter.FlushAsync(cancellationToken);
+              if (writeResult.IsCanceled || writeResult.IsCompleted)
+              {
+                if (writeResult.IsCanceled)
+                  Module.Log("processDataLoopAsync() exit from sending through cancellation.", ObsLogLevel.Debug);
+                else
+                  Module.Log("processDataLoopAsync() exit from sending through completion.", ObsLogLevel.Debug);
+                break;
+              }
+            }
 
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(videoHeader.DataSize), readResult.Buffer.End);
-
-            // tell the sender the current video timestamp that was received
-            var timestampBuffer = pipeWriter.GetMemory(8);
-            BinaryPrimitives.WriteUInt64LittleEndian(timestampBuffer.Span, videoHeader.Timestamp);
-            pipeWriter.Advance(8);
-            var writeResult = await pipeWriter.FlushAsync(cancellationToken);
-            if (writeResult.IsCanceled || writeResult.IsCompleted)
-            {
-              if (writeResult.IsCanceled)
-                Module.Log("processDataLoopAsync() exit from sending through cancellation.", ObsLogLevel.Debug);
-              else
-                Module.Log("processDataLoopAsync() exit from sending through completion.", ObsLogLevel.Debug);
-              break;
-            }
 
             if (logCycle >= fps)
               Module.Log($"Video data: Expected {videoHeader.DataSize} bytes, received {receiveLength} bytes", ObsLogLevel.Debug);
@@ -438,7 +478,7 @@ public class BeamReceiver
         }
         else
         {
-          Module.Log($"Received unknown header type, aborting connection.", ObsLogLevel.Error);
+          Module.Log($"Received unknown header type ({beamType}), aborting connection.", ObsLogLevel.Error);
           break;
         }
       }
