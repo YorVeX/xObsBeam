@@ -29,7 +29,6 @@ public class BeamSender
   int _lz4VideoDataPoolMaxSize = 0;
   int _qoiFrameCycle = 1;
   Beam.VideoHeader _videoHeader;
-  Beam.VideoHeader _videoInfoHeader;
   Beam.AudioHeader _audioHeader;
   int _videoDataSize = 0;
   int _audioDataSize = 0;
@@ -68,9 +67,6 @@ public class BeamSender
       Range = info->range,
       Colorspace = info->colorspace,
     };
-
-    _videoInfoHeader = _videoHeader;
-    _videoInfoHeader.Type = Beam.Type.VideoInfo;
 
     // cache settings values
     _qoiCompression = SettingsDialog.QoiCompression;
@@ -261,7 +257,7 @@ public class BeamSender
       Module.Log($"Stopping BeamSender...", ObsLogLevel.Debug);
       _listenCancellationSource.Cancel();
       foreach (var client in _clients.Values)
-        client.Disconnect();
+        client.Disconnect(); // this will block for up to 1000 ms per client to try and get a clean disconnect
       _videoDataSize = 0;
       _audioDataSize = 0;
 
@@ -274,7 +270,7 @@ public class BeamSender
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private unsafe void sendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataQoi, byte[]? encodedDataLz4, bool blockOnFrameQueueLimitReached)
+  private unsafe void sendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataQoi, byte[]? encodedDataLz4)
   {
     try
     {
@@ -319,16 +315,16 @@ public class BeamSender
       {
         case Beam.CompressionTypes.Qoi:
           foreach (var client in _clients.Values)
-            client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataQoi!, blockOnFrameQueueLimitReached);
+            client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataQoi!);
           break;
         case Beam.CompressionTypes.Lz4:
         case Beam.CompressionTypes.QoiLz4:
           foreach (var client in _clients.Values)
-            client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataLz4!, blockOnFrameQueueLimitReached);
+            client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataLz4!);
           break;
         default:
           foreach (var client in _clients.Values)
-            client.EnqueueVideoFrame(timestamp, videoHeader, rawData, blockOnFrameQueueLimitReached);
+            client.EnqueueVideoFrame(timestamp, videoHeader, rawData);
           break;
       }
 
@@ -353,11 +349,15 @@ public class BeamSender
     if (_clients.Count == 0)
       return;
 
+    // make sure clients know the order of the frames, needs to be done here in a sync context
+    foreach (var client in _clients.Values)
+      client.EnqueueVideoTimestamp(timestamp);
+
     // no compression of any kind, just enqueue the raw data right away from the original unmanaged memory
     if (!_qoiCompression && !_lz4Compression)
     {
       foreach (var client in _clients.Values)
-        client.EnqueueVideoFrame(timestamp, _videoHeader, data, true);
+        client.EnqueueVideoFrame(timestamp, _videoHeader, data);
       return;
     }
 
@@ -378,14 +378,9 @@ public class BeamSender
       encodedDataLz4 = _lz4VideoDataPool!.Rent(_lz4VideoDataPoolMaxSize);
 
     if (_compressionThreadingSync)
-      sendCompressed(timestamp, _videoHeader, data, encodedDataQoi, encodedDataLz4, true); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
+      sendCompressed(timestamp, _videoHeader, data, encodedDataQoi, encodedDataLz4); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
     else
     {
-      // async execution means clients could receive disordered frames, tell the clients the right order of frame timestamps to expect upfront, while still in synchronized context now
-      var videoInfo = new Beam.BeamVideoInfo(_videoInfoHeader, timestamp);
-      foreach (var client in _clients.Values)
-        client.EnqueueVideoInfo(timestamp, videoInfo);
-
       // will not run in sync with this OBS render thread, need a copy of the unmanaged data array
       var managedDataCopy = new ReadOnlySpan<byte>(data, _videoDataSize).ToArray();
       var beamVideoData = new Beam.BeamVideoData(_videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
@@ -393,7 +388,7 @@ public class BeamSender
       {
         var capturedBeamVideoData = (Beam.BeamVideoData)state!;
         fixed (byte* videoData = capturedBeamVideoData.Data)
-          sendCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, encodedDataQoi, encodedDataLz4, false);
+          sendCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, encodedDataQoi, encodedDataLz4);
       }, beamVideoData);
     }
   }

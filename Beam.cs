@@ -137,40 +137,71 @@ public class Beam
     }
     audioDataSize = audioBytesPerSample * (int)speakers * (int)frames;
   }
+
+  public static unsafe BeamVideoData CreateEmptyVideoFrame(ulong timestamp, video_format format, uint height, uint* linesize)
+  {
+    var planeSizes = GetPlaneSizes(format, height, linesize);
+    int videoDataSize = 0;
+    for (int planeIndex = 0; planeIndex < planeSizes.Length; planeIndex++)
+      videoDataSize += (int)planeSizes[planeIndex];
+    var header = new VideoHeader()
+    {
+      Linesize = planeSizes,
+      Format = format,
+      Width = linesize[0],
+      Height = height,
+      Colorspace = video_colorspace.VIDEO_CS_DEFAULT,
+      Range = video_range_type.VIDEO_RANGE_DEFAULT,
+      Timestamp = timestamp,
+      Compression = CompressionTypes.None,
+      Fps = 30,
+      QoiDataSize = 0,
+      DataSize = videoDataSize,
+    };
+    return new BeamVideoData(header, new byte[videoDataSize], timestamp);
+  }
+
+  public static unsafe BeamAudioData CreateEmptyAudioFrame(ulong timestamp, audio_format format, speaker_layout speakers, uint frames, uint sampleRate)
+  {
+    GetAudioDataSize(format, speakers, frames, out int audioDataSize, out _);
+    var header = new AudioHeader()
+    {
+      Format = format,
+      Speakers = speakers,
+      Frames = frames,
+      Timestamp = timestamp,
+      DataSize = audioDataSize,
+      SampleRate = sampleRate,
+    };
+    return new BeamAudioData(header, new byte[audioDataSize], timestamp);
+  }
   #endregion helper methods
 
   public interface IBeamData
   {
     Type Type { get; set; }
     ulong Timestamp { get; }
-  }
-
-  public struct BeamVideoInfo : IBeamData
-  {
-    public Type Type { get; set; } = Type.VideoInfo;
-    public readonly VideoHeader Header;
-    public readonly ulong Timestamp { get; }
-
-    public BeamVideoInfo(VideoHeader header, ulong timestamp)
-    {
-      Header = header;
-      Timestamp = timestamp;
-    }
+    DateTime Created { get; }
   }
 
   public struct BeamVideoData : IBeamData
   {
     public Type Type { get; set; } = Type.Video;
-    public readonly VideoHeader Header;
+    public VideoHeader Header;
     public readonly byte[] Data;
     public readonly ulong Timestamp { get; }
+    public DateTime Created { get; }
 
-    public BeamVideoData(VideoHeader header, byte[] data)
+    // used by receivers
+    public BeamVideoData(VideoHeader header, byte[] data, DateTime created)
     {
       Header = header;
       Data = data;
+      Timestamp = header.Timestamp;
+      Created = created;
     }
 
+    // used by senders
     public BeamVideoData(VideoHeader header, byte[] data, ulong timestamp)
     {
       Header = header;
@@ -182,16 +213,21 @@ public class Beam
   public struct BeamAudioData : IBeamData
   {
     public Type Type { get; set; } = Type.Audio;
-    public readonly AudioHeader Header;
+    public AudioHeader Header;
     public readonly byte[] Data;
     public readonly ulong Timestamp { get; }
+    public DateTime Created { get; }
 
-    public BeamAudioData(AudioHeader header, byte[] data)
+    // used by receivers
+    public BeamAudioData(AudioHeader header, byte[] data, DateTime created)
     {
       Header = header;
       Data = data;
+      Timestamp = header.Timestamp;
+      Created = created;
     }
 
+    // used by senders
     public BeamAudioData(AudioHeader header, byte[] data, ulong timestamp)
     {
       Header = header;
@@ -203,9 +239,8 @@ public class Beam
   public enum Type : uint
   {
     Undefined = 0,
-    VideoInfo = 1,
-    Video = 2,
-    Audio = 3
+    Video = 1,
+    Audio = 2
   }
 
 

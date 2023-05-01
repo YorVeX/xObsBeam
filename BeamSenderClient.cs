@@ -14,7 +14,8 @@ class BeamSenderClient
   Socket? _socket;
   NamedPipeServerStream? _pipeStream;
   Stream? _stream;
-  ConcurrentQueue<Beam.IBeamData> _frameQueue = new ConcurrentQueue<Beam.IBeamData>();
+  ConcurrentQueue<ulong> _frameTimestampQueue = new ConcurrentQueue<ulong>();
+  ConcurrentDictionary<ulong, Beam.IBeamData> _frames = new ConcurrentDictionary<ulong, Beam.IBeamData>();
   AutoResetEvent _frameAvailable = new AutoResetEvent(false);
   long _videoFrameCount = -1;
   long _audioFrameCount = -1;
@@ -60,12 +61,12 @@ class BeamSenderClient
     _ = Task.Run(() => receiveLoopAsync(PipeReader.Create(_stream), _cancellationSource.Token));
   }
 
-  public void Disconnect()
+  public void Disconnect(int blockingTimeout = 1000)
   {
     Module.Log($"<{_clientId}> Disconnecting client...", ObsLogLevel.Info);
     _cancellationSource.Cancel();
     _frameAvailable.Set();
-    if (!_sendLoopExited.WaitOne(1000))
+    if (!_sendLoopExited.WaitOne(blockingTimeout))
       Module.Log($"<{_clientId}> Disconnecting client timed out.", ObsLogLevel.Error);
   }
 
@@ -167,56 +168,50 @@ class BeamSenderClient
         uint frameCycle = 1;
         ulong totalBytes = 0;
         bool pipeWriterComplete = true;
-        _frameQueue.Clear();
+        _frameTimestampQueue.Clear();
+        _frames.Clear();
+
+        var stopwatch = new System.Diagnostics.Stopwatch();
+        long waitTime = 0;
+        long dequeueTime = 0;
+        long sendVideoTime = 0;
+        long sendAudioTime = 0;
 
         Module.Log($"<{_clientId}> sendLoopAsync() started.", ObsLogLevel.Debug);
         Interlocked.Increment(ref _videoFrameCount); // this first increment from -1 to 0 signalizes that the send loop is ready to process the queue
         Interlocked.Increment(ref _audioFrameCount); // this first increment from -1 to 0 signalizes that the send loop is ready to process the queue
         while (!cancellationToken.IsCancellationRequested)
         {
+          stopwatch.Reset();
+          stopwatch.Start();
           // wait for the next signal if the queue is empty right now
           _frameAvailable.WaitOne();
+          // waitTime += (long)stopwatch.Elapsed.TotalNanoseconds;
+          waitTime += stopwatch.ElapsedTicks;
+          stopwatch.Reset();
           if (cancellationToken.IsCancellationRequested)
             break;
-          if (_frameQueue.TryDequeue(out var frame))
+
+          if (_frameTimestampQueue.TryPeek(out var frameTimestamp) && (_frames.TryRemove(frameTimestamp, out var frame))) // is the next queued frame already available?
           {
-            if (frame is Beam.BeamVideoInfo videoInfo)
+            _frameTimestampQueue.TryDequeue(out _);
+            dequeueTime += stopwatch.ElapsedTicks;
+            stopwatch.Reset();
+            stopwatch.Start();
+            if (frame is Beam.BeamVideoData videoFrame)
             {
-              // write video info
-              try
-              {
-                var headerBytes = videoInfo.Header.WriteTo(pipeWriter.GetMemory(Beam.VideoHeader.VideoHeaderDataSize).Span, videoInfo.Timestamp);
-                pipeWriter.Advance(headerBytes);
-                totalBytes += (ulong)headerBytes;
-              }
-              catch (OperationCanceledException ex)
-              {
-                // happens when cancellation token is signalled
-                Module.Log($"<{_clientId}> sendLoopAsync() exit through {ex.GetType().Name}.", ObsLogLevel.Debug);
-                break;
-              }
-              catch (IOException ex)
-              {
-                // happens when the receiver closes the connection
-                Module.Log($"<{_clientId}> Lost connection to receiver ({ex.GetType().Name}) while trying to send video info.", ObsLogLevel.Error);
-                pipeWriterComplete = false; // this would internally try to flush and by this throw another exception
-                break;
-              }
-              catch (System.Exception ex)
-              {
-                Module.Log($"<{_clientId}> sendLoopAsync(): {ex.GetType().Name} sending video info: {ex.Message}", ObsLogLevel.Error);
-                break;
-              }
-            }
-            else if (frame is Beam.BeamVideoData videoFrame)
-            {
-              Interlocked.Decrement(ref _videoFrameCount);
+              var videoFrameCount = Interlocked.Decrement(ref _videoFrameCount);
 
               if ((videoFrame.Header.Fps > 0) && (fps != videoFrame.Header.Fps))
               {
                 totalBytes = 0;
                 frameCycle = 1;
                 fps = videoFrame.Header.Fps;
+
+                waitTime = 0;
+                dequeueTime = 0;
+                sendVideoTime = 0;
+                sendAudioTime = 0;
               }
 
               // write video data
@@ -230,12 +225,22 @@ class BeamSenderClient
                 var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(videoFrame.Data).Slice(0, videoFrame.Header.DataSize), cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
                 _videoDataPool.Return(videoFrame.Data); // return video frame data to the memory pool
 
+                sendVideoTime += stopwatch.ElapsedTicks;
+                stopwatch.Reset();
+                stopwatch.Start();
+
                 totalBytes += (ulong)headerBytes + (ulong)videoFrame.Header.DataSize;
                 if (frameCycle >= fps)
                 {
                   var mBitsPerSecond = (totalBytes * 8) / 1000000;
-                  Module.Log($"<{_clientId}> Sent {headerBytes} + {videoFrame.Header.DataSize} bytes of video data ({mBitsPerSecond} mbps), queue length: {_frameQueue.Count()}", ObsLogLevel.Debug);
+                  Module.Log($"<{_clientId}> Sent {headerBytes} + {videoFrame.Header.DataSize} bytes of video data ({mBitsPerSecond} mbps), queue length: {videoFrameCount} ({_frameTimestampQueue.Count()})", ObsLogLevel.Debug);
                   totalBytes = 0;
+
+                  Module.Log($"<{_clientId}> Time stats: wait {waitTime}, dequeue {dequeueTime}, send video {sendVideoTime}, send audio {sendAudioTime}", ObsLogLevel.Debug);
+                  waitTime = 0;
+                  dequeueTime = 0;
+                  sendVideoTime = 0;
+                  sendAudioTime = 0;
                 }
                 if (writeResult.IsCanceled || writeResult.IsCompleted)
                 {
@@ -283,7 +288,10 @@ class BeamSenderClient
                 var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(audioFrame.Data).Slice(0, audioFrame.Header.DataSize), cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
                 ArrayPool<byte>.Shared.Return(audioFrame.Data); // return audio frame data to the memory pool
                 if (frameCycle >= fps)
-                  Module.Log($"<{_clientId}> Sent {headerBytes} + {audioFrame.Header.DataSize} bytes of audio data, queue length: {audioFrameCount}", ObsLogLevel.Debug);
+                  Module.Log($"<{_clientId}> Sent {headerBytes} + {audioFrame.Header.DataSize} bytes of audio data, queue length: {audioFrameCount} ({_frameTimestampQueue.Count()})", ObsLogLevel.Debug);
+                sendAudioTime += stopwatch.ElapsedTicks;
+                stopwatch.Reset();
+                stopwatch.Start();
                 if (writeResult.IsCanceled || writeResult.IsCompleted)
                 {
                   if (writeResult.IsCanceled)
@@ -312,7 +320,7 @@ class BeamSenderClient
               }
             }
 
-            if (_frameQueue.Count() > 0)
+            if (_frameTimestampQueue.Count() > 0)
               _frameAvailable.Set(); // make sure the send loop continues immediately if there is more data in the queue
           }
         }
@@ -328,7 +336,8 @@ class BeamSenderClient
       Module.Log($"<{_clientId}> sendLoopAsync(): Exiting...", ObsLogLevel.Debug);
       if (!_cancellationSource.IsCancellationRequested) // make sure that also all other loops exit now
         _cancellationSource.Cancel();
-      _frameQueue.Clear();
+      _frameTimestampQueue.Clear();
+      _frames.Clear();
       if (_socket != null)
       {
         _socket.Shutdown(SocketShutdown.Both);
@@ -346,90 +355,84 @@ class BeamSenderClient
     }
   }
 
-  public unsafe void EnqueueVideoInfo(ulong timestamp, Beam.IBeamData videoInfo)
+  public unsafe void EnqueueVideoTimestamp(ulong timestamp)
   {
-    _frameQueue.Enqueue(videoInfo);
-    _frameAvailable.Set();
+    _frameTimestampQueue.Enqueue(timestamp);
   }
 
-  public unsafe void EnqueueVideoFrame(ulong timestamp, Beam.VideoHeader videoHeader, byte[] videoData, bool blockOnFrameQueueLimitReached)
+  public unsafe bool EnqueueVideoFrame(ulong timestamp, Beam.VideoHeader videoHeader, byte[] videoData)
   {
-    long videoFrameCount = Interlocked.Read(ref _videoFrameCount);
-    if (videoFrameCount > 5)
+    long videoFrameCount = Interlocked.Increment(ref _videoFrameCount);
+    if (videoFrameCount > (videoHeader.Fps))
     {
-      if (blockOnFrameQueueLimitReached)
-      {
-        int frameSleepTime = (int)Math.Ceiling((1 / (double)videoHeader.Fps * 1000));
-        Module.Log($"<{_clientId}> Error: Send queue size {videoFrameCount} ({_frameQueue.Count}), skipping video frame {timestamp}.", ObsLogLevel.Error);
-        Module.Log($"<{_clientId}> Blocking the OBS rendering pipeline for {frameSleepTime} ms.", ObsLogLevel.Debug);
-        // intentionally block the OBS rendering pipeline for a full frame, making the skipped/lagged frames visible also in OBS stats so that it becomes transparent to the user
-        Thread.Sleep(frameSleepTime);
-      }
-      return;
+      Module.Log($"<{_clientId}> Error: Max send queue size reached: {videoFrameCount} ({_frameTimestampQueue.Count}).", ObsLogLevel.Error);
+      Disconnect(0);
+      return false;
     }
-    else if (videoFrameCount > 1)
-      Module.Log($"<{_clientId}> Warning: Send queue size {videoFrameCount} ({_frameQueue.Count}) at video frame {timestamp}.", ObsLogLevel.Warning);
-    else if (videoFrameCount < 0)
+    else if (videoFrameCount > (videoHeader.Fps / 2))
     {
-      Module.Log($"<{_clientId}> Send queue not ready at video frame {timestamp}.", ObsLogLevel.Debug);
-      return;
+      videoHeader.DataSize = 0;
+      var emptyFrame = new Beam.BeamVideoData(videoHeader, Array.Empty<byte>(), timestamp);
+      _frames.AddOrUpdate(timestamp, emptyFrame, (key, oldValue) => emptyFrame);
+      Module.Log($"<{_clientId}> Error: Send queue size {videoFrameCount} ({_frameTimestampQueue.Count}), skipping video frame {timestamp}.", ObsLogLevel.Error);
+      return false;
     }
+    else if (videoFrameCount > 2)
+      Module.Log($"<{_clientId}> Warning: Send queue size {videoFrameCount} ({_frameTimestampQueue.Count}) at video frame {timestamp}.", ObsLogLevel.Warning);
 
     Beam.BeamVideoData frame = new Beam.BeamVideoData(videoHeader, _videoDataPool.Rent(videoHeader.DataSize), timestamp);
     videoData.AsSpan<byte>(0, videoHeader.DataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
-    _frameQueue.Enqueue(frame);
-    Interlocked.Increment(ref _videoFrameCount);
+    _frames.AddOrUpdate(timestamp, frame, (key, oldValue) => frame);
     _frameAvailable.Set();
+    return true;
   }
 
-  public unsafe void EnqueueVideoFrame(ulong timestamp, Beam.VideoHeader videoHeader, byte* videoData, bool blockOnFrameQueueLimitReached)
+  public unsafe bool EnqueueVideoFrame(ulong timestamp, Beam.VideoHeader videoHeader, byte* videoData)
   {
-    long videoFrameCount = Interlocked.Read(ref _videoFrameCount);
-    if (videoFrameCount > 5)
+    long videoFrameCount = Interlocked.Increment(ref _videoFrameCount);
+    if (videoFrameCount > (videoHeader.Fps))
     {
-      if (blockOnFrameQueueLimitReached)
-      {
-        int frameSleepTime = (int)Math.Ceiling((1 / (double)videoHeader.Fps * 1000));
-        Module.Log($"<{_clientId}> Error: Send queue size {videoFrameCount} ({_frameQueue.Count}), skipping video frame {timestamp}.", ObsLogLevel.Error);
-        Module.Log($"<{_clientId}> Blocking the OBS rendering pipeline for {frameSleepTime} ms.", ObsLogLevel.Debug);
-        // intentionally block the OBS rendering pipeline for a full frame, making the skipped/lagged frames visible also in OBS stats so that it becomes transparent to the user
-        Thread.Sleep(frameSleepTime);
-      }
-      return;
+      Module.Log($"<{_clientId}> Error: Max send queue size reached: {videoFrameCount} ({_frameTimestampQueue.Count}).", ObsLogLevel.Error);
+      Disconnect(0);
+      return false;
     }
-    else if (videoFrameCount > 1)
-      Module.Log($"<{_clientId}> Warning: Send queue size {videoFrameCount} ({_frameQueue.Count}) at video frame {timestamp}.", ObsLogLevel.Warning);
-    else if (videoFrameCount < 0)
+    else if (videoFrameCount > (videoHeader.Fps / 2))
     {
-      Module.Log($"<{_clientId}> Send queue not ready at video frame {timestamp}.", ObsLogLevel.Debug);
-      return;
+      videoHeader.DataSize = 0;
+      var emptyFrame = new Beam.BeamVideoData(videoHeader, Array.Empty<byte>(), timestamp);
+      _frames.AddOrUpdate(timestamp, emptyFrame, (key, oldValue) => emptyFrame);
+      Module.Log($"<{_clientId}> Error: Send queue size {videoFrameCount} ({_frameTimestampQueue.Count}), skipping video frame {timestamp}.", ObsLogLevel.Error);
+      return false;
     }
+    else if (videoFrameCount > 2)
+      Module.Log($"<{_clientId}> Warning: Send queue size {videoFrameCount} ({_frameTimestampQueue.Count}) at video frame {timestamp}.", ObsLogLevel.Warning);
 
-    Beam.BeamVideoData frame = new Beam.BeamVideoData(videoHeader, _videoDataPool.Rent(videoHeader.DataSize), timestamp);
+    var frame = new Beam.BeamVideoData(videoHeader, _videoDataPool.Rent(videoHeader.DataSize), timestamp);
     new Span<byte>(videoData, frame.Header.DataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
-    _frameQueue.Enqueue(frame);
-    Interlocked.Increment(ref _videoFrameCount);
+    _frames.AddOrUpdate(timestamp, frame, (key, oldValue) => frame);
     _frameAvailable.Set();
+    return true;
   }
 
   public unsafe void EnqueueAudio(ulong timestamp, byte* audioData, int speakers, int audioBytesPerSample)
   {
-    long videoFrameCount = Interlocked.Read(ref _videoFrameCount);
-    if (videoFrameCount > BeamSender.MaxFrameQueueSize)
-    {
-      Module.Log($"<{_clientId}> Error: Send queue size {videoFrameCount} ({_frameQueue.Count}), skipping audio frame {timestamp}.", ObsLogLevel.Error);
-      return;
-    }
-    else if (videoFrameCount < 0)
-    {
-      Module.Log($"<{_clientId}> Send queue not ready at audio frame {timestamp}.", ObsLogLevel.Debug);
-      return;
-    }
+    //TODO: the current assumption is that OBS can work with audio continuing while video frames are dropped/skipped, remove the below block if this can be confirmed to be true, otherwise uncomment
+    // long videoFrameCount = Interlocked.Read(ref _videoFrameCount);
+    // if (videoFrameCount > BeamSender.MaxFrameQueueSize)
+    // {
+    //   var emptyHeader = _audioHeader;
+    //   emptyHeader.DataSize = 0;
+    //   var emptyFrame = new Beam.BeamAudioData(_audioHeader, Array.Empty<byte>(), timestamp);
+    //   _frames.AddOrUpdate(timestamp, emptyFrame, (key, oldValue) => emptyFrame);
+    //   Module.Log($"<{_clientId}> Error: Send queue size {videoFrameCount} ({_frameTimestampQueue.Count}), skipping audio frame {timestamp}.", ObsLogLevel.Error);
+    //   return;
+    // }
 
-    Beam.BeamAudioData frame = new Beam.BeamAudioData(_audioHeader, _audioDataPool.Rent(_audioHeader.DataSize), timestamp); // get an audio data memory buffer from the pool, avoiding allocations
+    var frame = new Beam.BeamAudioData(_audioHeader, _audioDataPool.Rent(_audioHeader.DataSize), timestamp); // get an audio data memory buffer from the pool, avoiding allocations
     new Span<byte>(audioData, frame.Header.DataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
 
-    _frameQueue.Enqueue(frame);
+    _frameTimestampQueue.Enqueue(timestamp); // SendAudio is always called from a sync context, so for audio we can safely add to the queue here
+    _frames.AddOrUpdate(timestamp, frame, (key, oldValue) => frame);
     Interlocked.Increment(ref _audioFrameCount);
     _frameAvailable.Set();
   }

@@ -68,12 +68,27 @@ public class Source
     var settings = context->Settings;
 
     fixed (byte*
+      propertyFrameBufferTimeId = "frame_buffer_time"u8,
       propertyTargetHostId = "host"u8,
       propertyTargetPipeNameId = "pipe_name"u8,
       propertyTargetPortId = "port"u8,
       propertyConnectionTypePipeId = "connection_type_pipe"u8
     )
     {
+      BeamReceiver.FrameBufferTimeMs = (int)ObsData.obs_data_get_int(settings, (sbyte*)propertyFrameBufferTimeId);
+
+      /*
+        this audio reset helps to prevent OBS increasing the audio buffer under some circumstances, e.g. when
+        - restarting a feed within the frame buffer time
+        - increasing the frame buffer time on an already active feed (source is being shown)
+      */
+      context->Audio->timestamp = 0;
+      context->Audio->samples_per_sec = 48000;
+      context->Audio->speakers = speaker_layout.SPEAKERS_STEREO;
+      context->Audio->format = audio_format.AUDIO_FORMAT_FLOAT;
+      context->Audio->frames = 0;
+      Obs.obs_source_output_audio(context->Source, context->Audio);
+
       var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
       if (connectionTypePipe)
       {
@@ -142,6 +157,7 @@ public class Source
   public static unsafe void source_show(void* data)
   {
     Module.Log("source_show called", ObsLogLevel.Debug);
+
     // the activate/deactivate events are not triggered by Studio Mode, so we need to connect/disconnect in show/hide events if the source should also work in Studio Mode
     getSource(data).connect();
   }
@@ -162,6 +178,12 @@ public class Source
     var properties = ObsProperties.obs_properties_create();
     ObsProperties.obs_properties_set_flags(properties, ObsProperties.OBS_PROPERTIES_DEFER_UPDATE);
     fixed (byte*
+      propertyFrameBufferTimeId = "frame_buffer_time"u8,
+      propertyFrameBufferTimeCaption = Module.ObsText("FrameBufferTimeCaption"),
+      propertyFrameBufferTimeText = Module.ObsText("FrameBufferTimeText"),
+      propertyFrameBufferTimeMemoryUsageInfoId = "frame_buffer_time_info"u8,
+      propertyFrameBufferTimeMemoryUsageInfoText = Module.ObsText("FrameBufferTimeMemoryUsageInfoText"),
+      propertyFrameBufferTimeSuffix = " ms"u8,
       propertyTargetPipeNameId = "pipe_name"u8,
       propertyTargetPipeNameCaption = Module.ObsText("TargetPipeNameCaption"),
       propertyTargetPipeNameText = Module.ObsText("TargetPipeNameText"),
@@ -182,6 +204,14 @@ public class Source
       propertyConnectionTypeSocketText = Module.ObsText("ConnectionTypeSocketText")
     )
     {
+      // frame buffer
+      var frameBufferTimeProperty = ObsProperties.obs_properties_add_int_slider(properties, (sbyte*)propertyFrameBufferTimeId, (sbyte*)propertyFrameBufferTimeCaption, 0, 5000, 100);
+      ObsProperties.obs_property_set_long_description(frameBufferTimeProperty, (sbyte*)propertyFrameBufferTimeText);
+      ObsProperties.obs_property_int_set_suffix(frameBufferTimeProperty, (sbyte*)propertyFrameBufferTimeSuffix);
+      // frame buffer time memory usage info
+      var frameBufferTimeMemoryUsageInfoProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoId, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoText, obs_text_type.OBS_TEXT_INFO);
+      ObsProperties.obs_property_set_description(frameBufferTimeMemoryUsageInfoProperty, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoText);
+
       // connection type selection group
       var connectionTypePropertyGroup = ObsProperties.obs_properties_create();
       var connectionTypeProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyConnectionTypeId, (sbyte*)propertyConnectionTypeCaption, obs_group_type.OBS_GROUP_NORMAL, connectionTypePropertyGroup);
@@ -236,8 +266,7 @@ public class Source
     var thisSource = getSource(data);
     if (thisSource.BeamReceiver.IsConnected)
       thisSource.BeamReceiver.Disconnect();
-    var context = (Context*)data;
-    if (Convert.ToBoolean(Obs.obs_source_showing(context->Source))) // auto-reconnect if the source is visible
+    if (Convert.ToBoolean(Obs.obs_source_showing(((Context*)data)->Source))) // auto-reconnect if the source is visible
       thisSource.connect();
   }
 
@@ -262,6 +291,20 @@ public class Source
   #endregion Source API methods
 
   #region Event handlers
+
+
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte FrameBufferTimeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte* propertyFrameBufferTimeId = "frame_buffer_time"u8)
+    {
+      var frameBufferTime = ObsData.obs_data_get_int(settings, (sbyte*)propertyFrameBufferTimeId);
+      if (frameBufferTime < 0)
+        ObsData.obs_data_set_int(settings, (sbyte*)propertyFrameBufferTimeId, 0);
+      return Convert.ToByte(true);
+    }
+  }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte ConnectionTypePipeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
@@ -309,11 +352,6 @@ public class Source
     // reset video output
     Obs.obs_source_output_video(context->Source, null);
 
-    // reset audio output
-    context->Audio->timestamp = 0;
-    context->Audio->frames = 0;
-    Obs.obs_source_output_audio(context->Source, context->Audio);
-
     if (Convert.ToBoolean(Obs.obs_source_showing(context->Source))) // auto-reconnect if the source is visible
     {
       Task.Delay(1000).ContinueWith(_ =>
@@ -324,8 +362,7 @@ public class Source
     }
 
   }
-
-  private unsafe Task VideoFrameReceivedEventHandler(object? sender, Beam.BeamVideoData videoFrame)
+  private unsafe void VideoFrameReceivedEventHandler(object? sender, Beam.BeamVideoData videoFrame)
   {
     var context = (Context*)this.ContextPointer;
 
@@ -343,13 +380,13 @@ public class Source
       // get the plane sizes for the current frame format and size
       _videoPlaneSizes = Beam.GetPlaneSizes(context->Video->format, context->Video->height, context->Video->linesize);
       if (_videoPlaneSizes.Length == 0) // unsupported format
-        return Task.CompletedTask;
+        return;
       ObsVideo.video_format_get_parameters_for_format(videoFrame.Header.Colorspace, videoFrame.Header.Range, videoFrame.Header.Format, context->Video->color_matrix, context->Video->color_range_min, context->Video->color_range_max);
       Module.Log("VideoFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
     }
 
     if (_videoPlaneSizes.Length == 0) // unsupported format
-      return Task.CompletedTask;
+      return;
 
     context->Video->timestamp = videoFrame.Header.Timestamp;
 
@@ -362,12 +399,14 @@ public class Source
         context->Video->data[planeIndex] = videoData + currentOffset;
         currentOffset += _videoPlaneSizes[planeIndex];
       }
+      // Module.Log($"VideoFrameReceivedEventHandler(): Output timestamp {videoFrame.Header.Timestamp}", ObsLogLevel.Debug);
       Obs.obs_source_output_video(context->Source, context->Video);
     }
     this.BeamReceiver.RawDataBufferPool.Return(videoFrame.Data);
-    return Task.CompletedTask;
   }
-  private unsafe Task AudioFrameReceivedEventHandler(object? sender, Beam.BeamAudioData audioFrame)
+
+
+  private unsafe void AudioFrameReceivedEventHandler(object? sender, Beam.BeamAudioData audioFrame)
   {
     var context = (Context*)this.ContextPointer;
 
@@ -399,10 +438,11 @@ public class Source
         context->Audio->data[speakerIndex] = audioData + currentOffset;
         currentOffset += _audioPlaneSize;
       }
+      // Module.Log($"AudioFrameReceivedEventHandler(): Output timestamp {audioFrame.Header.Timestamp}", ObsLogLevel.Debug);
       Obs.obs_source_output_audio(context->Source, context->Audio);
     }
 
-    return Task.CompletedTask;
+    return;
   }
   #endregion Event handlers
 
