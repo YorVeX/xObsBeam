@@ -189,6 +189,7 @@ class BeamSenderClient
           // waitTime += (long)stopwatch.Elapsed.TotalNanoseconds;
           waitTime += stopwatch.ElapsedTicks;
           stopwatch.Reset();
+          stopwatch.Start();
           if (cancellationToken.IsCancellationRequested)
             break;
 
@@ -218,7 +219,7 @@ class BeamSenderClient
               try
               {
                 // write video header data
-                var headerBytes = videoFrame.Header.WriteTo(pipeWriter.GetMemory(Beam.VideoHeader.VideoHeaderDataSize).Span, videoFrame.Timestamp);
+                var headerBytes = videoFrame.Header.WriteTo(pipeWriter.GetSpan(Beam.VideoHeader.VideoHeaderDataSize), videoFrame.Timestamp);
                 pipeWriter.Advance(headerBytes);
 
                 // write video frame data - need to slice videoFrame.Data, since the arrays we get from _videoDataPool are often bigger than what we requested
@@ -281,7 +282,7 @@ class BeamSenderClient
               try
               {
                 // write audio header data
-                var headerBytes = audioFrame.Header.WriteTo(pipeWriter.GetMemory(Beam.AudioHeader.AudioHeaderDataSize).Span, audioFrame.Timestamp);
+                var headerBytes = audioFrame.Header.WriteTo(pipeWriter.GetSpan(Beam.AudioHeader.AudioHeaderDataSize), audioFrame.Timestamp);
                 pipeWriter.Advance(headerBytes);
 
                 // write audio frame data - need to slice audioFrame.Data, since the arrays we get from the shared ArrayPool are often bigger than what we requested
