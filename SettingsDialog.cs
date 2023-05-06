@@ -16,6 +16,10 @@ public static class SettingsDialog
   static unsafe obs_data* _settings;
   static unsafe obs_source* _source;
 
+  static bool _qoiCompression = false;
+  static bool _webPCompression = false;
+  static bool _lz4Compression = false;
+
   public static unsafe void Register()
   {
     var sourceInfo = new obs_source_info();
@@ -73,15 +77,7 @@ public static class SettingsDialog
     }
   }
 
-  public static unsafe bool Lz4Compression
-  {
-    get
-    {
-      fixed (byte* propertyLz4CompressionId = "compression_lz4"u8)
-        return Convert.ToBoolean(ObsData.obs_data_get_bool(_settings, (sbyte*)propertyLz4CompressionId));
-    }
-  }
-
+  public static unsafe bool Lz4Compression => _lz4Compression;
   public static unsafe bool Lz4CompressionSyncQoiSkips
   {
     get
@@ -128,14 +124,17 @@ public static class SettingsDialog
     }
   }
 
-  public static unsafe bool QoiCompression
+  public static unsafe bool WebPCompression => _webPCompression;
+  public static unsafe int WebPCompressionLevel
   {
     get
     {
-      fixed (byte* propertyQoiCompressionId = "compression_qoi"u8)
-        return Convert.ToBoolean(ObsData.obs_data_get_bool(_settings, (sbyte*)propertyQoiCompressionId));
+      fixed (byte* propertyWebPCompressionLevelId = "compression_webp_level"u8)
+        return (int)ObsData.obs_data_get_int(_settings, (sbyte*)propertyWebPCompressionLevelId);
     }
   }
+
+  public static unsafe bool QoiCompression => _qoiCompression;
 
   public static unsafe int QoiCompressionLevel
   {
@@ -266,7 +265,12 @@ public static class SettingsDialog
       propertyCompressionQoiText = Module.ObsText("CompressionQOIText"),
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
       propertyCompressionQoiLevelCaption = Module.ObsText("CompressionQOILevelCaption"),
-      propertyCompressionQoiLevelText = Module.ObsText("CompressionQOILevelText"),
+      propertyCompressionWebPId = "compression_webp"u8,
+      propertyCompressionWebPCaption = Module.ObsText("CompressionWebPCaption"),
+      propertyCompressionWebPText = Module.ObsText("CompressionWebPText"),
+      propertyCompressionWebPLevelId = "compression_webp_level"u8,
+      propertyCompressionWebPLevelCaption = Module.ObsText("CompressionWebPLevelCaption"),
+      propertyCompressionLevelText = Module.ObsText("CompressionLevelText"),
       propertyCompressionQoiNoBgraWarningId = "compression_qoi_nobgra_warning"u8,
       propertyCompressionQoiNoBgraWarningText = Module.ObsText("CompressionQOINoBGRAWarningText"),
       propertyCompressionLz4Id = "compression_lz4"u8,
@@ -307,6 +311,18 @@ public static class SettingsDialog
       // compression group
       var compressionGroup = ObsProperties.obs_properties_create();
       var compressionGroupProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyCompressionId, (sbyte*)propertyCompressionCaption, obs_group_type.OBS_GROUP_NORMAL, compressionGroup);
+      
+      // WebP compression options group
+      var compressionWebPGroup = ObsProperties.obs_properties_create();
+      var compressionWebPGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionWebPId, (sbyte*)propertyCompressionWebPCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionWebPGroup);
+      ObsProperties.obs_property_set_long_description(compressionWebPGroupProperty, (sbyte*)propertyCompressionWebPText);
+      ObsProperties.obs_property_set_modified_callback(compressionWebPGroupProperty, &CompressionSettingChangedEventHandler);
+      // WebP compression level (skip frames)
+      var compressionWebPLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionWebPGroup, (sbyte*)propertyCompressionWebPLevelId, (sbyte*)propertyCompressionWebPLevelCaption, 1, 10, 1);
+      ObsProperties.obs_property_set_long_description(compressionWebPLevelProperty, (sbyte*)propertyCompressionLevelText);
+      ObsProperties.obs_property_set_modified_callback(compressionWebPLevelProperty, &CompressionSettingChangedEventHandler);
+      ObsProperties.obs_property_set_visible(compressionWebPGroupProperty, Convert.ToByte(WebP.IsAvailable));
+
       // QOI compression options group
       var compressionQoiGroup = ObsProperties.obs_properties_create();
       var compressionQoiGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionQoiId, (sbyte*)propertyCompressionQoiCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionQoiGroup);
@@ -314,7 +330,7 @@ public static class SettingsDialog
       ObsProperties.obs_property_set_modified_callback(compressionQoiGroupProperty, &CompressionSettingChangedEventHandler);
       // QOI compression level (skip frames)
       var compressionQoiLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoiGroup, (sbyte*)propertyCompressionQoiLevelId, (sbyte*)propertyCompressionQoiLevelCaption, 1, 10, 1);
-      ObsProperties.obs_property_set_long_description(compressionQoiLevelProperty, (sbyte*)propertyCompressionQoiLevelText);
+      ObsProperties.obs_property_set_long_description(compressionQoiLevelProperty, (sbyte*)propertyCompressionLevelText);
       ObsProperties.obs_property_set_modified_callback(compressionQoiLevelProperty, &CompressionSettingChangedEventHandler);
       // warning message shown when QOI is enabled but output is not set to BGRA color format
       var compressionQoiNoBgraWarningProperty = ObsProperties.obs_properties_add_text(compressionQoiGroup, (sbyte*)propertyCompressionQoiNoBgraWarningId, (sbyte*)propertyCompressionQoiNoBgraWarningText, obs_text_type.OBS_TEXT_INFO);
@@ -394,6 +410,7 @@ public static class SettingsDialog
       propertyIdentifierId = "identifier"u8,
       propertyIdentifierDefaultText = "BeamSender"u8,
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
+      propertyCompressionWebPLevelId = "compression_webp_level"u8,
       propertyCompressionLz4SyncQoiSkipsId = "compression_lz4_sync_qoi_skips"u8,
       propertyCompressionLz4LevelId = "compression_lz4_level"u8,
       propertyCompressionMainThreadId = "compression_main_thread"u8,
@@ -406,6 +423,7 @@ public static class SettingsDialog
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(false));
       ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierDefaultText);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoiLevelId, 10);
+      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionWebPLevelId, 10);
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionLz4SyncQoiSkipsId, Convert.ToByte(true));
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionLz4LevelId, 1);
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionMainThreadId, Convert.ToByte(true));
@@ -422,10 +440,17 @@ public static class SettingsDialog
     Module.Log("settings_update called", ObsLogLevel.Debug);
     fixed (byte*
       propertyEnableId = "enable"u8,
+      propertyCompressionQoiId = "compression_qoi"u8,
+      propertyCompressionWebPId = "compression_webp"u8,
+      propertyCompressionLz4Id = "compression_lz4"u8,
       propertyAutomaticListenPortId = "auto_listen_port"u8,
       propertyListenPortId = "listen_port"u8
     )
     {
+      _webPCompression = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionWebPId));
+      _qoiCompression = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoiId));
+      _lz4Compression = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionLz4Id));
+      
       var isEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId));
       if (Output.IsReady)
       {
@@ -503,8 +528,10 @@ public static class SettingsDialog
   public static unsafe byte CompressionSettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
-      propertyQoiCompressionId = "compression_qoi"u8,
+      propertyCompressionQoiId = "compression_qoi"u8,
+      propertyCompressionWebPId = "compression_webp"u8,
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
+      propertyCompressionWebPLevelId = "compression_webp_level"u8,
       propertyCompressionLz4Id = "compression_lz4"u8,
       propertyCompressionLz4SyncQoiSkipsId = "compression_lz4_sync_qoi_skips"u8,
       propertyCompressionLz4LevelId = "compression_lz4_level"u8,
@@ -516,16 +543,55 @@ public static class SettingsDialog
     )
     {
 
-      // set LZ4 compression algorithm flavor info text
+      // set LZ4 compression algorithm info text
       var lz4Level = ObsData.obs_data_get_int(settings, (sbyte*)propertyCompressionLz4LevelId);
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4LevelFastInfoId), Convert.ToByte(lz4Level == 1));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4LevelHcInfoId), Convert.ToByte((lz4Level > 1) && (lz4Level < 9)));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4LevelOptInfoId), Convert.ToByte(lz4Level >= 9));
 
-      var qoiCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyQoiCompressionId));
+      // get current settings after the change
+      var webPCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionWebPId));
+      var webPLevel = ObsData.obs_data_get_int(settings, (sbyte*)propertyCompressionWebPLevelId);
+      var qoiCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoiId));
       var qoiLevel = ObsData.obs_data_get_int(settings, (sbyte*)propertyCompressionQoiLevelId);
+      var lz4CompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionLz4Id));
+      
+      // react to setting changes, avoid mixing incompatible settings
+      if (webPCompressionEnabled && !_webPCompression)
+      {
+        // if WebP was just enabled disable QOI and LZ4 instead (mixing this doesn't make sense)
+        _webPCompression = webPCompressionEnabled;
+        _qoiCompression = false;
+        _lz4Compression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(_qoiCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(_lz4Compression));
+      }
+      else if (qoiCompressionEnabled && !_qoiCompression)
+      {
+        // if QOI was just enabled disable WebP instead (mixing this doesn't make sense)
+        _lz4Compression = lz4CompressionEnabled;
+        _qoiCompression = qoiCompressionEnabled;
+        _webPCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionWebPId, Convert.ToByte(_webPCompression));
+      }
+      else if (lz4CompressionEnabled && !_lz4Compression)
+      {
+        // if LZ4 was just enabled disable WebP instead (mixing this doesn't make sense)
+        _qoiCompression = qoiCompressionEnabled;
+        _lz4Compression = lz4CompressionEnabled;
+        _webPCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionWebPId, Convert.ToByte(_webPCompression));
+      }
+      else
+      {
+        _webPCompression = webPCompressionEnabled;
+        _qoiCompression = qoiCompressionEnabled;
+        _lz4Compression = lz4CompressionEnabled;
+      }
+      
+      // show warning if QOI is enabled and BGRA is not the output format
       bool showBgraWarning = false;
-      if (qoiCompressionEnabled)
+      if (_qoiCompression)
       {
         obs_video_info* obsVideoInfo = ObsBmem.bzalloc<obs_video_info>();
         if (Convert.ToBoolean(Obs.obs_get_video_info(obsVideoInfo)))
@@ -536,9 +602,9 @@ public static class SettingsDialog
         ObsBmem.bfree(obsVideoInfo);
       }
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionQoiNoBgraWarningId), Convert.ToByte(showBgraWarning));
-      var lz4CompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionLz4Id));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(qoiCompressionEnabled || lz4CompressionEnabled));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4SyncQoiSkipsId), Convert.ToByte(qoiCompressionEnabled && (qoiLevel < 10)));
+      
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(_qoiCompression || _webPCompression || _lz4Compression));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4SyncQoiSkipsId), Convert.ToByte(_qoiCompression && (qoiLevel < 10)));
     }
 
 

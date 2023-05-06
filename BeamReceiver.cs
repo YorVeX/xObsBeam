@@ -347,7 +347,7 @@ public class BeamReceiver
               _rawDataBufferPool = ArrayPool<byte>.Create(maxVideoDataSize, 2);
             }
 
-            var rawDataBuffer = _rawDataBufferPool.Rent(maxVideoDataSize); 
+            var rawDataBuffer = _rawDataBufferPool.Rent(maxVideoDataSize);
             if (videoHeader.Compression == Beam.CompressionTypes.None)
               readResult.Buffer.Slice(0, videoHeader.DataSize).CopyTo(rawDataBuffer);
             else

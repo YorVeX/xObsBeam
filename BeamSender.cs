@@ -23,8 +23,8 @@ public class BeamSender
   TcpListener _listener = new TcpListener(IPAddress.Loopback, DefaultPort);
   string _pipeName = "";
   CancellationTokenSource _listenCancellationSource = new CancellationTokenSource();
-  ArrayPool<byte>? _qoiVideoDataPool;
-  int _qoiVideoDataPoolMaxSize = 0;
+  ArrayPool<byte>? _qoiWebPVideoDataPool;
+  int _qoiWebPVideoDataPoolMaxSize = 0;
   private int _videoFramesProcessed = 0;
   private int _videoFramesCompressed = 0;
   ArrayPool<byte>? _lz4VideoDataPool;
@@ -71,31 +71,42 @@ public class BeamSender
     };
 
     // cache settings values
-    // _webPCompression = SettingsDialog.WebPCompression; //TODO: implement settings for WebP, only visible if libwebp is available
+    _webPCompression = SettingsDialog.WebPCompression;
     _qoiCompression = SettingsDialog.QoiCompression;
     _lz4Compression = SettingsDialog.Lz4Compression;
     _lz4CompressionLevel = SettingsDialog.Lz4CompressionLevel;
     _compressionThreadingSync = SettingsDialog.CompressionMainThread;
     _lz4CompressionSyncQoiSkips = SettingsDialog.Lz4CompressionSyncQoiSkips;
 
-    // QOI's theoretical max size for BGRA is 5x the size of the original image
     if (_qoiCompression || _webPCompression)
     {
-      _qoiVideoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength);
-      _qoiVideoDataPool = ArrayPool<byte>.Create(_qoiVideoDataPoolMaxSize, MaxFrameQueueSize);
+      if (_qoiCompression)
+      {
+        _qoiWebPVideoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength); // QOI's theoretical max size for BGRA is 5x the size of the original image
+        _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
+      }
+      else if (_webPCompression)
+      {
+        _qoiWebPVideoDataPoolMaxSize = (int)(info->width * info->height * (4 * 8));
+        _compressionThreshold = SettingsDialog.WebPCompressionLevel / 10.0;
+      }
+      if (_qoiWebPVideoDataPoolMaxSize > 2147483591) // maximum byte array size
+        _qoiWebPVideoDataPoolMaxSize = 2147483591;
+      _qoiWebPVideoDataPool = ArrayPool<byte>.Create(_qoiWebPVideoDataPoolMaxSize, MaxFrameQueueSize);
       _videoFramesProcessed = 0;
       _videoFramesCompressed = 0;
-      _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
     }
     else
     {
       // allow potential previous compression buffers to be garbage collected
-      _qoiVideoDataPool = null;
+      _qoiWebPVideoDataPool = null;
     }
 
     if (_lz4Compression)
     {
       _lz4VideoDataPoolMaxSize = LZ4Codec.MaximumOutputSize(_videoDataSize);
+      if (_lz4VideoDataPoolMaxSize > 2147483591) // maximum byte array size
+        _lz4VideoDataPoolMaxSize = 2147483591;
       _lz4VideoDataPool = ArrayPool<byte>.Create(_lz4VideoDataPoolMaxSize, MaxFrameQueueSize);
     }
     else
@@ -278,9 +289,9 @@ public class BeamSender
     {
       int encodedDataLength = 0;
 
-      // apply WebP  compression if enabled
-      if (encodedDataWebP != null)
+      if (encodedDataWebP != null) // apply WebP compression if enabled
       {
+        //TODO: cache the WebPConfig object in SetVideoParameters() and reuse it here
         encodedDataLength = WebP.EncodeLossless(rawData, 0, (int)videoHeader.Width, (int)videoHeader.Height, 4, encodedDataWebP); // encode the QOI data with WebP
 
         if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
@@ -289,39 +300,40 @@ public class BeamSender
           videoHeader.DataSize = encodedDataLength;
         }
       }
-
-      // apply QOI compression if enabled
-      if (encodedDataQoi != null)
+      else
       {
-        encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedDataQoi); // encode the frame with QOI
+        if (encodedDataQoi != null) // apply QOI compression if enabled
+        {
+          encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedDataQoi); // encode the frame with QOI
 
-        if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
-        {
-          videoHeader.Compression = Beam.CompressionTypes.Qoi;
-          videoHeader.DataSize = encodedDataLength;
-        }
-      }
-
-      // apply LZ4 compression if enabled
-      if (encodedDataLz4 != null)
-      {
-        if (videoHeader.Compression == Beam.CompressionTypes.Qoi) // if QOI was applied before, compress the QOI data
-        {
-          fixed (byte* sourceData = encodedDataQoi, targetData = encodedDataLz4)
-            encodedDataLength = LZ4Codec.Encode(sourceData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, _lz4CompressionLevel);
-        }
-        else // if QOI was not applied before, compress the raw data
-        {
-          fixed (byte* targetData = encodedDataLz4)
-            encodedDataLength = LZ4Codec.Encode(rawData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, _lz4CompressionLevel);
+          if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
+          {
+            videoHeader.Compression = Beam.CompressionTypes.Qoi;
+            videoHeader.DataSize = encodedDataLength;
+          }
         }
 
-        if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
+        // apply LZ4 compression if enabled
+        if (encodedDataLz4 != null)
         {
-          videoHeader.Compression = (videoHeader.Compression == Beam.CompressionTypes.Qoi) ? Beam.CompressionTypes.QoiLz4 : Beam.CompressionTypes.Lz4;
-          if (videoHeader.Compression == Beam.CompressionTypes.QoiLz4) // if QOI was applied before, compress the QOI data
-            videoHeader.QoiDataSize = videoHeader.DataSize; // remember the size of the QOI data
-          videoHeader.DataSize = encodedDataLength;
+          if (videoHeader.Compression == Beam.CompressionTypes.Qoi) // if QOI was applied before, compress the QOI data
+          {
+            fixed (byte* sourceData = encodedDataQoi, targetData = encodedDataLz4)
+              encodedDataLength = LZ4Codec.Encode(sourceData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, _lz4CompressionLevel);
+          }
+          else // if QOI was not applied before, compress the raw data
+          {
+            fixed (byte* targetData = encodedDataLz4)
+              encodedDataLength = LZ4Codec.Encode(rawData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, _lz4CompressionLevel);
+          }
+
+          if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
+          {
+            videoHeader.Compression = (videoHeader.Compression == Beam.CompressionTypes.Qoi) ? Beam.CompressionTypes.QoiLz4 : Beam.CompressionTypes.Lz4;
+            if (videoHeader.Compression == Beam.CompressionTypes.QoiLz4) // if QOI was applied before, compress the QOI data
+              videoHeader.QoiDataSize = videoHeader.DataSize; // remember the size of the QOI data
+            videoHeader.DataSize = encodedDataLength;
+          }
         }
       }
 
@@ -355,10 +367,10 @@ public class BeamSender
     finally
     {
       // return the rented encoding data buffers to the pool, each client has created a copy of that data for its own use
-      if (encodedDataQoi != null)
-        _qoiVideoDataPool?.Return(encodedDataQoi);
       if (encodedDataWebP != null)
-        _qoiVideoDataPool?.Return(encodedDataWebP);
+        _qoiWebPVideoDataPool?.Return(encodedDataWebP);
+      if (encodedDataQoi != null)
+        _qoiWebPVideoDataPool?.Return(encodedDataQoi);
       if (encodedDataLz4 != null)
         _lz4VideoDataPool?.Return(encodedDataLz4);
     }
@@ -374,7 +386,7 @@ public class BeamSender
       client.EnqueueVideoTimestamp(timestamp);
 
     // no compression of any kind, just enqueue the raw data right away from the original unmanaged memory
-    if (!_qoiCompression && !_lz4Compression)
+    if (!_qoiCompression && !_lz4Compression && !_webPCompression)
     {
       foreach (var client in _clients.Values)
         client.EnqueueVideoFrame(timestamp, _videoHeader, data);
@@ -383,17 +395,17 @@ public class BeamSender
 
     // determine whether this frame needs to be compressed
     bool compressThisFrame = ((_compressionThreshold == 1) || (((double)_videoFramesCompressed / _videoFramesProcessed) < _compressionThreshold));
-    
+
     // prepare WebP compression buffer
     byte[]? encodedDataWebP = null;
     if (_webPCompression && compressThisFrame)
-      encodedDataWebP = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
+      encodedDataWebP = _qoiWebPVideoDataPool!.Rent(_qoiWebPVideoDataPoolMaxSize);
 
     // prepare QOI compression buffer
     byte[]? encodedDataQoi = null;
     if (_qoiCompression && compressThisFrame)
-      encodedDataQoi = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
-    
+      encodedDataQoi = _qoiWebPVideoDataPool!.Rent(_qoiWebPVideoDataPoolMaxSize);
+
     // frame skipping logic
     if (_compressionThreshold < 1) // is QOI frame skipping enabled?
     {
