@@ -72,7 +72,7 @@ namespace xObsBeam
       config.pass = speed + 1;
       config.thread_level = 1;
       config.use_sharp_yuv = 0;
-      config.alpha_filtering = 1;
+      config.alpha_filtering = 0;
       config.exact = 0;
 
       return AdvancedEncode(data, config, width, height, channels, output);
@@ -133,7 +133,6 @@ namespace xObsBeam
     private static unsafe int AdvancedEncode(byte* data, WebPConfig config, int width, int height, int channels, byte[] output)
     {
       WebPPicture webPPicture = new WebPPicture();
-      int dataWebpSize;
       try
       {
         if (WebPNativeMethods.WebPValidateConfig(ref config) != 1)
@@ -158,13 +157,7 @@ namespace xObsBeam
             throw new Exception("BGR colorspace conversion failed.");
         }
 
-        //Memory for WebP output
-        dataWebpSize = width * height * (channels * 8);
-        if (dataWebpSize > 2147483591)
-          dataWebpSize = 2147483591;
-        var dataWebp = new byte[dataWebpSize];
-
-        fixed (byte* ptr = dataWebp)
+        fixed (byte* ptr = output)
         {
           webPPicture.custom_ptr = (IntPtr)ptr;
 
@@ -178,8 +171,6 @@ namespace xObsBeam
 
           // size is detected from how much the pointer was advanced
           int size = (int)((long)webPPicture.custom_ptr - (long)ptr);
-
-          new ReadOnlySpan<byte>(dataWebp, 0, size).CopyTo(output);
           return size;
         }
       }
