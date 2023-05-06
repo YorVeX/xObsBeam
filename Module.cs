@@ -159,6 +159,10 @@ public static class Module
     var assemblyName = System.Reflection.Assembly.GetExecutingAssembly().GetName();
     Version version = assemblyName.Version!;
     Log($"Version {version.Major}.{version.Minor}.{version.Build} loaded.", ObsLogLevel.Info);
+    if (WebP.IsAvailable)
+      Log("WebP: supported, libwebp version " + WebP.VersionString, ObsLogLevel.Info);
+    else
+      Log("WebP: not supported" + (WebP.VersionString != "" ? " (unsupported version " + WebP.VersionString + ")" : ""), ObsLogLevel.Info);
     return true;
   }
 

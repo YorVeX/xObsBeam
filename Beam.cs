@@ -18,6 +18,7 @@ public class Beam
     Qoi = 1,
     Lz4 = 2,
     QoiLz4 = 3,
+    WebP = 4,
   }
 
   #region helper methods

@@ -135,7 +135,7 @@ class Qoi
     return writeIndex;
   }
 
-  public static void Decode(ReadOnlySpan<byte> input, long inSize, byte[] output, long outSize)
+  public static unsafe void Decode(ReadOnlySpan<byte> input, long inSize, byte[] output, long outSize)
   {
     var inCursor = 0;
 
@@ -145,61 +145,58 @@ class Qoi
     Pixel pixel = default;
     pixel.A = 255;
 
-    unsafe
+    var seenBuffer = stackalloc Pixel[SeenPixelsBufferLength];
+
+    for (var outCursor = 0; outCursor < outSize; outCursor += 4)
     {
-      var seenBuffer = stackalloc Pixel[SeenPixelsBufferLength];
-
-      for (var outCursor = 0; outCursor < outSize; outCursor += 4)
+      if (run > 0)
+        run--;
+      else if (inCursor < chunksLen)
       {
-        if (run > 0)
-          run--;
-        else if (inCursor < chunksLen)
+        int b1 = input[inCursor++];
+
+        if (b1 == QOI_OP_RGB)
         {
-          int b1 = input[inCursor++];
-
-          if (b1 == QOI_OP_RGB)
-          {
-            pixel.R = input[inCursor++];
-            pixel.G = input[inCursor++];
-            pixel.B = input[inCursor++];
-          }
-          else if (b1 == QOI_OP_RGBA)
-          {
-            pixel.R = input[inCursor++];
-            pixel.G = input[inCursor++];
-            pixel.B = input[inCursor++];
-            pixel.A = input[inCursor++];
-          }
-          else if ((b1 & QOI_MASK_2) == QOI_OP_INDEX)
-          {
-            pixel = seenBuffer[b1];
-          }
-          else if ((b1 & QOI_MASK_2) == QOI_OP_DIFF)
-          {
-            pixel.R += (byte)(((b1 >> 4) & 0x03) - 2);
-            pixel.G += (byte)(((b1 >> 2) & 0x03) - 2);
-            pixel.B += (byte)((b1 & 0x03) - 2);
-          }
-          else if ((b1 & QOI_MASK_2) == QOI_OP_LUMA)
-          {
-            int b2 = input[inCursor++];
-            int vg = (b1 & 0x3f) - 32;
-
-            pixel.R += (byte)(vg - 8 + ((b2 >> 4) & 0x0f));
-            pixel.G += (byte)vg;
-            pixel.B += (byte)(vg - 8 + (b2 & 0x0f));
-          }
-          else if ((b1 & QOI_MASK_2) == QOI_OP_RUN)
-            run = b1 & 0x3f;
-
-          seenBuffer[pixelHash(pixel) % 64] = pixel;
+          pixel.R = input[inCursor++];
+          pixel.G = input[inCursor++];
+          pixel.B = input[inCursor++];
         }
+        else if (b1 == QOI_OP_RGBA)
+        {
+          pixel.R = input[inCursor++];
+          pixel.G = input[inCursor++];
+          pixel.B = input[inCursor++];
+          pixel.A = input[inCursor++];
+        }
+        else if ((b1 & QOI_MASK_2) == QOI_OP_INDEX)
+        {
+          pixel = seenBuffer[b1];
+        }
+        else if ((b1 & QOI_MASK_2) == QOI_OP_DIFF)
+        {
+          pixel.R += (byte)(((b1 >> 4) & 0x03) - 2);
+          pixel.G += (byte)(((b1 >> 2) & 0x03) - 2);
+          pixel.B += (byte)((b1 & 0x03) - 2);
+        }
+        else if ((b1 & QOI_MASK_2) == QOI_OP_LUMA)
+        {
+          int b2 = input[inCursor++];
+          int vg = (b1 & 0x3f) - 32;
 
-        output[outCursor + 0] = pixel.B;
-        output[outCursor + 1] = pixel.G;
-        output[outCursor + 2] = pixel.R;
-        output[outCursor + 3] = pixel.A;
+          pixel.R += (byte)(vg - 8 + ((b2 >> 4) & 0x0f));
+          pixel.G += (byte)vg;
+          pixel.B += (byte)(vg - 8 + (b2 & 0x0f));
+        }
+        else if ((b1 & QOI_MASK_2) == QOI_OP_RUN)
+          run = b1 & 0x3f;
+
+        seenBuffer[pixelHash(pixel) % 64] = pixel;
       }
+
+      output[outCursor + 0] = pixel.B;
+      output[outCursor + 1] = pixel.G;
+      output[outCursor + 2] = pixel.R;
+      output[outCursor + 3] = pixel.A;
     }
   }
 

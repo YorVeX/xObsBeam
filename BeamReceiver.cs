@@ -338,13 +338,16 @@ public class BeamReceiver
             }
             if (sizeChanged) // re-allocate the arrays matching the new necessary size
             {
-              maxVideoDataSize = (int)(videoHeader.Width * videoHeader.Height * 4);
+              if (videoHeader.Compression == Beam.CompressionTypes.WebP)
+                maxVideoDataSize = (int)(videoHeader.Width * videoHeader.Height * (4 * 8));
+              else
+                maxVideoDataSize = (int)(videoHeader.Width * videoHeader.Height * 4);
               receivedFrameData = new byte[maxVideoDataSize];
               lz4DecompressBuffer = new byte[maxVideoDataSize];
               _rawDataBufferPool = ArrayPool<byte>.Create(maxVideoDataSize, 2);
             }
 
-            var rawDataBuffer = _rawDataBufferPool.Rent(maxVideoDataSize);
+            var rawDataBuffer = _rawDataBufferPool.Rent(maxVideoDataSize); 
             if (videoHeader.Compression == Beam.CompressionTypes.None)
               readResult.Buffer.Slice(0, videoHeader.DataSize).CopyTo(rawDataBuffer);
             else
@@ -360,7 +363,8 @@ public class BeamReceiver
                   Module.Log($"LZ4 decompression failed, expected {videoHeader.QoiDataSize} bytes (QOI), got {decompressedSize} bytes.", ObsLogLevel.Error);
 
                 // now decompress QOI
-                Qoi.Decode(lz4DecompressBuffer, videoHeader.QoiDataSize, rawDataBuffer, maxVideoDataSize);
+                // Qoi.Decode(lz4DecompressBuffer, videoHeader.QoiDataSize, rawDataBuffer, maxVideoDataSize);
+                WebP.Decode(lz4DecompressBuffer, videoHeader.QoiDataSize, rawDataBuffer, maxVideoDataSize, (int)videoHeader.Width * 4);
 
               }
               // need to decompress LZ4 only
@@ -373,6 +377,9 @@ public class BeamReceiver
               // need to decompress QOI only
               else if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
                 Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
+              // need to decompress WebP only
+              else if (videoHeader.Compression == Beam.CompressionTypes.WebP)
+                WebP.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize, (int)videoHeader.Width * 4);
             }
 
             // process the frame
@@ -386,14 +393,12 @@ public class BeamReceiver
             }
             else
               frameBuffer.ProcessFrame(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime));
-
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(videoHeader.DataSize), readResult.Buffer.End);
 
-            // tell the sender the current video frame timestamp that was received
-            var timestampBuffer = pipeWriter.GetMemory(sizeof(ulong));
-            BinaryPrimitives.WriteUInt64LittleEndian(timestampBuffer.Span, senderVideoTimestamp);
-            pipeWriter.Advance(8);
+            // tell the sender the current video frame timestamp that was received - only done for frames that were not skipped by the sender
+            BinaryPrimitives.WriteUInt64LittleEndian(pipeWriter.GetSpan(sizeof(ulong)), senderVideoTimestamp);
+            pipeWriter.Advance(sizeof(ulong));
             var writeResult = await pipeWriter.FlushAsync(cancellationToken);
             if (writeResult.IsCanceled || writeResult.IsCompleted)
             {

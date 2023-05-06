@@ -25,8 +25,8 @@ public class BeamSender
   CancellationTokenSource _listenCancellationSource = new CancellationTokenSource();
   ArrayPool<byte>? _qoiVideoDataPool;
   int _qoiVideoDataPoolMaxSize = 0;
-  private int _qoiFramesProcessed = 0;
-  private int _qoiFramesCompressed = 0;
+  private int _videoFramesProcessed = 0;
+  private int _videoFramesCompressed = 0;
   ArrayPool<byte>? _lz4VideoDataPool;
   int _lz4VideoDataPoolMaxSize = 0;
   Beam.VideoHeader _videoHeader;
@@ -36,8 +36,9 @@ public class BeamSender
   int _audioBytesPerSample = 0;
 
   // cached compression settings
+  bool _webPCompression = false;
   bool _qoiCompression = false;
-  private double _qoiCompressionThreshold = 1;
+  private double _compressionThreshold = 1;
   bool _lz4Compression = false;
   bool _lz4CompressionSyncQoiSkips = true;
   LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
@@ -70,6 +71,7 @@ public class BeamSender
     };
 
     // cache settings values
+    // _webPCompression = SettingsDialog.WebPCompression; //TODO: implement settings for WebP, only visible if libwebp is available
     _qoiCompression = SettingsDialog.QoiCompression;
     _lz4Compression = SettingsDialog.Lz4Compression;
     _lz4CompressionLevel = SettingsDialog.Lz4CompressionLevel;
@@ -77,13 +79,13 @@ public class BeamSender
     _lz4CompressionSyncQoiSkips = SettingsDialog.Lz4CompressionSyncQoiSkips;
 
     // QOI's theoretical max size for BGRA is 5x the size of the original image
-    if (_qoiCompression)
+    if (_qoiCompression || _webPCompression)
     {
       _qoiVideoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength);
       _qoiVideoDataPool = ArrayPool<byte>.Create(_qoiVideoDataPoolMaxSize, MaxFrameQueueSize);
-      _qoiFramesProcessed = 0;
-      _qoiFramesCompressed = 0;
-      _qoiCompressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
+      _videoFramesProcessed = 0;
+      _videoFramesCompressed = 0;
+      _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
     }
     else
     {
@@ -268,12 +270,25 @@ public class BeamSender
     }
   }
 
+
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private unsafe void sendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataQoi, byte[]? encodedDataLz4)
+  private unsafe void sendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataWebP, byte[]? encodedDataQoi, byte[]? encodedDataLz4)
   {
     try
     {
       int encodedDataLength = 0;
+
+      // apply WebP  compression if enabled
+      if (encodedDataWebP != null)
+      {
+        encodedDataLength = WebP.EncodeLossless(rawData, 0, (int)videoHeader.Width, (int)videoHeader.Height, 4, encodedDataWebP); // encode the QOI data with WebP
+
+        if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
+        {
+          videoHeader.Compression = Beam.CompressionTypes.WebP;
+          videoHeader.DataSize = encodedDataLength;
+        }
+      }
 
       // apply QOI compression if enabled
       if (encodedDataQoi != null)
@@ -312,6 +327,10 @@ public class BeamSender
 
       switch (videoHeader.Compression)
       {
+        case Beam.CompressionTypes.WebP:
+          foreach (var client in _clients.Values)
+            client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataWebP!);
+          break;
         case Beam.CompressionTypes.Qoi:
           foreach (var client in _clients.Values)
             client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataQoi!);
@@ -338,6 +357,8 @@ public class BeamSender
       // return the rented encoding data buffers to the pool, each client has created a copy of that data for its own use
       if (encodedDataQoi != null)
         _qoiVideoDataPool?.Return(encodedDataQoi);
+      if (encodedDataWebP != null)
+        _qoiVideoDataPool?.Return(encodedDataWebP);
       if (encodedDataLz4 != null)
         _lz4VideoDataPool?.Return(encodedDataLz4);
     }
@@ -360,31 +381,40 @@ public class BeamSender
       return;
     }
 
-    byte[]? encodedDataQoi = null;
+    // determine whether this frame needs to be compressed
+    bool compressThisFrame = ((_compressionThreshold == 1) || (((double)_videoFramesCompressed / _videoFramesProcessed) < _compressionThreshold));
+    
+    // prepare WebP compression buffer
+    byte[]? encodedDataWebP = null;
+    if (_webPCompression && compressThisFrame)
+      encodedDataWebP = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
+
     // prepare QOI compression buffer
-    bool compressQoiFrame = ((_qoiCompressionThreshold == 1) || (((double)_qoiFramesCompressed / _qoiFramesProcessed) < _qoiCompressionThreshold));
-    if (_qoiCompression && compressQoiFrame)
+    byte[]? encodedDataQoi = null;
+    if (_qoiCompression && compressThisFrame)
       encodedDataQoi = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
-    if (_qoiCompressionThreshold < 1) // is QOI frame skipping enabled?
+    
+    // frame skipping logic
+    if (_compressionThreshold < 1) // is QOI frame skipping enabled?
     {
-      _qoiFramesProcessed++;
-      if (compressQoiFrame)
-        _qoiFramesCompressed++;
-      else if (_qoiFramesProcessed >= 10)
+      _videoFramesProcessed++;
+      if (compressThisFrame)
+        _videoFramesCompressed++;
+      else if (_videoFramesProcessed >= 10)
       {
-        _qoiFramesProcessed = 0;
-        _qoiFramesCompressed = 0;
+        _videoFramesProcessed = 0;
+        _videoFramesCompressed = 0;
       }
     }
 
     // prepare LZ4 compression buffer
     byte[]? encodedDataLz4 = null;
-    bool compressLz4Frame = (!_lz4CompressionSyncQoiSkips || (_lz4CompressionSyncQoiSkips && compressQoiFrame));
+    bool compressLz4Frame = (!_lz4CompressionSyncQoiSkips || (_lz4CompressionSyncQoiSkips && compressThisFrame));
     if (_lz4Compression && compressLz4Frame)
       encodedDataLz4 = _lz4VideoDataPool!.Rent(_lz4VideoDataPoolMaxSize);
 
     if (_compressionThreadingSync)
-      sendCompressed(timestamp, _videoHeader, data, encodedDataQoi, encodedDataLz4); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
+      sendCompressed(timestamp, _videoHeader, data, encodedDataWebP, encodedDataQoi, encodedDataLz4); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
     else
     {
       // will not run in sync with this OBS render thread, need a copy of the unmanaged data array
@@ -394,7 +424,7 @@ public class BeamSender
       {
         var capturedBeamVideoData = (Beam.BeamVideoData)state!;
         fixed (byte* videoData = capturedBeamVideoData.Data)
-          sendCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, encodedDataQoi, encodedDataLz4);
+          sendCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, encodedDataWebP, encodedDataQoi, encodedDataLz4);
       }, beamVideoData);
     }
   }
