@@ -7,7 +7,9 @@ using System.IO.Pipes;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using K4os.Compression.LZ4;
+using LibJpegTurbo;
 using ObsInterop;
 
 namespace xObsBeam;
@@ -23,8 +25,8 @@ public class BeamSender
   TcpListener _listener = new TcpListener(IPAddress.Loopback, DefaultPort);
   string _pipeName = "";
   CancellationTokenSource _listenCancellationSource = new CancellationTokenSource();
-  ArrayPool<byte>? _qoiWebPVideoDataPool;
-  int _qoiWebPVideoDataPoolMaxSize = 0;
+  ArrayPool<byte>? _qoiJpegVideoDataPool;
+  int _qoiJpegVideoDataPoolMaxSize = 0;
   private int _videoFramesProcessed = 0;
   private int _videoFramesCompressed = 0;
   ArrayPool<byte>? _lz4VideoDataPool;
@@ -36,13 +38,19 @@ public class BeamSender
   int _audioBytesPerSample = 0;
 
   // cached compression settings
-  bool _webPCompression = false;
+  bool _jpegCompression = false;
+  bool _jpegCompressionLossless = false;
+  int _jpegCompressionQuality = 90;
+  TJSAMP _jpegSubsampling = TJSAMP.TJSAMP_444;
+  TJPF _jpegPixelFormat = TJPF.TJPF_RGB;
+  bool _libJpegTurboV3 = false;
   bool _qoiCompression = false;
   private double _compressionThreshold = 1;
   bool _lz4Compression = false;
   bool _lz4CompressionSyncQoiSkips = true;
   LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
   bool _compressionThreadingSync = true;
+  unsafe void* _turboJpegCompress = null;
 
   public unsafe void SetVideoParameters(video_output_info* info, uint* linesize)
   {
@@ -71,35 +79,60 @@ public class BeamSender
     };
 
     // cache settings values
-    _webPCompression = SettingsDialog.WebPCompression;
+    _jpegCompression = SettingsDialog.JpegCompression && EncoderSupport.LibJpegTurbo;
+    _jpegCompressionLossless = SettingsDialog.JpegCompressionLossless && EncoderSupport.LibJpegTurboLossless;
+    _jpegCompressionQuality = SettingsDialog.JpegCompressionQuality;
     _qoiCompression = SettingsDialog.QoiCompression;
     _lz4Compression = SettingsDialog.Lz4Compression;
     _lz4CompressionLevel = SettingsDialog.Lz4CompressionLevel;
     _compressionThreadingSync = SettingsDialog.CompressionMainThread;
     _lz4CompressionSyncQoiSkips = SettingsDialog.Lz4CompressionSyncQoiSkips;
 
-    if (_qoiCompression || _webPCompression)
+    if (_qoiCompression || _jpegCompression)
     {
       if (_qoiCompression)
       {
-        _qoiWebPVideoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength); // QOI's theoretical max size for BGRA is 5x the size of the original image
+        _qoiJpegVideoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength); // QOI's theoretical max size for BGRA is 5x the size of the original image
         _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
+        if (_turboJpegCompress != null)
+        {
+          if (EncoderSupport.LibJpegTurboV3)
+            TurboJpeg.tj3Destroy(_turboJpegCompress);
+          else
+            TurboJpeg.tjDestroy(_turboJpegCompress);
+        }
       }
-      else if (_webPCompression)
+      else if (_jpegCompression)
       {
-        _qoiWebPVideoDataPoolMaxSize = (int)(info->width * info->height * (4 * 8));
-        _compressionThreshold = SettingsDialog.WebPCompressionLevel / 10.0;
+        _libJpegTurboV3 = EncoderSupport.LibJpegTurboV3;
+        _qoiJpegVideoDataPoolMaxSize = _videoDataSize;
+        _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
+        _jpegPixelFormat = EncoderSupport.ObsToJpegPixelFormat(info->format);
+        _jpegSubsampling = EncoderSupport.ObsToJpegSubsampling(info->format);
+        if (EncoderSupport.LibJpegTurboV3)
+        {
+          _turboJpegCompress = TurboJpeg.tj3Init((int)TJINIT.TJINIT_COMPRESS);
+          TurboJpeg.tj3Set(_turboJpegCompress, (int)TJPARAM.TJPARAM_NOREALLOC, 1);
+          TurboJpeg.tj3Set(_turboJpegCompress, (int)TJPARAM.TJPARAM_COLORSPACE, (int)EncoderSupport.ObsToJpegColorSpace(info->format));
+          TurboJpeg.tj3Set(_turboJpegCompress, (int)TJPARAM.TJPARAM_SUBSAMP, (int)_jpegSubsampling);
+          if (_jpegCompressionLossless)
+            TurboJpeg.tj3Set(_turboJpegCompress, (int)TJPARAM.TJPARAM_LOSSLESS, 1);
+          else
+            TurboJpeg.tj3Set(_turboJpegCompress, (int)TJPARAM.TJPARAM_QUALITY, _jpegCompressionQuality);
+        }
+        else
+          _turboJpegCompress = TurboJpeg.tjInitCompress();
       }
-      if (_qoiWebPVideoDataPoolMaxSize > 2147483591) // maximum byte array size
-        _qoiWebPVideoDataPoolMaxSize = 2147483591;
-      _qoiWebPVideoDataPool = ArrayPool<byte>.Create(_qoiWebPVideoDataPoolMaxSize, MaxFrameQueueSize);
+      if (_qoiJpegVideoDataPoolMaxSize > 2147483591) // maximum byte array size
+        _qoiJpegVideoDataPoolMaxSize = 2147483591;
+      _qoiJpegVideoDataPool = ArrayPool<byte>.Create(_qoiJpegVideoDataPoolMaxSize, MaxFrameQueueSize);
       _videoFramesProcessed = 0;
       _videoFramesCompressed = 0;
     }
     else
     {
       // allow potential previous compression buffers to be garbage collected
-      _qoiWebPVideoDataPool = null;
+      _qoiJpegVideoDataPool = null;
     }
 
     if (_lz4Compression)
@@ -283,20 +316,40 @@ public class BeamSender
 
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private unsafe void sendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataWebP, byte[]? encodedDataQoi, byte[]? encodedDataLz4)
+  private unsafe void sendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataJpeg, byte[]? encodedDataQoi, byte[]? encodedDataLz4)
   {
     try
     {
       int encodedDataLength = 0;
 
-      if (encodedDataWebP != null) // apply WebP compression if enabled
+      if (encodedDataJpeg != null) // apply Jpeg compression if enabled
       {
-        //TODO: cache the WebPConfig object in SetVideoParameters() and reuse it here
-        encodedDataLength = WebP.EncodeLossless(rawData, 0, (int)videoHeader.Width, (int)videoHeader.Height, 4, encodedDataWebP); // encode the QOI data with WebP
+        fixed (byte* jpegBuf = encodedDataJpeg)
+        {
+          //FIXME: in async mode with lossless this fails with: "tjCompress2 failed with error 1: Improper call to JPEG library in state 101" (but lossy is working)
+
+          // nuint jpegDataLength = (nuint)(videoHeader.Width * TurboJpeg.tjPixelSize[(int)TJPF.TJPF_BGRA] * videoHeader.Height);
+          nuint jpegDataLength = (nuint)videoHeader.DataSize;
+          int compressResult;
+
+          if (_libJpegTurboV3)
+            compressResult = TurboJpeg.tj3Compress8(_turboJpegCompress, rawData, (int)videoHeader.Width, 0, (int)videoHeader.Height, (int)_jpegPixelFormat, &jpegBuf, &jpegDataLength);
+          else
+            compressResult = TurboJpeg.tjCompress2(_turboJpegCompress, rawData, (int)videoHeader.Width, 0, (int)videoHeader.Height, (int)_jpegPixelFormat, &jpegBuf, &jpegDataLength, (int)_jpegSubsampling, _jpegCompressionQuality, TurboJpeg.TJFLAG_NOREALLOC);
+          encodedDataLength = (int)jpegDataLength;
+          if (compressResult != 0)
+          {
+            if (_libJpegTurboV3)
+              Module.Log("Jpeg compression failed with error " + TurboJpeg.tj3GetErrorCode(_turboJpegCompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tj3GetErrorStr(_turboJpegCompress)), ObsLogLevel.Error);
+            else
+              Module.Log("Jpeg compression failed with error " + TurboJpeg.tjGetErrorCode(_turboJpegCompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tjGetErrorStr2(_turboJpegCompress)), ObsLogLevel.Error);
+            return;
+          }
+        }
 
         if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
         {
-          videoHeader.Compression = Beam.CompressionTypes.WebP;
+          videoHeader.Compression = Beam.CompressionTypes.Jpeg;
           videoHeader.DataSize = encodedDataLength;
         }
       }
@@ -339,9 +392,9 @@ public class BeamSender
 
       switch (videoHeader.Compression)
       {
-        case Beam.CompressionTypes.WebP:
+        case Beam.CompressionTypes.Jpeg:
           foreach (var client in _clients.Values)
-            client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataWebP!);
+            client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataJpeg!);
           break;
         case Beam.CompressionTypes.Qoi:
           foreach (var client in _clients.Values)
@@ -367,10 +420,10 @@ public class BeamSender
     finally
     {
       // return the rented encoding data buffers to the pool, each client has created a copy of that data for its own use
-      if (encodedDataWebP != null)
-        _qoiWebPVideoDataPool?.Return(encodedDataWebP);
+      if (encodedDataJpeg != null)
+        _qoiJpegVideoDataPool?.Return(encodedDataJpeg);
       if (encodedDataQoi != null)
-        _qoiWebPVideoDataPool?.Return(encodedDataQoi);
+        _qoiJpegVideoDataPool?.Return(encodedDataQoi);
       if (encodedDataLz4 != null)
         _lz4VideoDataPool?.Return(encodedDataLz4);
     }
@@ -386,7 +439,7 @@ public class BeamSender
       client.EnqueueVideoTimestamp(timestamp);
 
     // no compression of any kind, just enqueue the raw data right away from the original unmanaged memory
-    if (!_qoiCompression && !_lz4Compression && !_webPCompression)
+    if (!_qoiCompression && !_lz4Compression && !_jpegCompression)
     {
       foreach (var client in _clients.Values)
         client.EnqueueVideoFrame(timestamp, _videoHeader, data);
@@ -396,15 +449,15 @@ public class BeamSender
     // determine whether this frame needs to be compressed
     bool compressThisFrame = ((_compressionThreshold == 1) || (((double)_videoFramesCompressed / _videoFramesProcessed) < _compressionThreshold));
 
-    // prepare WebP compression buffer
-    byte[]? encodedDataWebP = null;
-    if (_webPCompression && compressThisFrame)
-      encodedDataWebP = _qoiWebPVideoDataPool!.Rent(_qoiWebPVideoDataPoolMaxSize);
+    // prepare Jpeg compression buffer
+    byte[]? encodedDataJpeg = null;
+    if (_jpegCompression && compressThisFrame)
+      encodedDataJpeg = _qoiJpegVideoDataPool!.Rent(_qoiJpegVideoDataPoolMaxSize);
 
     // prepare QOI compression buffer
     byte[]? encodedDataQoi = null;
     if (_qoiCompression && compressThisFrame)
-      encodedDataQoi = _qoiWebPVideoDataPool!.Rent(_qoiWebPVideoDataPoolMaxSize);
+      encodedDataQoi = _qoiJpegVideoDataPool!.Rent(_qoiJpegVideoDataPoolMaxSize);
 
     // frame skipping logic
     if (_compressionThreshold < 1) // is QOI frame skipping enabled?
@@ -426,7 +479,7 @@ public class BeamSender
       encodedDataLz4 = _lz4VideoDataPool!.Rent(_lz4VideoDataPoolMaxSize);
 
     if (_compressionThreadingSync)
-      sendCompressed(timestamp, _videoHeader, data, encodedDataWebP, encodedDataQoi, encodedDataLz4); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
+      sendCompressed(timestamp, _videoHeader, data, encodedDataJpeg, encodedDataQoi, encodedDataLz4); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
     else
     {
       // will not run in sync with this OBS render thread, need a copy of the unmanaged data array
@@ -436,7 +489,7 @@ public class BeamSender
       {
         var capturedBeamVideoData = (Beam.BeamVideoData)state!;
         fixed (byte* videoData = capturedBeamVideoData.Data)
-          sendCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, encodedDataWebP, encodedDataQoi, encodedDataLz4);
+          sendCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, encodedDataJpeg, encodedDataQoi, encodedDataLz4);
       }, beamVideoData);
     }
   }

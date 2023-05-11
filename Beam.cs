@@ -18,7 +18,7 @@ public class Beam
     Qoi = 1,
     Lz4 = 2,
     QoiLz4 = 3,
-    WebP = 4,
+    Jpeg = 4,
   }
 
   #region helper methods
@@ -87,7 +87,7 @@ public class Beam
       case video_format.VIDEO_FORMAT_Y800:
       case video_format.VIDEO_FORMAT_BGR3:
       case video_format.VIDEO_FORMAT_AYUV:
-        // case video_format.VIDEO_FORMAT_V210: // newer OBS
+        // case video_format.VIDEO_FORMAT_V210: // OBS 29.1.X+
         planeSizes = new uint[1];
         planeSizes[0] = (linesize[0] * height);
         return planeSizes;
