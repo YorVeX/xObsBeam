@@ -43,6 +43,7 @@ public class BeamSender
   int _jpegCompressionQuality = 90;
   TJSAMP _jpegSubsampling = TJSAMP.TJSAMP_444;
   TJPF _jpegPixelFormat = TJPF.TJPF_RGB;
+  TJCS _jpegColorspace = TJCS.TJCS_RGB;
   bool _libJpegTurboV3 = false;
   bool _qoiCompression = false;
   private double _compressionThreshold = 1;
@@ -50,7 +51,6 @@ public class BeamSender
   bool _lz4CompressionSyncQoiSkips = true;
   LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
   bool _compressionThreadingSync = true;
-  unsafe void* _turboJpegCompress = null;
 
   public unsafe void SetVideoParameters(video_output_info* info, uint* linesize)
   {
@@ -94,13 +94,6 @@ public class BeamSender
       {
         _qoiJpegVideoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength); // QOI's theoretical max size for BGRA is 5x the size of the original image
         _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
-        if (_turboJpegCompress != null)
-        {
-          if (EncoderSupport.LibJpegTurboV3)
-            TurboJpeg.tj3Destroy(_turboJpegCompress);
-          else
-            TurboJpeg.tjDestroy(_turboJpegCompress);
-        }
       }
       else if (_jpegCompression)
       {
@@ -109,19 +102,7 @@ public class BeamSender
         _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
         _jpegPixelFormat = EncoderSupport.ObsToJpegPixelFormat(info->format);
         _jpegSubsampling = EncoderSupport.ObsToJpegSubsampling(info->format);
-        if (EncoderSupport.LibJpegTurboV3)
-        {
-          _turboJpegCompress = TurboJpeg.tj3Init((int)TJINIT.TJINIT_COMPRESS);
-          TurboJpeg.tj3Set(_turboJpegCompress, (int)TJPARAM.TJPARAM_NOREALLOC, 1);
-          TurboJpeg.tj3Set(_turboJpegCompress, (int)TJPARAM.TJPARAM_COLORSPACE, (int)EncoderSupport.ObsToJpegColorSpace(info->format));
-          TurboJpeg.tj3Set(_turboJpegCompress, (int)TJPARAM.TJPARAM_SUBSAMP, (int)_jpegSubsampling);
-          if (_jpegCompressionLossless)
-            TurboJpeg.tj3Set(_turboJpegCompress, (int)TJPARAM.TJPARAM_LOSSLESS, 1);
-          else
-            TurboJpeg.tj3Set(_turboJpegCompress, (int)TJPARAM.TJPARAM_QUALITY, _jpegCompressionQuality);
-        }
-        else
-          _turboJpegCompress = TurboJpeg.tjInitCompress();
+        _jpegColorspace = EncoderSupport.ObsToJpegColorSpace(info->format);
       }
       if (_qoiJpegVideoDataPoolMaxSize > 2147483591) // maximum byte array size
         _qoiJpegVideoDataPoolMaxSize = 2147483591;
@@ -322,27 +303,47 @@ public class BeamSender
     {
       int encodedDataLength = 0;
 
-      if (encodedDataJpeg != null) // apply Jpeg compression if enabled
+      if (encodedDataJpeg != null) // apply JPEG compression if enabled
       {
         fixed (byte* jpegBuf = encodedDataJpeg)
         {
-          //FIXME: in async mode with lossless this fails with: "tjCompress2 failed with error 1: Improper call to JPEG library in state 101" (but lossy is working)
-
           // nuint jpegDataLength = (nuint)(videoHeader.Width * TurboJpeg.tjPixelSize[(int)TJPF.TJPF_BGRA] * videoHeader.Height);
           nuint jpegDataLength = (nuint)videoHeader.DataSize;
           int compressResult;
 
-          if (_libJpegTurboV3)
-            compressResult = TurboJpeg.tj3Compress8(_turboJpegCompress, rawData, (int)videoHeader.Width, 0, (int)videoHeader.Height, (int)_jpegPixelFormat, &jpegBuf, &jpegDataLength);
+          void* turboJpegCompress; // needs to be recreated for every compression to be sure it's thread-safe, as stated here: https://github.com/libjpeg-turbo/libjpeg-turbo/issues/584
+          if (EncoderSupport.LibJpegTurboV3)
+          {
+            turboJpegCompress = TurboJpeg.tj3Init((int)TJINIT.TJINIT_COMPRESS);
+            TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_NOREALLOC, 1);
+            TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_COLORSPACE, (int)_jpegColorspace);
+            TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_SUBSAMP, (int)_jpegSubsampling);
+            if (_jpegCompressionLossless)
+              TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_LOSSLESS, 1);
+            else
+              TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_QUALITY, _jpegCompressionQuality);
+          }
           else
-            compressResult = TurboJpeg.tjCompress2(_turboJpegCompress, rawData, (int)videoHeader.Width, 0, (int)videoHeader.Height, (int)_jpegPixelFormat, &jpegBuf, &jpegDataLength, (int)_jpegSubsampling, _jpegCompressionQuality, TurboJpeg.TJFLAG_NOREALLOC);
+            turboJpegCompress = TurboJpeg.tjInitCompress();
+
+          if (_libJpegTurboV3)
+          {
+            compressResult = TurboJpeg.tj3Compress8(turboJpegCompress, rawData, (int)videoHeader.Width, 0, (int)videoHeader.Height, (int)_jpegPixelFormat, &jpegBuf, &jpegDataLength);
+            TurboJpeg.tj3Destroy(turboJpegCompress);
+          }
+          else
+          {
+            compressResult = TurboJpeg.tjCompress2(turboJpegCompress, rawData, (int)videoHeader.Width, 0, (int)videoHeader.Height, (int)_jpegPixelFormat, &jpegBuf, &jpegDataLength, (int)_jpegSubsampling, _jpegCompressionQuality, TurboJpeg.TJFLAG_NOREALLOC);
+            TurboJpeg.tjDestroy(turboJpegCompress);
+          }
           encodedDataLength = (int)jpegDataLength;
+
           if (compressResult != 0)
           {
             if (_libJpegTurboV3)
-              Module.Log("Jpeg compression failed with error " + TurboJpeg.tj3GetErrorCode(_turboJpegCompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tj3GetErrorStr(_turboJpegCompress)), ObsLogLevel.Error);
+              Module.Log("JPEG compression failed with error " + TurboJpeg.tj3GetErrorCode(turboJpegCompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tj3GetErrorStr(turboJpegCompress)), ObsLogLevel.Error);
             else
-              Module.Log("Jpeg compression failed with error " + TurboJpeg.tjGetErrorCode(_turboJpegCompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tjGetErrorStr2(_turboJpegCompress)), ObsLogLevel.Error);
+              Module.Log("JPEG compression failed with error " + TurboJpeg.tjGetErrorCode(turboJpegCompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tjGetErrorStr2(turboJpegCompress)), ObsLogLevel.Error);
             return;
           }
         }
