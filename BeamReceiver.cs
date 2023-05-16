@@ -220,9 +220,26 @@ public class BeamReceiver
   {
     fixed (byte* jpegBuf = receivedFrameData, dstBuf = rawDataBuffer)
     {
+      //TODO: use v3 API if available
       var compressResult = TurboJpeg.tjDecompress2(_turboJpegDecompress, jpegBuf, (uint)dataSize, dstBuf, width, width * TurboJpeg.tjPixelSize[(int)TJPF.TJPF_BGRA], height, (int)TJPF.TJPF_BGRA, 0);
       if (compressResult != 0)
         Module.Log("tjDecompress2 failed with error " + TurboJpeg.tjGetErrorCode(_turboJpegDecompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tjGetErrorStr2(_turboJpegDecompress)), ObsLogLevel.Error);
+    }
+  }
+
+  private unsafe uint getRawVideoDataSize(Beam.VideoHeader videoHeader)
+  {
+    uint rawVideoDataSize = 0;
+    // get the plane sizes for the current frame format and size
+    fixed (uint* linesize = videoHeader.Linesize)
+    {
+      var videoPlaneSizes = Beam.GetPlaneSizes(videoHeader.Format, videoHeader.Height, linesize);
+      if (videoPlaneSizes.Length == 0) // unsupported format
+        return rawVideoDataSize;
+
+      for (int planeIndex = 0; planeIndex < videoPlaneSizes.Length; planeIndex++)
+        rawVideoDataSize += videoPlaneSizes[planeIndex];
+      return rawVideoDataSize;
     }
   }
 
@@ -256,6 +273,7 @@ public class BeamReceiver
     var audioHeader = new Beam.AudioHeader();
 
     int videoHeaderSize = Beam.VideoHeader.VideoHeaderDataSize;
+    uint rawVideoDataSize = 0;
 
     uint fps = 30;
     uint logCycle = 0;
@@ -271,15 +289,8 @@ public class BeamReceiver
     FrameBuffer frameBuffer = new FrameBuffer();
     frameBuffer.FrameBufferTimeMs = FrameBufferTimeMs;
 
-    lock (_sizeLock)
-    {
-      if ((_width > 0) && (_height > 0)) // could still be set from a previous run, in this case use this information to initialize the buffers already
-      {
-        maxVideoDataSize = (int)(_width * _height * 4);
-        receivedFrameData = new byte[maxVideoDataSize];
-        lz4DecompressBuffer = new byte[maxVideoDataSize];
-      }
-    }
+    _width = 0;
+    _height = 0;
 
     // main loop
     while (!cancellationToken.IsCancellationRequested)
@@ -352,6 +363,7 @@ public class BeamReceiver
             }
             if (sizeChanged) // re-allocate the arrays matching the new necessary size
             {
+              rawVideoDataSize = getRawVideoDataSize(videoHeader);
               maxVideoDataSize = (int)(videoHeader.Width * videoHeader.Height * 4);
               receivedFrameData = new byte[maxVideoDataSize];
               lz4DecompressBuffer = new byte[maxVideoDataSize];
@@ -378,7 +390,11 @@ public class BeamReceiver
               }
               // need to decompress LZ4 only
               else if (videoHeader.Compression == Beam.CompressionTypes.Lz4)
-                LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, rawDataBuffer, 0, maxVideoDataSize);
+              {
+                int decompressedSize = LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, rawDataBuffer, 0, maxVideoDataSize);
+                if (decompressedSize != rawVideoDataSize)
+                  Module.Log($"LZ4 decompression failed, expected {rawVideoDataSize} bytes, got {decompressedSize} bytes.", ObsLogLevel.Error);
+              }
               // need to decompress QOI only
               else if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
                 Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
