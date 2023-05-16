@@ -199,8 +199,8 @@ public static class Output
           if (_videoInfo->format != video_format.VIDEO_FORMAT_BGRA)
             Module.Log(Module.ObsTextString("CompressionQOINoBGRAWarningText"), ObsLogLevel.Warning);
         }
-        _beamSender.SetVideoParameters(_videoInfo, frame->linesize);
-        startSenderIfPossible();
+        if (_beamSender.SetVideoParameters(_videoInfo, frame->linesize, frame->data))
+          startSenderIfPossible();
       }
       catch (Exception ex)
       {

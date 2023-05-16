@@ -34,6 +34,7 @@ public class BeamSender
   Beam.VideoHeader _videoHeader;
   Beam.AudioHeader _audioHeader;
   int _videoDataSize = 0;
+  uint[] _videoPlaneSizes = Array.Empty<uint>();
   int _audioDataSize = 0;
   int _audioBytesPerSample = 0;
 
@@ -44,6 +45,7 @@ public class BeamSender
   TJSAMP _jpegSubsampling = TJSAMP.TJSAMP_444;
   TJPF _jpegPixelFormat = TJPF.TJPF_RGB;
   TJCS _jpegColorspace = TJCS.TJCS_RGB;
+  bool _jpegYuv = false;
   bool _libJpegTurboV3 = false;
   bool _qoiCompression = false;
   private double _compressionThreshold = 1;
@@ -52,17 +54,29 @@ public class BeamSender
   LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
   bool _compressionThreadingSync = true;
 
-  public unsafe void SetVideoParameters(video_output_info* info, uint* linesize)
+  public unsafe bool SetVideoParameters(video_output_info* info, uint* linesize, video_data._data_e__FixedBuffer data)
   {
     _videoDataSize = 0;
     // get the plane sizes for the current frame format and size
-    uint[] planeSizes = Beam.GetPlaneSizes(info->format, info->height, linesize);
-    if (planeSizes.Length == 0) // unsupported format
-      return;
+    _videoPlaneSizes = Beam.GetPlaneSizes(info->format, info->height, linesize);
+    if (_videoPlaneSizes.Length == 0) // unsupported format
+      return false;
 
-    // calculate the total size of the video data by summing the plane sizes
-    for (int planeIndex = 0; planeIndex < planeSizes.Length; planeIndex++)
-      _videoDataSize += (int)planeSizes[planeIndex];
+    var pointerOffset = (IntPtr)data.e0;
+    for (int planeIndex = 0; planeIndex < _videoPlaneSizes.Length; planeIndex++)
+    {
+      // calculate the total size of the video data by summing the plane sizes
+      _videoDataSize += (int)_videoPlaneSizes[planeIndex];
+
+      // validate actual video data plane pointers against the GetPlaneSizes() information
+      if (pointerOffset != (IntPtr)data[planeIndex])
+      {
+        // either the GetPlaneSizes() returned wrong information or the video data plane pointers are not contiguous in memory (which we currently rely on)
+        Module.Log($"Video data plane pointer error for plane {planeIndex} of format {info->format}.", ObsLogLevel.Error);
+        return false;
+      }
+      pointerOffset += (int)_videoPlaneSizes[planeIndex];
+    }
 
     // create the video header with current frame base info as a template for every frame - in most cases only the timestamp changes so that this instance can be reused without copies of it being created
     _videoHeader = new Beam.VideoHeader()
@@ -103,6 +117,8 @@ public class BeamSender
         _jpegPixelFormat = EncoderSupport.ObsToJpegPixelFormat(info->format);
         _jpegSubsampling = EncoderSupport.ObsToJpegSubsampling(info->format);
         _jpegColorspace = EncoderSupport.ObsToJpegColorSpace(info->format);
+        _jpegYuv = EncoderSupport.FormatIsYuv(info->format);
+
       }
       if (_qoiJpegVideoDataPoolMaxSize > 2147483591) // maximum byte array size
         _qoiJpegVideoDataPoolMaxSize = 2147483591;
@@ -137,6 +153,8 @@ public class BeamSender
       string lz4WithLevelString = $"LZ4 ({SettingsDialog.Lz4CompressionLevel})";
       Module.Log($"Video output feed initialized with {(_qoiCompression ? (_lz4Compression ? "QOI + " + lz4WithLevelString : "QOI") : lz4WithLevelString)} compression. Sync to render thread: {_compressionThreadingSync}. Theoretical uncompressed net bandwidth demand would be {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
     }
+
+    return true;
   }
 
   public unsafe void SetAudioParameters(audio_output_info* info, uint frames)
