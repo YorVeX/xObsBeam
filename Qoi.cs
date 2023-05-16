@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace xObsBeam;
@@ -33,6 +34,7 @@ class Qoi
 
   //TODO: explore options to work with frame difference based compression in addition, some ideas and a link to "QOV" here: https://github.com/phoboslab/qoi/issues/228 and here: https://github.com/nigeltao/qoi2-bikeshed/issues/37
 
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
   static int pixelHash(Pixel pixel) => (pixel.R * 3 + pixel.G * 5 + pixel.B * 7 + pixel.A * 11) % 64;
 
   public static unsafe int Encode(byte* data, int startIndex, int dataSize, int channels, byte[] output)
