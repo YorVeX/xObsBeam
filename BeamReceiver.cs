@@ -380,8 +380,8 @@ public class BeamReceiver
               else if (videoHeader.Compression == Beam.CompressionTypes.Lz4)
               {
                 int decompressedSize = LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, rawDataBuffer, 0, maxVideoDataSize);
-                if (decompressedSize != maxVideoDataSize)
-                  Module.Log($"LZ4 decompression failed, expected {maxVideoDataSize} bytes, got {decompressedSize} bytes.", ObsLogLevel.Error);
+                if (decompressedSize != videoHeader.DataSize)
+                  Module.Log($"LZ4 decompression failed, expected {videoHeader.DataSize} bytes, got {decompressedSize} bytes.", ObsLogLevel.Error);
               }
               // need to decompress QOI only
               else if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
