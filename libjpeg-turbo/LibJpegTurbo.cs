@@ -1,4 +1,7 @@
-﻿using ClangSharp;
+﻿﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
+// SPDX-License-Identifier: MIT
+
+using ClangSharp;
 using System.Runtime.InteropServices;
 using static LibJpegTurbo.TJSAMP;
 

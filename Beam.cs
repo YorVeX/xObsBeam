@@ -46,6 +46,28 @@ public class Beam
     return reader.Position;
   }
 
+  public static unsafe uint[] GetYuvPlaneSizes(video_format format, uint width, uint height)
+  {
+    uint halfHeight = 0;
+    uint halfwidth = 0;
+    uint[] planeSizes;
+
+    switch (format)
+    {
+      //TODO: support more YUV formats for JPEG compression
+      case video_format.VIDEO_FORMAT_NV12: // deinterleave and convert to I420
+        halfHeight = (height + 1) / 2;
+        halfwidth = width / 2;
+        planeSizes = new uint[3];
+        planeSizes[0] = (width * height);
+        planeSizes[1] = (halfwidth * halfHeight);
+        planeSizes[2] = (halfwidth * halfHeight);
+        return planeSizes;
+      default: // doesn't need to be deinterleaved or not supported
+        return Array.Empty<uint>();
+    }
+  }
+
   public static unsafe uint[] GetPlaneSizes(video_format format, uint height, uint* linesize)
   {
     uint halfHeight = 0;
@@ -111,7 +133,7 @@ public class Beam
         return planeSizes;
       default:
         Module.Log($"Unsupported video format: {format}", ObsLogLevel.Error);
-        return new uint[0];
+        return Array.Empty<uint>();
     }
 
   }

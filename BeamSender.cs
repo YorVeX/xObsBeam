@@ -25,8 +25,10 @@ public class BeamSender
   TcpListener _listener = new TcpListener(IPAddress.Loopback, DefaultPort);
   string _pipeName = "";
   CancellationTokenSource _listenCancellationSource = new CancellationTokenSource();
-  ArrayPool<byte>? _qoiJpegVideoDataPool;
-  int _qoiJpegVideoDataPoolMaxSize = 0;
+  ArrayPool<byte>? _videoDataPool;
+  int _videoDataPoolMaxSize = 0;
+  ArrayPool<byte>? _qoiVideoDataPool;
+  int _qoiVideoDataPoolMaxSize = 0;
   private int _videoFramesProcessed = 0;
   private int _videoFramesCompressed = 0;
   ArrayPool<byte>? _lz4VideoDataPool;
@@ -35,6 +37,7 @@ public class BeamSender
   Beam.AudioHeader _audioHeader;
   int _videoDataSize = 0;
   uint[] _videoPlaneSizes = Array.Empty<uint>();
+  uint[] _jpegYuvPlaneSizes = Array.Empty<uint>();
   int _audioDataSize = 0;
   int _audioBytesPerSample = 0;
 
@@ -56,7 +59,15 @@ public class BeamSender
 
   public unsafe bool SetVideoParameters(video_output_info* info, uint* linesize, video_data._data_e__FixedBuffer data)
   {
+    // reset some variables
     _videoDataSize = 0;
+    _videoFramesProcessed = 0;
+    _videoFramesCompressed = 0;
+
+    // allow potential previous compression buffers to be garbage collected
+    _qoiVideoDataPool = null;
+    _lz4VideoDataPool = null;
+
     // get the plane sizes for the current frame format and size
     _videoPlaneSizes = Beam.GetPlaneSizes(info->format, info->height, linesize);
     if (_videoPlaneSizes.Length == 0) // unsupported format
@@ -102,34 +113,35 @@ public class BeamSender
     _compressionThreadingSync = SettingsDialog.CompressionMainThread;
     _lz4CompressionSyncQoiSkips = SettingsDialog.Lz4CompressionSyncQoiSkips;
 
-    if (_qoiCompression || _jpegCompression)
-    {
-      if (_qoiCompression)
-      {
-        _qoiJpegVideoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength); // QOI's theoretical max size for BGRA is 5x the size of the original image
-        _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
-      }
-      else if (_jpegCompression)
-      {
-        _libJpegTurboV3 = EncoderSupport.LibJpegTurboV3;
-        _qoiJpegVideoDataPoolMaxSize = _videoDataSize;
-        _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
-        _jpegPixelFormat = EncoderSupport.ObsToJpegPixelFormat(info->format);
-        _jpegSubsampling = EncoderSupport.ObsToJpegSubsampling(info->format);
-        _jpegColorspace = EncoderSupport.ObsToJpegColorSpace(info->format);
-        _jpegYuv = EncoderSupport.FormatIsYuv(info->format);
+    // prepare generic video data pool that can be used for operations that need buffers with the raw video data size for the current format (e.g. raw managed copy or JPEG deinterleaving)
+    _videoDataPoolMaxSize = _videoDataSize;
+    if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
+      _videoDataPoolMaxSize = 2147483591;
+    _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
 
-      }
-      if (_qoiJpegVideoDataPoolMaxSize > 2147483591) // maximum byte array size
-        _qoiJpegVideoDataPoolMaxSize = 2147483591;
-      _qoiJpegVideoDataPool = ArrayPool<byte>.Create(_qoiJpegVideoDataPoolMaxSize, MaxFrameQueueSize);
-      _videoFramesProcessed = 0;
-      _videoFramesCompressed = 0;
-    }
-    else
+    if (_qoiCompression)
     {
-      // allow potential previous compression buffers to be garbage collected
-      _qoiJpegVideoDataPool = null;
+      _qoiVideoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength); // QOI's theoretical max size for BGRA is 5x the size of the original image
+      if (_qoiVideoDataPoolMaxSize > 2147483591) // maximum byte array size
+        _qoiVideoDataPoolMaxSize = 2147483591;
+      _qoiVideoDataPool = ArrayPool<byte>.Create(_qoiVideoDataPoolMaxSize, MaxFrameQueueSize);
+      _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
+    }
+
+    if (_jpegCompression)
+    {
+      _libJpegTurboV3 = EncoderSupport.LibJpegTurboV3;
+      _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
+      _jpegPixelFormat = EncoderSupport.ObsToJpegPixelFormat(info->format);
+      _jpegSubsampling = EncoderSupport.ObsToJpegSubsampling(info->format);
+      _jpegColorspace = EncoderSupport.ObsToJpegColorSpace(info->format);
+      _jpegYuv = EncoderSupport.FormatIsYuv(info->format);
+      if (_jpegYuv) // get plane sizes for a format that libjpeg-turbo can handle (e.g. packed formats need to be deinterleaved)
+      {
+        _jpegYuvPlaneSizes = Beam.GetYuvPlaneSizes(info->format, info->width, info->height);
+        if (_jpegYuvPlaneSizes.Length == 0)
+          _jpegYuvPlaneSizes = _videoPlaneSizes; // no deinterleaving needed, fallback to the original plane sizes
+      }
     }
 
     if (_lz4Compression)
@@ -138,11 +150,6 @@ public class BeamSender
       if (_lz4VideoDataPoolMaxSize > 2147483591) // maximum byte array size
         _lz4VideoDataPoolMaxSize = 2147483591;
       _lz4VideoDataPool = ArrayPool<byte>.Create(_lz4VideoDataPoolMaxSize, MaxFrameQueueSize);
-    }
-    else
-    {
-      // allow potential previous compression buffers to be garbage collected
-      _lz4VideoDataPool = null;
     }
 
     var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoDataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
@@ -313,12 +320,12 @@ public class BeamSender
     }
   }
 
-
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   private unsafe void sendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataJpeg, byte[]? encodedDataQoi, byte[]? encodedDataLz4)
   {
     try
     {
+
       int encodedDataLength = 0;
 
       if (encodedDataJpeg != null) // apply JPEG compression if enabled
@@ -344,15 +351,43 @@ public class BeamSender
           else
             turboJpegCompress = TurboJpeg.tjInitCompress();
 
-          if (_libJpegTurboV3)
+          if (_jpegYuv)
           {
-            compressResult = TurboJpeg.tj3Compress8(turboJpegCompress, rawData, (int)videoHeader.Width, 0, (int)videoHeader.Height, (int)_jpegPixelFormat, &jpegBuf, &jpegDataLength);
-            TurboJpeg.tj3Destroy(turboJpegCompress);
+            // the data planes are contiguous in memory as validated by SetVideoParameters(), only need to set the pointers to the start of each plane
+            var planes = stackalloc byte*[_jpegYuvPlaneSizes.Length];
+            uint currentOffset = 0;
+            for (int planeIndex = 0; planeIndex < _jpegYuvPlaneSizes.Length; planeIndex++)
+            {
+              planes[planeIndex] = rawData + currentOffset;
+              currentOffset += _jpegYuvPlaneSizes[planeIndex];
+            }
+
+            if (_libJpegTurboV3)
+            {
+              compressResult = TurboJpeg.tj3CompressFromYUVPlanes8(turboJpegCompress, planes, (int)videoHeader.Width, null, (int)videoHeader.Height, &jpegBuf, &jpegDataLength);
+              TurboJpeg.tj3Destroy(turboJpegCompress);
+            }
+            else
+            {
+              compressResult = TurboJpeg.tjCompressFromYUVPlanes(turboJpegCompress, planes, (int)videoHeader.Width, null, (int)videoHeader.Height, (int)_jpegSubsampling, &jpegBuf, &jpegDataLength, _jpegCompressionQuality, TurboJpeg.TJFLAG_NOREALLOC);
+              TurboJpeg.tjDestroy(turboJpegCompress);
+            }
+            videoHeader.Format = video_format.VIDEO_FORMAT_BGRA; // receivers currently always decompress to BGRA
+            new Span<uint>(videoHeader.Linesize).Clear(); // BGRA also means only one plane, don't send the original YUV linesizes
+            videoHeader.Linesize[0] = videoHeader.Width * 4; // BGRA has 4 bytes per pixel
           }
           else
           {
-            compressResult = TurboJpeg.tjCompress2(turboJpegCompress, rawData, (int)videoHeader.Width, 0, (int)videoHeader.Height, (int)_jpegPixelFormat, &jpegBuf, &jpegDataLength, (int)_jpegSubsampling, _jpegCompressionQuality, TurboJpeg.TJFLAG_NOREALLOC);
-            TurboJpeg.tjDestroy(turboJpegCompress);
+            if (_libJpegTurboV3)
+            {
+              compressResult = TurboJpeg.tj3Compress8(turboJpegCompress, rawData, (int)videoHeader.Width, 0, (int)videoHeader.Height, (int)_jpegPixelFormat, &jpegBuf, &jpegDataLength);
+              TurboJpeg.tj3Destroy(turboJpegCompress);
+            }
+            else
+            {
+              compressResult = TurboJpeg.tjCompress2(turboJpegCompress, rawData, (int)videoHeader.Width, 0, (int)videoHeader.Height, (int)_jpegPixelFormat, &jpegBuf, &jpegDataLength, (int)_jpegSubsampling, _jpegCompressionQuality, TurboJpeg.TJFLAG_NOREALLOC);
+              TurboJpeg.tjDestroy(turboJpegCompress);
+            }
           }
           encodedDataLength = (int)jpegDataLength;
 
@@ -440,9 +475,9 @@ public class BeamSender
     {
       // return the rented encoding data buffers to the pool, each client has created a copy of that data for its own use
       if (encodedDataJpeg != null)
-        _qoiJpegVideoDataPool?.Return(encodedDataJpeg);
+        _videoDataPool?.Return(encodedDataJpeg);
       if (encodedDataQoi != null)
-        _qoiJpegVideoDataPool?.Return(encodedDataQoi);
+        _qoiVideoDataPool?.Return(encodedDataQoi);
       if (encodedDataLz4 != null)
         _lz4VideoDataPool?.Return(encodedDataLz4);
     }
@@ -457,7 +492,7 @@ public class BeamSender
     foreach (var client in _clients.Values)
       client.EnqueueVideoTimestamp(timestamp);
 
-    // no compression of any kind, just enqueue the raw data right away from the original unmanaged memory
+    // no compression of any kind, we also stay sync so just enqueue the raw data right away from the original unmanaged memory
     if (!_qoiCompression && !_lz4Compression && !_jpegCompression)
     {
       foreach (var client in _clients.Values)
@@ -471,12 +506,12 @@ public class BeamSender
     // prepare Jpeg compression buffer
     byte[]? encodedDataJpeg = null;
     if (_jpegCompression && compressThisFrame)
-      encodedDataJpeg = _qoiJpegVideoDataPool!.Rent(_qoiJpegVideoDataPoolMaxSize);
+      encodedDataJpeg = _videoDataPool!.Rent(_videoDataPoolMaxSize);
 
     // prepare QOI compression buffer
     byte[]? encodedDataQoi = null;
     if (_qoiCompression && compressThisFrame)
-      encodedDataQoi = _qoiJpegVideoDataPool!.Rent(_qoiJpegVideoDataPoolMaxSize);
+      encodedDataQoi = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
 
     // frame skipping logic
     if (_compressionThreshold < 1) // is QOI frame skipping enabled?
@@ -491,6 +526,8 @@ public class BeamSender
       }
     }
 
+    //FIXME: Number of memory leaks: 2 (happens since JPEG implementation)
+    
     // prepare LZ4 compression buffer
     byte[]? encodedDataLz4 = null;
     bool compressLz4Frame = (!_lz4CompressionSyncQoiSkips || (_lz4CompressionSyncQoiSkips && compressThisFrame));
@@ -498,17 +535,35 @@ public class BeamSender
       encodedDataLz4 = _lz4VideoDataPool!.Rent(_lz4VideoDataPoolMaxSize);
 
     if (_compressionThreadingSync)
-      sendCompressed(timestamp, _videoHeader, data, encodedDataJpeg, encodedDataQoi, encodedDataLz4); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
+    {
+      if (_jpegCompression && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
+      {
+        byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize);
+        EncoderSupport.Nv12ToJpeg(data, managedDataCopy, _videoPlaneSizes);
+        fixed (byte* videoData = managedDataCopy)
+          sendCompressed(timestamp, _videoHeader, videoData, encodedDataJpeg, encodedDataQoi, encodedDataLz4);
+        _videoDataPool!.Return(managedDataCopy);
+      }
+      else
+        sendCompressed(timestamp, _videoHeader, data, encodedDataJpeg, encodedDataQoi, encodedDataLz4); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
+    }
     else
     {
-      // will not run in sync with this OBS render thread, need a copy of the unmanaged data array
-      var managedDataCopy = new ReadOnlySpan<byte>(data, _videoDataSize).ToArray();
+      byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize); // need a managed memory copy for async handover
+
+      // to save an additional frame copy operation the JPEG deinterleaving is done in sync mode as part of the copy to managed memory that is needed anyway for the async handover
+      if (_jpegCompression && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
+        EncoderSupport.Nv12ToJpeg(data, managedDataCopy, _videoPlaneSizes);
+      else
+        new ReadOnlySpan<byte>(data, _videoDataSize).CopyTo(managedDataCopy); // just copy to managed as-is for formats that are not packed
+
       var beamVideoData = new Beam.BeamVideoData(_videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
       Task.Factory.StartNew(state =>
       {
-        var capturedBeamVideoData = (Beam.BeamVideoData)state!;
+        var capturedBeamVideoData = (Beam.BeamVideoData)state!; // capture into thread-local context
         fixed (byte* videoData = capturedBeamVideoData.Data)
           sendCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, encodedDataJpeg, encodedDataQoi, encodedDataLz4);
+        _videoDataPool!.Return(capturedBeamVideoData.Data);
       }, beamVideoData);
     }
   }

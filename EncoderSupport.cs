@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 using ObsInterop;
 using LibJpegTurbo;
 
@@ -104,6 +105,7 @@ namespace xObsBeam
       video_format.VIDEO_FORMAT_BGRA => TJPF.TJPF_BGRA,
       video_format.VIDEO_FORMAT_BGRX => TJPF.TJPF_BGRX,
       video_format.VIDEO_FORMAT_RGBA => TJPF.TJPF_RGBA,
+      video_format.VIDEO_FORMAT_Y800 => TJPF.TJPF_GRAY,
       _ => TJPF.TJPF_UNKNOWN
     };
 
@@ -150,6 +152,26 @@ namespace xObsBeam
           return TJSAMP.TJSAMP_444;
       }
       return TJSAMP.TJSAMP_444;
+    }
+
+    // called "Nv12ToJpeg" because it's not an actual NV12 to I420 conversion, fortunately to prepare the data for libjpeg-turbo a little less effort is needed
+    // ancient discussion that seems to show the history of it: https://sourceforge.net/p/libjpeg-turbo/mailman/message/32706124/
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static unsafe void Nv12ToJpeg(byte* sourceBuffer, Span<byte> destinationBuffer, uint[] planeSizes)
+    {
+      // copy the Y plane
+      new ReadOnlySpan<byte>(sourceBuffer, (int)planeSizes[0]).CopyTo(destinationBuffer);
+
+      // copy and deinterleave the UV plane
+      byte* uvPlane = sourceBuffer + planeSizes[0];
+      int uvPlaneSize = (int)planeSizes[1] / 2;
+      var uPlane = destinationBuffer.Slice((int)planeSizes[0], uvPlaneSize);
+      var vPlane = destinationBuffer.Slice((int)planeSizes[0] + uvPlaneSize, uvPlaneSize);
+      for (int i = 0; i < uvPlaneSize; i++)
+      {
+        uPlane[i] = uvPlane[(2 * i) + 0];
+        vPlane[i] = uvPlane[(2 * i) + 1];
+      }
     }
 
   }
