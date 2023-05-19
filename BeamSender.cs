@@ -57,7 +57,7 @@ public class BeamSender
   LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
   bool _compressionThreadingSync = true;
 
-  public unsafe bool SetVideoParameters(video_output_info* info, uint* linesize, video_data._data_e__FixedBuffer data)
+  public unsafe bool SetVideoParameters(video_output_info* info, video_format conversionVideoFormat, uint* linesize, video_data._data_e__FixedBuffer data)
   {
     // reset some variables
     _videoDataSize = 0;
@@ -68,8 +68,22 @@ public class BeamSender
     _qoiVideoDataPool = null;
     _lz4VideoDataPool = null;
 
+    // cache settings values
+    _jpegCompression = SettingsDialog.JpegCompression && EncoderSupport.LibJpegTurbo;
+    _jpegCompressionLossless = _jpegCompression && SettingsDialog.JpegCompressionLossless && EncoderSupport.LibJpegTurboLossless;
+    _jpegCompressionQuality = SettingsDialog.JpegCompressionQuality;
+    _qoiCompression = SettingsDialog.QoiCompression;
+    _lz4Compression = SettingsDialog.Lz4Compression;
+    _lz4CompressionLevel = SettingsDialog.Lz4CompressionLevel;
+    _compressionThreadingSync = SettingsDialog.CompressionMainThread;
+    _lz4CompressionSyncQoiSkips = SettingsDialog.Lz4CompressionSyncQoiSkips;
+
+    var format = info->format;
+    if (conversionVideoFormat != video_format.VIDEO_FORMAT_NONE)
+      format = conversionVideoFormat;
+    
     // get the plane sizes for the current frame format and size
-    _videoPlaneSizes = Beam.GetPlaneSizes(info->format, info->height, linesize);
+    _videoPlaneSizes = Beam.GetPlaneSizes(format, info->height, linesize);
     if (_videoPlaneSizes.Length == 0) // unsupported format
       return false;
 
@@ -83,7 +97,7 @@ public class BeamSender
       if (pointerOffset != (IntPtr)data[planeIndex])
       {
         // either the GetPlaneSizes() returned wrong information or the video data plane pointers are not contiguous in memory (which we currently rely on)
-        Module.Log($"Video data plane pointer error for plane {planeIndex} of format {info->format}.", ObsLogLevel.Error);
+        Module.Log($"Video data plane pointer error for plane {planeIndex} of format {format}.", ObsLogLevel.Error);
         return false;
       }
       pointerOffset += (int)_videoPlaneSizes[planeIndex];
@@ -98,20 +112,10 @@ public class BeamSender
       Height = info->height,
       Linesize = new ReadOnlySpan<uint>(linesize, Beam.VideoHeader.MAX_AV_PLANES).ToArray(),
       Fps = info->fps_num,
-      Format = info->format,
+      Format = format,
       Range = info->range,
       Colorspace = info->colorspace,
     };
-
-    // cache settings values
-    _jpegCompression = SettingsDialog.JpegCompression && EncoderSupport.LibJpegTurbo;
-    _jpegCompressionLossless = SettingsDialog.JpegCompressionLossless && EncoderSupport.LibJpegTurboLossless;
-    _jpegCompressionQuality = SettingsDialog.JpegCompressionQuality;
-    _qoiCompression = SettingsDialog.QoiCompression;
-    _lz4Compression = SettingsDialog.Lz4Compression;
-    _lz4CompressionLevel = SettingsDialog.Lz4CompressionLevel;
-    _compressionThreadingSync = SettingsDialog.CompressionMainThread;
-    _lz4CompressionSyncQoiSkips = SettingsDialog.Lz4CompressionSyncQoiSkips;
 
     // prepare generic video data pool that can be used for operations that need buffers with the raw video data size for the current format (e.g. raw managed copy or JPEG deinterleaving)
     _videoDataPoolMaxSize = _videoDataSize;
@@ -132,13 +136,13 @@ public class BeamSender
     {
       _libJpegTurboV3 = EncoderSupport.LibJpegTurboV3;
       _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
-      _jpegPixelFormat = EncoderSupport.ObsToJpegPixelFormat(info->format);
-      _jpegSubsampling = EncoderSupport.ObsToJpegSubsampling(info->format);
-      _jpegColorspace = EncoderSupport.ObsToJpegColorSpace(info->format);
-      _jpegYuv = EncoderSupport.FormatIsYuv(info->format);
+      _jpegPixelFormat = EncoderSupport.ObsToJpegPixelFormat(format);
+      _jpegSubsampling = EncoderSupport.ObsToJpegSubsampling(format);
+      _jpegColorspace = EncoderSupport.ObsToJpegColorSpace(format);
+      _jpegYuv = EncoderSupport.FormatIsYuv(format);
       if (_jpegYuv) // get plane sizes for a format that libjpeg-turbo can handle (e.g. packed formats need to be deinterleaved)
       {
-        _jpegYuvPlaneSizes = Beam.GetYuvPlaneSizes(info->format, info->width, info->height);
+        _jpegYuvPlaneSizes = Beam.GetYuvPlaneSizes(format, info->width, info->height);
         if (_jpegYuvPlaneSizes.Length == 0)
           _jpegYuvPlaneSizes = _videoPlaneSizes; // no deinterleaving needed, fallback to the original plane sizes
       }
@@ -182,6 +186,8 @@ public class BeamSender
   {
     get => (_videoDataSize > 0) && (_audioDataSize > 0);
   }
+
+  //BUG: odd resolutions cause a crash, at least 1279x719 certainly does
 
   public async void Start(string identifier, IPAddress localAddr, int port = DefaultPort)
   {
@@ -526,8 +532,6 @@ public class BeamSender
       }
     }
 
-    //FIXME: Number of memory leaks: 2 (happens since JPEG implementation)
-    
     // prepare LZ4 compression buffer
     byte[]? encodedDataLz4 = null;
     bool compressLz4Frame = (!_lz4CompressionSyncQoiSkips || (_lz4CompressionSyncQoiSkips && compressThisFrame));

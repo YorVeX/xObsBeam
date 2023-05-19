@@ -19,6 +19,7 @@ public static class Output
 
   unsafe static video_output_info* _videoInfo = null;
   unsafe static audio_output_info* _audioInfo = null;
+  unsafe static video_format _conversionVideoFormat = video_format.VIDEO_FORMAT_NONE;
   static ulong _videoFrameCycleCounter = 0;
   static ulong _audioFrameCycleCounter = 0;
   static BeamSender _beamSender = new BeamSender();
@@ -137,18 +138,17 @@ public static class Output
     if (!Convert.ToBoolean(Obs.obs_output_can_begin_data_capture(_outputData.Output, ObsOutput.OBS_OUTPUT_AV)))
       return Convert.ToByte(false);
 
-    // QOI can only work with BGRA format, force this on the output if QOI is enabled
-    //FIXME: this doesn't work, apparently the BGRA output we get from obs_output_get_video_conversion() differs from the one that we get when globally setting the output format to BGRA
-    // leads to a flickering feed of a frozen frame mixed with full green frames
-    /*
-    if (SettingsDialog.QoiCompression)
+    // color format compatibility check
+    var requiredVideoFormatConversion = SettingsDialog.GetRequiredVideoFormatConversion();
+    if (requiredVideoFormatConversion != video_format.VIDEO_FORMAT_NONE)
     {
+      // request conversion from OBS
       video_scale_info* videoScaleInfo = ObsBmem.bzalloc<video_scale_info>();
-      videoScaleInfo->format = video_format.VIDEO_FORMAT_BGRA;
+      _conversionVideoFormat = requiredVideoFormatConversion;
+      videoScaleInfo->format = _conversionVideoFormat;
       Module.Log($"Setting video conversion to {videoScaleInfo->width}x{videoScaleInfo->height} {videoScaleInfo->format} {videoScaleInfo->colorspace} {videoScaleInfo->range}", ObsLogLevel.Debug);
       Obs.obs_output_set_video_conversion(_outputData.Output, videoScaleInfo);
     }
-    */
 
     Obs.obs_output_begin_data_capture(_outputData.Output, ObsOutput.OBS_OUTPUT_AV);
 
@@ -165,6 +165,7 @@ public static class Output
     _audioFrameCycleCounter = 0;
     _videoInfo = null;
     _audioInfo = null;
+    _conversionVideoFormat = video_format.VIDEO_FORMAT_NONE;
   }
 
   private static void startSenderIfPossible()
@@ -184,22 +185,14 @@ public static class Output
     if (_videoInfo == null) // this is the first frame since the last output (re)start, get video info
     {
       _videoInfo = ObsVideo.video_output_get_info(Obs.obs_output_video(_outputData.Output));
+      //TODO: use obs_output_get_video_conversion() here
       // video_scale_info* videoScaleInfo = Obs.obs_output_get_video_conversion(_outputData.Output);
       // the correct behavior would be: if videoScaleInfo is not null (meaning conversion is active), then fields in videoScaleInfo override the general settings in _videoInfo and these should be considered
       // but obs_output_get_video_conversion() was only added in OBS 29.1.X (in beta at time of writing this on April 9th, 2023), so we can't use it yet
       // the good news is that in the case of this plugin it doesn't matter too much, since it's our own output we know which settings we changed
       try
       {
-        if (SettingsDialog.QoiCompression)
-        {
-          //FIXME: this doesn't work, apparently the BGRA output we get from obs_output_get_video_conversion() differs from the one that we get when globally setting the output format to BGRA
-          // _videoInfo->format = video_format.VIDEO_FORMAT_BGRA;
-
-          // instead we just warn the user about it
-          if (_videoInfo->format != video_format.VIDEO_FORMAT_BGRA)
-            Module.Log(Module.ObsTextString("CompressionQOINoBGRAWarningText"), ObsLogLevel.Warning);
-        }
-        if (_beamSender.SetVideoParameters(_videoInfo, frame->linesize, frame->data))
+        if (_beamSender.SetVideoParameters(_videoInfo, _conversionVideoFormat, frame->linesize, frame->data))
           startSenderIfPossible();
       }
       catch (Exception ex)

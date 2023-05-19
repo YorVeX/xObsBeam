@@ -154,8 +154,6 @@ namespace xObsBeam
       return TJSAMP.TJSAMP_444;
     }
 
-    // called "Nv12ToJpeg" because it's not an actual NV12 to I420 conversion, fortunately to prepare the data for libjpeg-turbo a little less effort is needed
-    // ancient discussion that seems to show the history of it: https://sourceforge.net/p/libjpeg-turbo/mailman/message/32706124/
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static unsafe void Nv12ToJpeg(byte* sourceBuffer, Span<byte> destinationBuffer, uint[] planeSizes)
     {
