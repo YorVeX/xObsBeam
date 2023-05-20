@@ -217,7 +217,7 @@ public static class Output
   {
     if (_audioInfo == null) // this is the first frame since the last output (re)start, get audio info
     {
-      _audioInfo = ObsAudio.audio_output_get_info(Obs.obs_get_audio());
+      _audioInfo = ObsAudio.audio_output_get_info(Obs.obs_output_audio(_outputData.Output));
       try
       {
         _beamSender.SetAudioParameters(_audioInfo, frames->frames);
