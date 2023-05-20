@@ -18,6 +18,7 @@ public class Beam
     Qoi = 1,
     Lz4 = 2,
     QoiLz4 = 3,
+    Jpeg = 4,
   }
 
   #region helper methods
@@ -43,6 +44,28 @@ public class Beam
       throw new ArgumentException("Failed to read enough data from sequence.");
     timestamp = (ulong)longResult;
     return reader.Position;
+  }
+
+  public static unsafe uint[] GetYuvPlaneSizes(video_format format, uint width, uint height)
+  {
+    uint halfHeight = 0;
+    uint halfwidth = 0;
+    uint[] planeSizes;
+
+    switch (format)
+    {
+      //TODO: support more YUV formats for JPEG compression
+      case video_format.VIDEO_FORMAT_NV12: // deinterleave and convert to I420
+        halfHeight = (height + 1) / 2;
+        halfwidth = width / 2;
+        planeSizes = new uint[3];
+        planeSizes[0] = (width * height);
+        planeSizes[1] = (halfwidth * halfHeight);
+        planeSizes[2] = (halfwidth * halfHeight);
+        return planeSizes;
+      default: // doesn't need to be deinterleaved or not supported
+        return Array.Empty<uint>();
+    }
   }
 
   public static unsafe uint[] GetPlaneSizes(video_format format, uint height, uint* linesize)
@@ -86,7 +109,7 @@ public class Beam
       case video_format.VIDEO_FORMAT_Y800:
       case video_format.VIDEO_FORMAT_BGR3:
       case video_format.VIDEO_FORMAT_AYUV:
-        // case video_format.VIDEO_FORMAT_V210: // newer OBS
+        // case video_format.VIDEO_FORMAT_V210: // OBS 29.1.X+
         planeSizes = new uint[1];
         planeSizes[0] = (linesize[0] * height);
         return planeSizes;
@@ -110,7 +133,7 @@ public class Beam
         return planeSizes;
       default:
         Module.Log($"Unsupported video format: {format}", ObsLogLevel.Error);
-        return new uint[0];
+        return Array.Empty<uint>();
     }
 
   }

@@ -20,6 +20,7 @@ public static class Module
   const bool DebugLog = false; // set this to true and recompile to get debug messages from this plug-in only (unlike getting the full log spam when enabling debug log globally in OBS)
   const string DefaultLocale = "en-US";
   public static string ModuleName = "xObsBeam";
+  public static string ModulePath = "";
   static string _locale = DefaultLocale;
   static unsafe obs_module* _obsModule = null;
   public static unsafe obs_module* ObsModule { get => _obsModule; }
@@ -38,10 +39,11 @@ public static class Module
 
   public static void UnhandledExceptionEventHandler(object sender, UnhandledExceptionEventArgs e)
   {
-    if (e.ExceptionObject is Exception)
+    if (e.ExceptionObject is Exception ex)
     {
-      var ex = (Exception)e.ExceptionObject;
       Log($"Unhandled {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
+      if (ex.InnerException is Exception innerEx)
+        Log($"Unhandled inner {innerEx.GetType().Name}: {innerEx.Message}\n{innerEx.StackTrace}", ObsLogLevel.Error);
     }
     else
       Log($"Unknown unhandled exception object: {e.ExceptionObject}", ObsLogLevel.Error);
@@ -147,6 +149,9 @@ public static class Module
     AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionEventHandler;
     TaskScheduler.UnobservedTaskException += UnobservedTaskExceptionEventHandler;
 
+    // remember where this module was loaded from
+    ModulePath = Path.GetFullPath(Marshal.PtrToStringUTF8((IntPtr)Obs.obs_get_module_binary_path(_obsModule))!);
+
     ObsFrontendApi.obs_frontend_add_event_callback(&FrontendEvent, null);
 
     SettingsDialog.Register();
@@ -156,8 +161,28 @@ public static class Module
     Output.Register();
     Output.Create();
 
-    var assemblyName = System.Reflection.Assembly.GetExecutingAssembly().GetName();
-    Version version = assemblyName.Version!;
+    var thisAssembly = System.Reflection.Assembly.GetExecutingAssembly();
+
+    // configure library resolving for native libraries to additionally search the same directory as this module
+    NativeLibrary.SetDllImportResolver(thisAssembly,
+      (string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath) =>
+      {
+        Module.Log($"Trying to load native library \"{libraryName}\" from additional path: {Path.GetDirectoryName(ModulePath)!}", ObsLogLevel.Debug);
+        if (NativeLibrary.TryLoad(Path.Combine(Path.GetDirectoryName(ModulePath)!, libraryName), out nint handle)) // search current module directory
+          return handle;
+        
+        if (libraryName == "turbojpeg")
+        {
+          Module.Log($"Trying to load native library \"{libraryName}\" with additional name variant: libturbojpeg.so.0", ObsLogLevel.Debug);
+          if (NativeLibrary.TryLoad("libturbojpeg.so.0", assembly, searchPath, out nint handle2))
+            return handle2;
+        }
+
+        return IntPtr.Zero; // fall back to default search paths and names
+      }
+    );
+
+    Version version = thisAssembly.GetName().Version!;
     Log($"Version {version.Major}.{version.Minor}.{version.Build} loaded.", ObsLogLevel.Info);
     return true;
   }

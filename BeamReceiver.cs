@@ -3,10 +3,12 @@
 
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
 using System.IO.Pipelines;
 using System.IO.Pipes;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using LibJpegTurbo;
 using K4os.Compression.LZ4;
 
 namespace xObsBeam;
@@ -23,6 +25,7 @@ public class BeamReceiver
   bool _isConnected = false;
   ulong _frameTimestampOffset = 0;
   ArrayPool<byte> _rawDataBufferPool = ArrayPool<byte>.Create();
+  unsafe void* _turboJpegDecompress = null;
 
   public ArrayPool<byte> RawDataBufferPool
   {
@@ -212,6 +215,57 @@ public class BeamReceiver
     Task.Run(() => Disconnected?.Invoke(this, EventArgs.Empty));
   }
 
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  private unsafe void turboJpegDecompressToBGRA(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, int width, int height)
+  {
+    fixed (byte* jpegBuf = receivedFrameData, dstBuf = rawDataBuffer)
+    {
+      int compressResult;
+      if (EncoderSupport.LibJpegTurboV3)
+        compressResult = TurboJpeg.tj3Decompress8(_turboJpegDecompress, jpegBuf, (uint)dataSize, dstBuf, width * TurboJpeg.tjPixelSize[(int)TJPF.TJPF_BGRA], (int)TJPF.TJPF_BGRA);
+      else
+        compressResult = TurboJpeg.tjDecompress2(_turboJpegDecompress, jpegBuf, (uint)dataSize, dstBuf, width, width * TurboJpeg.tjPixelSize[(int)TJPF.TJPF_BGRA], height, (int)TJPF.TJPF_BGRA, 0);
+      if (compressResult != 0)
+        Module.Log("tjDecompress2 failed with error " + TurboJpeg.tjGetErrorCode(_turboJpegDecompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tjGetErrorStr2(_turboJpegDecompress)), ObsLogLevel.Error);
+    }
+  }
+
+  private unsafe void turboJpegDecompressInit()
+  {
+    if (EncoderSupport.LibJpegTurboV3)
+      _turboJpegDecompress = TurboJpeg.tj3Init((int)TJINIT.TJINIT_DECOMPRESS);
+    else if (EncoderSupport.LibJpegTurbo)
+      _turboJpegDecompress = TurboJpeg.tjInitDecompress();
+  }
+
+  private unsafe void turboJpegDecompressDestroy()
+  {
+    if (_turboJpegDecompress != null)
+    {
+      if (EncoderSupport.LibJpegTurboV3)
+        TurboJpeg.tj3Destroy(_turboJpegDecompress);
+      else
+        TurboJpeg.tjDestroy(_turboJpegDecompress);
+      _turboJpegDecompress = null;
+    }
+  }
+
+  private unsafe uint getRawVideoDataSize(Beam.VideoHeader videoHeader)
+  {
+    uint rawVideoDataSize = 0;
+    // get the plane sizes for the current frame format and size
+    fixed (uint* linesize = videoHeader.Linesize)
+    {
+      var videoPlaneSizes = Beam.GetPlaneSizes(videoHeader.Format, videoHeader.Height, linesize);
+      if (videoPlaneSizes.Length == 0) // unsupported format
+        return rawVideoDataSize;
+
+      for (int planeIndex = 0; planeIndex < videoPlaneSizes.Length; planeIndex++)
+        rawVideoDataSize += videoPlaneSizes[planeIndex];
+      return rawVideoDataSize;
+    }
+  }
+
   private async Task processDataLoopAsync(Socket? socket, NamedPipeClientStream? pipeStream, CancellationToken cancellationToken)
   {
     string endpointName;
@@ -242,6 +296,7 @@ public class BeamReceiver
     var audioHeader = new Beam.AudioHeader();
 
     int videoHeaderSize = Beam.VideoHeader.VideoHeaderDataSize;
+    uint rawVideoDataSize = 0;
 
     uint fps = 30;
     uint logCycle = 0;
@@ -257,15 +312,10 @@ public class BeamReceiver
     FrameBuffer frameBuffer = new FrameBuffer();
     frameBuffer.FrameBufferTimeMs = FrameBufferTimeMs;
 
-    lock (_sizeLock)
-    {
-      if ((_width > 0) && (_height > 0)) // could still be set from a previous run, in this case use this information to initialize the buffers already
-      {
-        maxVideoDataSize = (int)(_width * _height * 4);
-        receivedFrameData = new byte[maxVideoDataSize];
-        lz4DecompressBuffer = new byte[maxVideoDataSize];
-      }
-    }
+    bool firstFrame = true;
+
+    if (EncoderSupport.LibJpegTurbo)
+      turboJpegDecompressInit();
 
     // main loop
     while (!cancellationToken.IsCancellationRequested)
@@ -336,10 +386,12 @@ public class BeamReceiver
               _width = videoHeader.Width;
               _height = videoHeader.Height;
             }
-            if (sizeChanged) // re-allocate the arrays matching the new necessary size
+            if (sizeChanged || firstFrame) // re-allocate the arrays matching the new necessary size
             {
+              firstFrame = false;
+              rawVideoDataSize = getRawVideoDataSize(videoHeader);
               maxVideoDataSize = (int)(videoHeader.Width * videoHeader.Height * 4);
-              receivedFrameData = new byte[maxVideoDataSize];
+              receivedFrameData = new byte[rawVideoDataSize];
               lz4DecompressBuffer = new byte[maxVideoDataSize];
               _rawDataBufferPool = ArrayPool<byte>.Create(maxVideoDataSize, 2);
             }
@@ -361,18 +413,23 @@ public class BeamReceiver
 
                 // now decompress QOI
                 Qoi.Decode(lz4DecompressBuffer, videoHeader.QoiDataSize, rawDataBuffer, maxVideoDataSize);
-
               }
               // need to decompress LZ4 only
               else if (videoHeader.Compression == Beam.CompressionTypes.Lz4)
               {
                 int decompressedSize = LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, rawDataBuffer, 0, maxVideoDataSize);
-                if (decompressedSize != maxVideoDataSize)
-                  Module.Log($"LZ4 decompression failed, expected {maxVideoDataSize} bytes, got {decompressedSize} bytes.", ObsLogLevel.Error);
+                if (decompressedSize != rawVideoDataSize)
+                  Module.Log($"LZ4 decompression failed, expected {rawVideoDataSize} bytes, got {decompressedSize} bytes.", ObsLogLevel.Error);
               }
               // need to decompress QOI only
               else if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
                 Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
+              // need to decompress JPEG only
+              else if (videoHeader.Compression == Beam.CompressionTypes.Jpeg)
+              {
+                //TODO: check the current global color format setting in OBS and output to BGRA or YUV based on that (YUV would be preferred, since JPEG is already YUV internally and NV12 the OBS default)
+                turboJpegDecompressToBGRA(receivedFrameData, (int)maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
+              }
             }
 
             // process the frame
@@ -386,14 +443,12 @@ public class BeamReceiver
             }
             else
               frameBuffer.ProcessFrame(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime));
-
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(videoHeader.DataSize), readResult.Buffer.End);
 
-            // tell the sender the current video frame timestamp that was received
-            var timestampBuffer = pipeWriter.GetMemory(sizeof(ulong));
-            BinaryPrimitives.WriteUInt64LittleEndian(timestampBuffer.Span, senderVideoTimestamp);
-            pipeWriter.Advance(8);
+            // tell the sender the current video frame timestamp that was received - only done for frames that were not skipped by the sender
+            BinaryPrimitives.WriteUInt64LittleEndian(pipeWriter.GetSpan(sizeof(ulong)), senderVideoTimestamp);
+            pipeWriter.Advance(sizeof(ulong));
             var writeResult = await pipeWriter.FlushAsync(cancellationToken);
             if (writeResult.IsCanceled || writeResult.IsCompleted)
             {
@@ -526,6 +581,7 @@ public class BeamReceiver
       try { pipeStream.Dispose(); } catch (Exception ex) { Module.Log($"{ex.GetType().Name} when disposing pipe: {ex.Message}", ObsLogLevel.Error); }
     }
     Module.Log($"Disconnected from {endpointName}.", ObsLogLevel.Info);
+    turboJpegDecompressDestroy();
     stream?.Close();
     _isConnected = false;
     OnDisconnected();
