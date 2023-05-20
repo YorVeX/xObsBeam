@@ -423,7 +423,7 @@ public class Source
       // calculate the plane size for the current frame format and size
       int audioBytesPerSample;
       Beam.GetAudioDataSize(audioFrame.Header.Format, audioFrame.Header.Speakers, audioFrame.Header.Frames, out _, out audioBytesPerSample);
-      uint _audioPlaneSize = (uint)audioBytesPerSample * audioFrame.Header.Frames;
+      _audioPlaneSize = (uint)audioBytesPerSample * audioFrame.Header.Frames;
       Module.Log("AudioFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
     }
 
