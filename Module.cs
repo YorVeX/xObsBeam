@@ -167,9 +167,18 @@ public static class Module
     NativeLibrary.SetDllImportResolver(thisAssembly,
       (string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath) =>
       {
+        Module.Log($"Trying to load native library \"{libraryName}\" from additional path: {Path.GetDirectoryName(ModulePath)!}", ObsLogLevel.Debug);
         if (NativeLibrary.TryLoad(Path.Combine(Path.GetDirectoryName(ModulePath)!, libraryName), out nint handle)) // search current module directory
           return handle;
-        return IntPtr.Zero; // fall back to default search paths
+        
+        if (libraryName == "turbojpeg")
+        {
+          Module.Log($"Trying to load native library \"{libraryName}\" with additional name variant: libturbojpeg.so.0", ObsLogLevel.Debug);
+          if (NativeLibrary.TryLoad("libturbojpeg.so.0", assembly, searchPath, out nint handle2))
+            return handle2;
+        }
+
+        return IntPtr.Zero; // fall back to default search paths and names
       }
     );
 
