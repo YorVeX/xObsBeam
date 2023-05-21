@@ -223,10 +223,15 @@ public class BeamReceiver
       int compressResult;
       if (EncoderSupport.LibJpegTurboV3)
         compressResult = TurboJpeg.tj3Decompress8(_turboJpegDecompress, jpegBuf, (uint)dataSize, dstBuf, width * TurboJpeg.tjPixelSize[(int)TJPF.TJPF_BGRA], (int)TJPF.TJPF_BGRA);
-      else
+      else if (EncoderSupport.LibJpegTurbo)
         compressResult = TurboJpeg.tjDecompress2(_turboJpegDecompress, jpegBuf, (uint)dataSize, dstBuf, width, width * TurboJpeg.tjPixelSize[(int)TJPF.TJPF_BGRA], height, (int)TJPF.TJPF_BGRA, 0);
+      else
+      {
+        Module.Log($"Error: JPEG library is not available, cannot decompress received video data!", ObsLogLevel.Error);
+        return;
+      }
       if (compressResult != 0)
-        Module.Log("tjDecompress2 failed with error " + TurboJpeg.tjGetErrorCode(_turboJpegDecompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tjGetErrorStr2(_turboJpegDecompress)), ObsLogLevel.Error);
+        Module.Log("turboJpegDecompressToBGRA failed with error " + TurboJpeg.tjGetErrorCode(_turboJpegDecompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tjGetErrorStr2(_turboJpegDecompress)), ObsLogLevel.Error);
     }
   }
 
