@@ -152,15 +152,6 @@ public static class Module
     // remember where this module was loaded from
     ModulePath = Path.GetFullPath(Marshal.PtrToStringUTF8((IntPtr)Obs.obs_get_module_binary_path(_obsModule))!);
 
-    ObsFrontendApi.obs_frontend_add_event_callback(&FrontendEvent, null);
-
-    SettingsDialog.Register();
-
-    Source.Register();
-
-    Output.Register();
-    Output.Create();
-
     var thisAssembly = System.Reflection.Assembly.GetExecutingAssembly();
 
     // configure library resolving for native libraries to additionally search the same directory as this module
@@ -170,7 +161,7 @@ public static class Module
         Module.Log($"Trying to load native library \"{libraryName}\" from additional path: {Path.GetDirectoryName(ModulePath)!}", ObsLogLevel.Debug);
         if (NativeLibrary.TryLoad(Path.Combine(Path.GetDirectoryName(ModulePath)!, libraryName), out nint handle)) // search current module directory
           return handle;
-        
+
         if (libraryName == "turbojpeg")
         {
           Module.Log($"Trying to load native library \"{libraryName}\" with additional name variant: libturbojpeg.so.0", ObsLogLevel.Debug);
@@ -181,6 +172,15 @@ public static class Module
         return IntPtr.Zero; // fall back to default search paths and names
       }
     );
+
+    ObsFrontendApi.obs_frontend_add_event_callback(&FrontendEvent, null);
+
+    SettingsDialog.Register();
+
+    Source.Register();
+
+    Output.Register();
+    Output.Create();
 
     Version version = thisAssembly.GetName().Version!;
     Log($"Version {version.Major}.{version.Minor}.{version.Build} loaded.", ObsLogLevel.Info);
