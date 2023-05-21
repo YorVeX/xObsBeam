@@ -85,7 +85,10 @@ public class BeamSender
     // get the plane sizes for the current frame format and size
     _videoPlaneSizes = Beam.GetPlaneSizes(format, info->height, linesize);
     if (_videoPlaneSizes.Length == 0) // unsupported format
+    {
+      Module.Log($"Error: Unsupported video format {format}.", ObsLogLevel.Error);
       return false;
+    }
 
     var pointerOffset = (IntPtr)data.e0;
     for (int planeIndex = 0; planeIndex < _videoPlaneSizes.Length; planeIndex++)
@@ -97,8 +100,8 @@ public class BeamSender
       if (pointerOffset != (IntPtr)data[planeIndex])
       {
         // either the GetPlaneSizes() returned wrong information or the video data plane pointers are not contiguous in memory (which we currently rely on)
-        Module.Log($"Video data plane pointer error for plane {planeIndex} of format {format}.", ObsLogLevel.Error);
-        return false;
+        Module.Log($"Video data plane pointer for plane {planeIndex} of format {info->format} has a difference of {pointerOffset - (IntPtr)data[planeIndex]}.", ObsLogLevel.Error);
+        //BUG: this is currently happening for odd resolutions like 1279x719 on YUV formats, because padding is not properly handled by GetPlaneSizes(), leading to image distortion
       }
       pointerOffset += (int)_videoPlaneSizes[planeIndex];
     }
