@@ -99,6 +99,28 @@ namespace xObsBeam
       return false;
     }
 
+    // check video_format comments in OBS video-io.h for reference: https://github.com/obsproject/obs-studio/blob/master/libobs/media-io/video-io.h
+    public static bool YuvFormatIsPacked(video_format format)
+    {
+      if (!FormatIsYuv(format))
+        throw new InvalidOperationException("Not a YUV format");
+      switch (format)
+      {
+        case video_format.VIDEO_FORMAT_NV12:
+        case video_format.VIDEO_FORMAT_I422:
+        case video_format.VIDEO_FORMAT_YVYU:
+        case video_format.VIDEO_FORMAT_YUY2:
+        case video_format.VIDEO_FORMAT_UYVY:
+        case video_format.VIDEO_FORMAT_AYUV:
+          // OBS 29.1.X+
+          // case video_format.VIDEO_FORMAT_P216:
+          // case video_format.VIDEO_FORMAT_P416:
+          // case video_format.VIDEO_FORMAT_V210:
+          return true;
+      }
+      return false;
+    }
+
     public static TJPF ObsToJpegPixelFormat(video_format obsVideoFormat) => obsVideoFormat switch
     {
       video_format.VIDEO_FORMAT_BGR3 => TJPF.TJPF_BGR,
