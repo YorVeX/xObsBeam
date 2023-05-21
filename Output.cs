@@ -135,7 +135,7 @@ public static class Output
   {
     Module.Log("output_start called", ObsLogLevel.Debug);
 
-    if (!Convert.ToBoolean(Obs.obs_output_can_begin_data_capture(_outputData.Output, ObsOutput.OBS_OUTPUT_AV)))
+    if (!Convert.ToBoolean(Obs.obs_output_can_begin_data_capture(_outputData.Output, ObsOutput.OBS_OUTPUT_AV))) //TODO: as soon as it's implemented in an OBS release use the new "2" function, we actually don't need to specify flags, see: https://github.com/obsproject/obs-studio/commit/d314d4725df2fef18a968ec4e12a80312359fef0
       return Convert.ToByte(false);
 
     // color format compatibility check
@@ -150,7 +150,7 @@ public static class Output
       Obs.obs_output_set_video_conversion(_outputData.Output, videoScaleInfo);
     }
 
-    Obs.obs_output_begin_data_capture(_outputData.Output, ObsOutput.OBS_OUTPUT_AV);
+    Obs.obs_output_begin_data_capture(_outputData.Output, ObsOutput.OBS_OUTPUT_AV); //TODO: as soon as it's implemented in an OBS release use the new "2" function, we actually don't need to specify flags, see: https://github.com/obsproject/obs-studio/commit/d314d4725df2fef18a968ec4e12a80312359fef0
 
     return Convert.ToByte(true);
   }
