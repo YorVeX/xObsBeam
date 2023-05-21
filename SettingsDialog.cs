@@ -15,7 +15,9 @@ public static class SettingsDialog
 
   static unsafe obs_data* _settings;
   static unsafe obs_source* _source;
+  static unsafe obs_properties* _properties;
 
+  static bool _initialized = false;
   static bool _qoiCompression = false;
   static bool _jpegCompression = false;
   static bool _lz4Compression = false;
@@ -433,6 +435,7 @@ public static class SettingsDialog
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_int(properties, (sbyte*)propertyListenPortId, (sbyte*)propertyListenPortCaption, 1024, 65535, 1), (sbyte*)propertyListenPortText);
 
     }
+    _properties = properties;
     return properties;
   }
 
@@ -475,9 +478,15 @@ public static class SettingsDialog
   public static unsafe void settings_update(void* data, obs_data* settings)
   {
     Module.Log("settings_update called", ObsLogLevel.Debug);
-    fixed (byte*
-      propertyEnableId = "enable"u8
-    )
+
+    if (!_initialized)
+    {
+      _initialized = true;
+      // compression settings use global variables that need to be initialized
+      updateCompressionSettings(_properties, settings);
+    }
+
+    fixed (byte* propertyEnableId = "enable"u8)
     {
       var isEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId));
       if (Output.IsReady)
@@ -571,8 +580,7 @@ public static class SettingsDialog
     return requiredVideoFormat;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-  public static unsafe byte CompressionSettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  private static unsafe void updateCompressionSettings(obs_properties* properties, obs_data* settings)
   {
     fixed (byte*
       propertyCompressionJpegId = "compression_jpeg"u8,
@@ -591,7 +599,6 @@ public static class SettingsDialog
       propertyCompressionFormatWarningId = "compression_format_warning_text"u8
     )
     {
-      
       // get current settings after the change
       var jpegCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionJpegId));
       var qoiCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoiId));
@@ -677,8 +684,12 @@ public static class SettingsDialog
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4LevelOptInfoId), Convert.ToByte(lz4Level >= 9));
 
     }
+  }
 
-
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte CompressionSettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    updateCompressionSettings(properties, settings);
     return Convert.ToByte(true);
   }
 
