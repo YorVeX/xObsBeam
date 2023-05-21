@@ -10,6 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using LibJpegTurbo;
 using K4os.Compression.LZ4;
+using ObsInterop;
 
 namespace xObsBeam;
 
@@ -216,7 +217,7 @@ public class BeamReceiver
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private unsafe void turboJpegDecompressToBGRA(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, int width, int height)
+  private unsafe void turboJpegDecompressToBgra(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, int width, int height)
   {
     fixed (byte* jpegBuf = receivedFrameData, dstBuf = rawDataBuffer)
     {
@@ -231,7 +232,7 @@ public class BeamReceiver
         return;
       }
       if (compressResult != 0)
-        Module.Log("turboJpegDecompressToBGRA failed with error " + TurboJpeg.tjGetErrorCode(_turboJpegDecompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tjGetErrorStr2(_turboJpegDecompress)), ObsLogLevel.Error);
+        Module.Log("turboJpegDecompressToBgra failed with error " + TurboJpeg.tjGetErrorCode(_turboJpegDecompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tjGetErrorStr2(_turboJpegDecompress)), ObsLogLevel.Error);
     }
   }
 
@@ -416,7 +417,7 @@ public class BeamReceiver
                 if (decompressedSize != videoHeader.QoiDataSize)
                   Module.Log($"LZ4 decompression failed, expected {videoHeader.QoiDataSize} bytes (QOI), got {decompressedSize} bytes.", ObsLogLevel.Error);
 
-                // now decompress QOI
+                // decompress QOI second
                 Qoi.Decode(lz4DecompressBuffer, videoHeader.QoiDataSize, rawDataBuffer, maxVideoDataSize);
               }
               // need to decompress LZ4 only
@@ -432,8 +433,10 @@ public class BeamReceiver
               // need to decompress JPEG only
               else if (videoHeader.Compression == Beam.CompressionTypes.Jpeg)
               {
-                //TODO: check the current global color format setting in OBS and output to BGRA or YUV based on that (YUV would be preferred, since JPEG is already YUV internally and NV12 the OBS default)
-                turboJpegDecompressToBGRA(receivedFrameData, (int)maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
+                turboJpegDecompressToBgra(receivedFrameData, (int)maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
+                videoHeader.Format = ObsInterop.video_format.VIDEO_FORMAT_BGRA; // we decompressed to BGRA
+                new Span<uint>(videoHeader.Linesize).Clear(); // BGRA also means only one plane, don't use the original YUV linesizes
+                videoHeader.Linesize[0] = videoHeader.Width * 4; // BGRA has 4 bytes per pixel
               }
             }
 
