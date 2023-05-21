@@ -7,13 +7,17 @@ It is also using the TurboJPEG API, for the license see [LICENSE](LICENSE).
 
 ## Installation and usage
 ### Using the wrapper class
+#### Windows
 In order to use the wrapper class the binary libjpeg-turbo library is needed. For Windows the necessary `turbojpeg.dll` version 2.1.91 (3.0 beta 2) is directly provided here for your convenience. If you want to get it from the original source: it is included in the package [libjpeg-turbo-2.1.91-vc64.exe](https://sourceforge.net/projects/libjpeg-turbo/files/2.1.91%20%283.0%20beta2%29/libjpeg-turbo-2.1.91-vc64.exe).
 This DLL should be placed in the same folder as the xObsBeam plugin for simplicity. Alternatively it can be placed in the `bin` folder of the OBS installation (where also obs64.exe is located), into Windows system directories where these libraries typically reside in, or into a directory that is in your PATH environment variable.
 
-On Linux it is recommended to install one of the libjpeg-turbo packages provided either by your distribution or from [https://sourceforge.net/projects/libjpeg-turbo/files](https://sourceforge.net/projects/libjpeg-turbo/files).
+#### Linux
+On Linux it is recommended to install one of the libjpeg-turbo packages provided either by your distribution or from [https://sourceforge.net/projects/libjpeg-turbo/files](https://sourceforge.net/projects/libjpeg-turbo/files). You need the `libturbojpeg.so.0` library file, e.g. on Ubuntu this would be contained in the [libturbojpeg](https://packages.ubuntu.com/search?keywords=libturbojpeg) package.
 
 ### Compatible versions and features
-The wrapper class was tested with both libjpeg-turbo versions 2.1.5.1 and 2.1.91 (aka beta 3.0 beta 2). Note that lossless JPEG encoding is only supported in beta 3 versions and later, for older versions the feature will be unavailable.
+The wrapper class was more thorougly tested in Windows with both libjpeg-turbo versions 2.1.5.1 and 2.1.91 (aka beta 3.0 beta 2) and had a quick and short test on Ubuntu 20.04 with the 2.0.3-0ubuntu1 version. In general it should also work with many older versions.
+
+Note that lossless JPEG encoding is only supported in beta 3 versions and later, for older versions the feature will be unavailable.
 
 ## Creating the wrapper class (for developers)
 The wrapper class was generated using ClangSharpPInvokeGenerator from [ClangSharp project](https://github.com/dotnet/ClangSharp) with the generate.ps1 script in this folder. This is a PowerShell script and therefore is for Windows only.
