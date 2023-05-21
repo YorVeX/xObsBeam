@@ -190,8 +190,6 @@ public class BeamSender
     get => (_videoDataSize > 0) && (_audioDataSize > 0);
   }
 
-  //BUG: odd resolutions cause a crash, at least 1279x719 certainly does
-
   public async void Start(string identifier, IPAddress localAddr, int port = DefaultPort)
   {
     if (_videoDataSize == 0)
