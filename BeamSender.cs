@@ -63,6 +63,7 @@ public class BeamSender
     _videoDataSize = 0;
     _videoFramesProcessed = 0;
     _videoFramesCompressed = 0;
+    _compressionThreshold = 1;
 
     // allow potential previous compression buffers to be garbage collected
     _qoiVideoDataPool = null;
@@ -138,7 +139,8 @@ public class BeamSender
     if (_jpegCompression)
     {
       _libJpegTurboV3 = EncoderSupport.LibJpegTurboV3;
-      _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
+      if (_jpegCompressionLossless)
+        _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
       _jpegPixelFormat = EncoderSupport.ObsToJpegPixelFormat(format);
       _jpegSubsampling = EncoderSupport.ObsToJpegSubsampling(format);
       _jpegColorspace = EncoderSupport.ObsToJpegColorSpace(format);
@@ -540,7 +542,7 @@ public class BeamSender
 
     if (_compressionThreadingSync)
     {
-      if (_jpegCompression && compressThisFrame && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
+      if (_jpegCompression && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
       {
         byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize);
         EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneSizes);
@@ -556,7 +558,7 @@ public class BeamSender
       byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize); // need a managed memory copy for async handover
 
       // to save an additional frame copy operation the JPEG deinterleaving is done in sync mode as part of the copy to managed memory that is needed anyway for the async handover
-      if (_jpegCompression && compressThisFrame && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
+      if (_jpegCompression && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
         EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneSizes);
       else
         new ReadOnlySpan<byte>(data, _videoDataSize).CopyTo(managedDataCopy); // just copy to managed as-is for formats that are not packed

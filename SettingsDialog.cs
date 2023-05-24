@@ -645,7 +645,7 @@ public static class SettingsDialog
         _lz4Compression = lz4CompressionEnabled;
       }
 
-      // JPEG: enable quality setting only if lossless is disabled or vice versa
+      // JPEG: enable quality setting and disable level setting if lossless is disabled or vice versa
       var jpegLossless = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionJpegLosslessId));
       if (jpegLossless && !EncoderSupport.LibJpegTurboV3) // handle the special case where JPEG lossless is enabled but the library doesn't support it, in this case force disable this option
       {
@@ -653,6 +653,7 @@ public static class SettingsDialog
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegLosslessId, Convert.ToByte(jpegLossless));
       }
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionJpegQualityId), Convert.ToByte(!jpegLossless));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionJpegLevelId), Convert.ToByte(jpegLossless));
 
       // derive video format requirements from the settings
       if (QoiCompression || (JpegCompression && JpegCompressionLossless))
