@@ -236,6 +236,33 @@ public class BeamReceiver
     }
   }
 
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  private unsafe void turboJpegDecompressToYuv(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, uint[] videoPlaneSizes, int width, int height)
+  {
+    fixed (byte* jpegBuf = receivedFrameData, dstBuf = rawDataBuffer)
+    {
+      uint currentOffset = 0;
+      var planePointers = stackalloc byte*[videoPlaneSizes.Length];
+      for (int planeIndex = 0; planeIndex < videoPlaneSizes.Length; planeIndex++)
+      {
+        planePointers[planeIndex] = dstBuf + currentOffset;
+        currentOffset += videoPlaneSizes[planeIndex];
+      }
+      int compressResult;
+      if (EncoderSupport.LibJpegTurboV3)
+        compressResult = TurboJpeg.tj3DecompressToYUVPlanes8(_turboJpegDecompress, jpegBuf, (uint)dataSize, planePointers, null);
+      else if (EncoderSupport.LibJpegTurbo)
+        compressResult = TurboJpeg.tjDecompressToYUVPlanes(_turboJpegDecompress, jpegBuf, (uint)dataSize, planePointers, width, null, height, 0);
+      else
+      {
+        Module.Log($"Error: JPEG library is not available, cannot decompress received video data!", ObsLogLevel.Error);
+        return;
+      }
+      if (compressResult != 0)
+        Module.Log("turboJpegDecompressToYuv failed with error " + TurboJpeg.tjGetErrorCode(_turboJpegDecompress) + ": " + Marshal.PtrToStringUTF8((IntPtr)TurboJpeg.tjGetErrorStr2(_turboJpegDecompress)), ObsLogLevel.Error);
+    }
+  }
+
   private unsafe void turboJpegDecompressInit()
   {
     if (EncoderSupport.LibJpegTurboV3)
@@ -256,13 +283,13 @@ public class BeamReceiver
     }
   }
 
-  private unsafe uint getRawVideoDataSize(Beam.VideoHeader videoHeader)
+  private unsafe uint getRawVideoDataSize(Beam.VideoHeader videoHeader, out uint[] videoPlaneSizes)
   {
     uint rawVideoDataSize = 0;
     // get the plane sizes for the current frame format and size
     fixed (uint* linesize = videoHeader.Linesize)
     {
-      var videoPlaneSizes = Beam.GetPlaneSizes(videoHeader.Format, videoHeader.Height, linesize);
+      videoPlaneSizes = Beam.GetPlaneSizes(videoHeader.Format, videoHeader.Height, linesize);
       if (videoPlaneSizes.Length == 0) // unsupported format
         return rawVideoDataSize;
 
@@ -300,6 +327,8 @@ public class BeamReceiver
 
     var videoHeader = new Beam.VideoHeader();
     var audioHeader = new Beam.AudioHeader();
+
+    uint[] videoPlaneSizes = Array.Empty<uint>();
 
     int videoHeaderSize = Beam.VideoHeader.VideoHeaderDataSize;
     uint rawVideoDataSize = 0;
@@ -395,7 +424,7 @@ public class BeamReceiver
             if (sizeChanged || firstFrame) // re-allocate the arrays matching the new necessary size
             {
               firstFrame = false;
-              rawVideoDataSize = getRawVideoDataSize(videoHeader);
+              rawVideoDataSize = getRawVideoDataSize(videoHeader, out videoPlaneSizes);
               maxVideoDataSize = (int)(videoHeader.Width * videoHeader.Height * 4);
               receivedFrameData = new byte[rawVideoDataSize];
               lz4DecompressBuffer = new byte[maxVideoDataSize];
@@ -433,6 +462,8 @@ public class BeamReceiver
               // need to decompress JPEG only
               else if (videoHeader.Compression == Beam.CompressionTypes.Jpeg)
               {
+                //TODO: output to YUV instead of BGRA by default, the necessary turboJpegDecompressToYuv() function is already there but hasn't been tested yet
+                // this would save libjpeg-turbo from having to do a conversion from native JPEG YUV to BGRA, but also add significant code complexity since the plane sizes need to be determined, the question is whether that's actually worth it
                 turboJpegDecompressToBgra(receivedFrameData, (int)maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
                 videoHeader.Format = ObsInterop.video_format.VIDEO_FORMAT_BGRA; // we decompressed to BGRA
                 new Span<uint>(videoHeader.Linesize).Clear(); // BGRA also means only one plane, don't use the original YUV linesizes

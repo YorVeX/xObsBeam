@@ -177,7 +177,7 @@ namespace xObsBeam
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static unsafe void Nv12ToJpeg(byte* sourceBuffer, Span<byte> destinationBuffer, uint[] planeSizes)
+    public static unsafe void Nv12ToI420(byte* sourceBuffer, Span<byte> destinationBuffer, uint[] planeSizes)
     {
       // copy the Y plane
       new ReadOnlySpan<byte>(sourceBuffer, (int)planeSizes[0]).CopyTo(destinationBuffer);

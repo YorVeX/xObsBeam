@@ -360,6 +360,8 @@ public class BeamSender
 
           if (_jpegYuv)
           {
+            if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12) // packed format, was converted so that libjpeg-turbo can handle it, reflect this in the header
+              videoHeader.Format = video_format.VIDEO_FORMAT_I420;
             // the data planes are contiguous in memory as validated by SetVideoParameters(), only need to set the pointers to the start of each plane
             var planes = stackalloc byte*[_jpegYuvPlaneSizes.Length];
             uint currentOffset = 0;
@@ -541,7 +543,7 @@ public class BeamSender
       if (_jpegCompression && compressThisFrame && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
       {
         byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize);
-        EncoderSupport.Nv12ToJpeg(data, managedDataCopy, _videoPlaneSizes);
+        EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneSizes);
         fixed (byte* videoData = managedDataCopy)
           sendCompressed(timestamp, _videoHeader, videoData, encodedDataJpeg, encodedDataQoi, encodedDataLz4);
         _videoDataPool!.Return(managedDataCopy);
@@ -555,7 +557,7 @@ public class BeamSender
 
       // to save an additional frame copy operation the JPEG deinterleaving is done in sync mode as part of the copy to managed memory that is needed anyway for the async handover
       if (_jpegCompression && compressThisFrame && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
-        EncoderSupport.Nv12ToJpeg(data, managedDataCopy, _videoPlaneSizes);
+        EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneSizes);
       else
         new ReadOnlySpan<byte>(data, _videoDataSize).CopyTo(managedDataCopy); // just copy to managed as-is for formats that are not packed
 
