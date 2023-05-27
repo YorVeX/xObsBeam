@@ -93,5 +93,4 @@ public class FrameBuffer
     }
     return result.ToArray();
   }
-
 }

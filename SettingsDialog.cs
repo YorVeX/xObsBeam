@@ -196,7 +196,6 @@ public static class SettingsDialog
       if (configuredNetworkInterfaceName == "Any: 0.0.0.0")
         return IPAddress.Any;
 
-
       foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
       {
         foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
@@ -490,7 +489,6 @@ public static class SettingsDialog
   }
 #pragma warning restore IDE1006
 
-
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte AutomaticListenPortEnabledChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
@@ -548,7 +546,6 @@ public static class SettingsDialog
       return Convert.ToByte(true);
     }
   }
-
 
   public static unsafe video_format GetRequiredVideoFormatConversion()
   {
@@ -662,7 +659,6 @@ public static class SettingsDialog
       else
         ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionFormatWarningId), Convert.ToByte(false));
 
-
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(QoiCompression || JpegCompression || Lz4Compression));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4SyncQoiSkipsId), Convert.ToByte(QoiCompression && (qoiLevel < 10)));
 
@@ -681,7 +677,4 @@ public static class SettingsDialog
     UpdateCompressionSettings(properties, settings);
     return Convert.ToByte(true);
   }
-
-
-
 }

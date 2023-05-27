@@ -231,10 +231,8 @@ public static class Output
       _audioFrameCycleCounter = 1;
       Module.Log("output_raw_audio called, frame timestamp: " + frames->timestamp, ObsLogLevel.Debug);
     }
-
   }
 #pragma warning restore IDE1006
   #endregion Output API methods
-
 
 }

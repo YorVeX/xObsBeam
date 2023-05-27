@@ -1,12 +1,10 @@
 ﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
-
 using System.Buffers;
 using System.Buffers.Binary;
 using ObsInterop;
 namespace xObsBeam;
-
 
 public class Beam
 {
@@ -134,7 +132,6 @@ public class Beam
         Module.Log($"Unsupported video format: {format}", ObsLogLevel.Error);
         return Array.Empty<uint>();
     }
-
   }
 
   public static unsafe void GetAudioDataSize(audio_format format, speaker_layout speakers, uint frames, out int audioDataSize, out int audioBytesPerSample)
@@ -265,8 +262,6 @@ public class Beam
     Audio = 2
   }
 
-
-
   public unsafe struct VideoHeader
   {
     public const int MAX_AV_PLANES = 8; // it's not in NetObsBindings but probably doesn't change a lot, currently it's defined here: https://github.com/obsproject/obs-studio/blob/master/libobs/media-io/media-io-defs.h
@@ -373,7 +368,6 @@ public class Beam
       BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(headerBytes, 8), timestamp); headerBytes += 8;
       return headerBytes;
     }
-
   }
 
   public unsafe struct AudioHeader
@@ -449,9 +443,6 @@ public class Beam
       BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(headerBytes, 8), timestamp); headerBytes += 8;
       return headerBytes;
     }
-
   }
-
-
 }
 

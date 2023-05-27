@@ -625,5 +625,4 @@ public class BeamReceiver
     IsConnected = false;
     OnDisconnected();
   }
-
 }

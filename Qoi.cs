@@ -21,7 +21,6 @@ class Qoi
   const byte QOI_OP_RGBA = 0xff;
   const byte QOI_MASK_2 = 0xc0;
 
-
   [StructLayout(LayoutKind.Explicit)]
   internal ref struct Pixel
   {
@@ -204,8 +203,4 @@ class Qoi
       output[outCursor + 3] = pixel.A;
     }
   }
-
-
-
-
 }

@@ -1,7 +1,6 @@
 ﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
-
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;

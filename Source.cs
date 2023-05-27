@@ -289,12 +289,9 @@ public class Source
     return GetSource(data).BeamReceiver.Height;
   }
 #pragma warning restore IDE1006
-
   #endregion Source API methods
 
   #region Event handlers
-
-
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte FrameBufferTimeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
@@ -362,7 +359,6 @@ public class Source
           Connect(); // reconnect
       });
     }
-
   }
   private unsafe void VideoFrameReceivedEventHandler(object? sender, Beam.BeamVideoData videoFrame)
   {
@@ -408,7 +404,6 @@ public class Source
     BeamReceiver.RawDataBufferPool.Return(videoFrame.Data);
   }
 
-
   private unsafe void AudioFrameReceivedEventHandler(object? sender, Beam.BeamAudioData audioFrame)
   {
     var context = (Context*)ContextPointer;
@@ -447,7 +442,4 @@ public class Source
     return;
   }
   #endregion Event handlers
-
-
-
 }

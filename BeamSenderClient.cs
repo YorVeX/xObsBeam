@@ -249,7 +249,6 @@ class BeamSenderClient
                     Module.Log($"<{ClientId}> sendLoopAsync() exit through completion.", ObsLogLevel.Debug);
                   break;
                 }
-
               }
               catch (OperationCanceledException ex)
               {
@@ -435,7 +434,4 @@ class BeamSenderClient
     Interlocked.Increment(ref _audioFrameCount);
     _frameAvailable.Set();
   }
-
-
-
 }

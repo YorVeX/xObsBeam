@@ -471,7 +471,6 @@ public class BeamSender
             client.EnqueueVideoFrame(timestamp, videoHeader, rawData);
           break;
       }
-
     }
     catch (Exception ex)
     {
