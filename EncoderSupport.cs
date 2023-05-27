@@ -1,5 +1,4 @@
-﻿using System;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using ObsInterop;
 using LibJpegTurbo;
 
@@ -24,10 +23,10 @@ namespace xObsBeam
         {
           try
           {
-            TurboJpeg.tjDestroy(TurboJpeg.tjInitCompress());
+            _ = TurboJpeg.tjDestroy(TurboJpeg.tjInitCompress());
             _checkResults.Add(encoder, true);
           }
-          catch (System.Exception ex)
+          catch (Exception ex)
           {
             _checkResults.Add(encoder, false);
             Module.Log($"{encoder} encoder availability check failed with {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Debug);
@@ -50,7 +49,7 @@ namespace xObsBeam
             TurboJpeg.tj3Destroy(TurboJpeg.tj3Init((int)TJINIT.TJINIT_COMPRESS));
             _checkResults.Add(encoder, true);
           }
-          catch (System.Exception ex)
+          catch (Exception ex)
           {
             _checkResults.Add(encoder, false);
             Module.Log($"{encoder} encoder availability check failed with {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Debug);
@@ -65,6 +64,7 @@ namespace xObsBeam
     // check format_is_yuv function in OBS video-io.h for reference: https://github.com/obsproject/obs-studio/blob/master/libobs/media-io/video-io.h
     public static bool FormatIsYuv(video_format format)
     {
+#pragma warning disable IDE0066
       switch (format)
       {
         case video_format.VIDEO_FORMAT_I420:
@@ -95,8 +95,9 @@ namespace xObsBeam
         case video_format.VIDEO_FORMAT_Y800:
         case video_format.VIDEO_FORMAT_BGR3:
           return false;
+        default:
+          return false;
       }
-      return false;
     }
 
     // check video_format comments in OBS video-io.h for reference: https://github.com/obsproject/obs-studio/blob/master/libobs/media-io/video-io.h
@@ -117,25 +118,9 @@ namespace xObsBeam
           // case video_format.VIDEO_FORMAT_P416:
           // case video_format.VIDEO_FORMAT_V210:
           return true;
+        default:
+          return false;
       }
-      return false;
-    }
-
-    public static TJPF ObsToJpegPixelFormat(video_format obsVideoFormat) => obsVideoFormat switch
-    {
-      video_format.VIDEO_FORMAT_BGR3 => TJPF.TJPF_BGR,
-      video_format.VIDEO_FORMAT_BGRA => TJPF.TJPF_BGRA,
-      video_format.VIDEO_FORMAT_BGRX => TJPF.TJPF_BGRX,
-      video_format.VIDEO_FORMAT_RGBA => TJPF.TJPF_RGBA,
-      video_format.VIDEO_FORMAT_Y800 => TJPF.TJPF_GRAY,
-      _ => TJPF.TJPF_UNKNOWN
-    };
-
-    public static TJCS ObsToJpegColorSpace(video_format obsVideoFormat)
-    {
-      if (obsVideoFormat == video_format.VIDEO_FORMAT_Y800)
-        return TJCS.TJCS_GRAY;
-      return (FormatIsYuv(obsVideoFormat)) ? TJCS.TJCS_YCbCr : TJCS.TJCS_RGB;
     }
 
     public static TJSAMP ObsToJpegSubsampling(video_format obsVideoFormat)
@@ -174,6 +159,27 @@ namespace xObsBeam
           return TJSAMP.TJSAMP_444;
       }
       return TJSAMP.TJSAMP_444;
+    }
+#pragma warning restore IDE0066
+
+    public static TJPF ObsToJpegPixelFormat(video_format obsVideoFormat)
+    {
+      return obsVideoFormat switch
+      {
+        video_format.VIDEO_FORMAT_BGR3 => TJPF.TJPF_BGR,
+        video_format.VIDEO_FORMAT_BGRA => TJPF.TJPF_BGRA,
+        video_format.VIDEO_FORMAT_BGRX => TJPF.TJPF_BGRX,
+        video_format.VIDEO_FORMAT_RGBA => TJPF.TJPF_RGBA,
+        video_format.VIDEO_FORMAT_Y800 => TJPF.TJPF_GRAY,
+        _ => TJPF.TJPF_UNKNOWN
+      };
+    }
+
+    public static TJCS ObsToJpegColorSpace(video_format obsVideoFormat)
+    {
+      if (obsVideoFormat == video_format.VIDEO_FORMAT_Y800)
+        return TJCS.TJCS_GRAY;
+      return (FormatIsYuv(obsVideoFormat)) ? TJCS.TJCS_YCbCr : TJCS.TJCS_RGB;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

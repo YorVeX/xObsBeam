@@ -1,9 +1,27 @@
 ﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
+
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using ObsInterop;
+
+[assembly: DisableRuntimeMarshalling]
+/*
+All types used when interacting with native libraries (e.g. libobs through NetObsBindings or libjpeg-turbo) are defined in a way that are compatible between native and managed types.
+E.g. bool would be 1 byte in managed/C# but 4 bytes in native/C++ and therfore any invoke definition with a bool function parameter or bool struct field would cause issues.
+Fortunately NetObsBindings exposes them all as byte types and libjpeg-turbo doesn't use them at all (it uses int error code fields instead).
+
+The DisableRuntimeMarshalling attribute is used to prevent the runtime from marshalling the types to their managed counterparts, which would be extra work with performance
+const and in case of NativeAOT could introduce various issues.
+
+Working this way has performance advantages, because no extra marshalling code has to be executed, neither at runtime nor precompiled as would be done by LibraryImport. Hence also
+in .editorConfig the SYSLIB1054 warnings are suppressed, enabling us to stick with DllImport instead of LibraryImport, which wouldn't give us any advantages with the situation as
+described above.
+
+Note that as a result also Marshal.SizeOf should not be used, the .editorConfig is therefore configured to show warnings for CA1421 instead of just info messages.
+*/
 
 namespace xObsBeam;
 
@@ -19,11 +37,12 @@ public static class Module
 {
   const bool DebugLog = false; // set this to true and recompile to get debug messages from this plug-in only (unlike getting the full log spam when enabling debug log globally in OBS)
   const string DefaultLocale = "en-US";
-  public static string ModuleName = "xObsBeam";
-  public static string ModulePath = "";
   static string _locale = DefaultLocale;
-  static unsafe obs_module* _obsModule = null;
-  public static unsafe obs_module* ObsModule { get => _obsModule; }
+
+  public static unsafe obs_module* ObsModule { get; private set; } = null;
+  public static string ModuleName { get; private set; } = "xObsBeam";
+  public static string ModulePath { get; private set; } = "";
+
   static unsafe text_lookup* _textLookupModule = null;
 
   #region Helper methods
@@ -92,25 +111,25 @@ public static class Module
   #endregion Helper methods
 
   #region Event handlers
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
   public static unsafe void ToolsMenuItemClicked(void* private_data)
   {
     SettingsDialog.Show();
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
   public static unsafe void FrontendEvent(obs_frontend_event eventName, void* private_data)
   {
     Log("FrontendEvent called", ObsLogLevel.Debug);
     switch (eventName)
     {
-      case ObsInterop.obs_frontend_event.OBS_FRONTEND_EVENT_FINISHED_LOADING:
+      case obs_frontend_event.OBS_FRONTEND_EVENT_FINISHED_LOADING:
         fixed (byte* menuItemText = "Beam"u8)
           ObsFrontendApi.obs_frontend_add_tools_menu_item((sbyte*)menuItemText, &ToolsMenuItemClicked, null);
         if (SettingsDialog.OutputEnabled)
           Output.Start();
         break;
-      case ObsInterop.obs_frontend_event.OBS_FRONTEND_EVENT_EXIT:
+      case obs_frontend_event.OBS_FRONTEND_EVENT_EXIT:
         if (Output.IsActive)
         {
           Log("OBS exiting, stopping output...", ObsLogLevel.Debug);
@@ -122,15 +141,16 @@ public static class Module
   #endregion Event handlers
 
   #region OBS module API methods
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_set_pointer", CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+#pragma warning disable IDE1006
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_set_pointer", CallConvs = new[] { typeof(CallConvCdecl) })]
   public static unsafe void obs_module_set_pointer(obs_module* obsModulePointer)
   {
     Log("obs_module_set_pointer called", ObsLogLevel.Debug);
     ModuleName = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name!;
-    _obsModule = obsModulePointer;
+    ObsModule = obsModulePointer;
   }
 
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_ver", CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_ver", CallConvs = new[] { typeof(CallConvCdecl) })]
   public static uint obs_module_ver()
   {
     var major = (uint)Obs.Version.Major;
@@ -140,7 +160,7 @@ public static class Module
     return version;
   }
 
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_load", CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_load", CallConvs = new[] { typeof(CallConvCdecl) })]
   public static unsafe bool obs_module_load()
   {
     Log("Loading module...", ObsLogLevel.Debug);
@@ -150,7 +170,7 @@ public static class Module
     TaskScheduler.UnobservedTaskException += UnobservedTaskExceptionEventHandler;
 
     // remember where this module was loaded from
-    ModulePath = Path.GetFullPath(Marshal.PtrToStringUTF8((IntPtr)Obs.obs_get_module_binary_path(_obsModule))!);
+    ModulePath = Path.GetFullPath(Marshal.PtrToStringUTF8((IntPtr)Obs.obs_get_module_binary_path(ObsModule))!);
 
     var thisAssembly = System.Reflection.Assembly.GetExecutingAssembly();
 
@@ -158,13 +178,13 @@ public static class Module
     NativeLibrary.SetDllImportResolver(thisAssembly,
       (string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath) =>
       {
-        Module.Log($"Trying to load native library \"{libraryName}\" from additional path: {Path.GetDirectoryName(ModulePath)!}", ObsLogLevel.Debug);
+        Log($"Trying to load native library \"{libraryName}\" from additional path: {Path.GetDirectoryName(ModulePath)!}", ObsLogLevel.Debug);
         if (NativeLibrary.TryLoad(Path.Combine(Path.GetDirectoryName(ModulePath)!, libraryName), out nint handle)) // search current module directory
           return handle;
 
         if (libraryName == "turbojpeg")
         {
-          Module.Log($"Trying to load native library \"{libraryName}\" with additional name variant: libturbojpeg.so.0", ObsLogLevel.Debug);
+          Log($"Trying to load native library \"{libraryName}\" with additional name variant: libturbojpeg.so.0", ObsLogLevel.Debug);
           if (NativeLibrary.TryLoad("libturbojpeg.so.0", assembly, searchPath, out nint handle2))
             return handle2;
         }
@@ -187,13 +207,13 @@ public static class Module
     return true;
   }
 
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_post_load", CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_post_load", CallConvs = new[] { typeof(CallConvCdecl) })]
   public static void obs_module_post_load()
   {
     Log("obs_module_post_load called", ObsLogLevel.Debug);
   }
 
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_unload", CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_unload", CallConvs = new[] { typeof(CallConvCdecl) })]
   public static void obs_module_unload()
   {
     Log("obs_module_unload called", ObsLogLevel.Debug);
@@ -202,7 +222,7 @@ public static class Module
     Output.Dispose();
   }
 
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_set_locale", CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_set_locale", CallConvs = new[] { typeof(CallConvCdecl) })]
   public static unsafe void obs_module_set_locale(char* locale)
   {
     Log("obs_module_set_locale called", ObsLogLevel.Debug);
@@ -215,10 +235,10 @@ public static class Module
     if (_textLookupModule != null)
       ObsTextLookup.text_lookup_destroy(_textLookupModule);
     fixed (byte* defaultLocale = Encoding.UTF8.GetBytes(DefaultLocale), currentLocale = Encoding.UTF8.GetBytes(_locale))
-      _textLookupModule = Obs.obs_module_load_locale(_obsModule, (sbyte*)defaultLocale, (sbyte*)currentLocale);
+      _textLookupModule = Obs.obs_module_load_locale(ObsModule, (sbyte*)defaultLocale, (sbyte*)currentLocale);
   }
 
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_free_locale", CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_free_locale", CallConvs = new[] { typeof(CallConvCdecl) })]
   public static unsafe void obs_module_free_locale()
   {
     if (_textLookupModule != null)
@@ -226,6 +246,7 @@ public static class Module
     _textLookupModule = null;
     Log("obs_module_free_locale called", ObsLogLevel.Debug);
   }
+#pragma warning restore IDE1006
   #endregion OBS module API methods
 
 }

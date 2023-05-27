@@ -16,22 +16,17 @@ namespace xObsBeam;
 
 public class BeamReceiver
 {
-  CancellationTokenSource _cancellationSource = new CancellationTokenSource();
+  CancellationTokenSource _cancellationSource = new();
   Task _processDataLoopTask = Task.CompletedTask;
-  object _sizeLock = new object();
+  readonly object _sizeLock = new();
   string _targetHostname = "";
   int _targetPort = -1;
   string _pipeName = "";
-  bool _isConnecting = false;
-  bool _isConnected = false;
-  ulong _frameTimestampOffset = 0;
-  ArrayPool<byte> _rawDataBufferPool = ArrayPool<byte>.Create();
+  bool _isConnecting;
+  ulong _frameTimestampOffset;
   unsafe void* _turboJpegDecompress = null;
 
-  public ArrayPool<byte> RawDataBufferPool
-  {
-    get => _rawDataBufferPool;
-  }
+  public ArrayPool<byte> RawDataBufferPool { get; private set; } = ArrayPool<byte>.Create();
 
   uint _width;
   public uint Width
@@ -53,12 +48,9 @@ public class BeamReceiver
     }
   }
 
-  public bool IsConnected
-  {
-    get => _isConnected;
-  }
+  public bool IsConnected { get; private set; }
 
-  public int FrameBufferTimeMs { get; set; } = 0;
+  public int FrameBufferTimeMs { get; set; }
 
   public void Connect(string hostname, int port)
   {
@@ -67,7 +59,7 @@ public class BeamReceiver
 
   public async Task ConnectAsync(string hostname, int port)
   {
-    if (_isConnecting || _isConnected)
+    if (_isConnecting || IsConnected)
       return;
 
     _isConnecting = true;
@@ -111,8 +103,8 @@ public class BeamReceiver
         }
         continue; // auto-reconnect mechanism, keep on retrying
       }
-      _isConnected = true;
-      _processDataLoopTask = processDataLoopAsync(socket, null, _cancellationSource.Token);
+      IsConnected = true;
+      _processDataLoopTask = ProcessDataLoopAsync(socket, null, _cancellationSource.Token);
       break;
     }
     _isConnecting = false;
@@ -124,7 +116,7 @@ public class BeamReceiver
 
   public async Task ConnectAsync(string pipeName)
   {
-    if (_isConnecting || _isConnected)
+    if (_isConnecting || IsConnected)
       return;
 
     _isConnecting = true;
@@ -142,7 +134,7 @@ public class BeamReceiver
         Module.Log($"Connecting to {_pipeName}...", ObsLogLevel.Debug);
         await pipeStream.ConnectAsync(_cancellationSource.Token);
       }
-      catch (System.Exception ex)
+      catch (Exception ex)
       {
         Module.Log($"Connection to {_pipeName} failed ({ex.GetType().Name}: {ex.Message}), retrying in 10 seconds.", ObsLogLevel.Error);
         try { pipeStream.Close(); } catch { }
@@ -166,8 +158,8 @@ public class BeamReceiver
         }
         continue; // auto-reconnect mechanism, keep on retrying
       }
-      _isConnected = true;
-      _processDataLoopTask = processDataLoopAsync(null, pipeStream, _cancellationSource.Token);
+      IsConnected = true;
+      _processDataLoopTask = ProcessDataLoopAsync(null, pipeStream, _cancellationSource.Token);
       break;
     }
     _isConnecting = false;
@@ -188,7 +180,7 @@ public class BeamReceiver
         _processDataLoopTask.Wait();
       }
     }
-    catch (System.Exception ex)
+    catch (Exception ex)
     {
       Module.Log($"{ex.GetType().Name} while disconnecting from Beam: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
     }
@@ -216,8 +208,9 @@ public class BeamReceiver
     Task.Run(() => Disconnected?.Invoke(this, EventArgs.Empty));
   }
 
+  #region unsafe helper functions
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private unsafe void turboJpegDecompressToBgra(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, int width, int height)
+  private unsafe void TurboJpegDecompressToBgra(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, int width, int height)
   {
     fixed (byte* jpegBuf = receivedFrameData, dstBuf = rawDataBuffer)
     {
@@ -237,7 +230,7 @@ public class BeamReceiver
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private unsafe void turboJpegDecompressToYuv(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, uint[] videoPlaneSizes, int width, int height)
+  private unsafe void TurboJpegDecompressToYuv(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, uint[] videoPlaneSizes, int width, int height)
   {
     fixed (byte* jpegBuf = receivedFrameData, dstBuf = rawDataBuffer)
     {
@@ -263,7 +256,7 @@ public class BeamReceiver
     }
   }
 
-  private unsafe void turboJpegDecompressInit()
+  private unsafe void TurboJpegDecompressInit()
   {
     if (EncoderSupport.LibJpegTurboV3)
       _turboJpegDecompress = TurboJpeg.tj3Init((int)TJINIT.TJINIT_DECOMPRESS);
@@ -271,35 +264,43 @@ public class BeamReceiver
       _turboJpegDecompress = TurboJpeg.tjInitDecompress();
   }
 
-  private unsafe void turboJpegDecompressDestroy()
+  private unsafe void TurboJpegDecompressDestroy()
   {
     if (_turboJpegDecompress != null)
     {
       if (EncoderSupport.LibJpegTurboV3)
         TurboJpeg.tj3Destroy(_turboJpegDecompress);
       else
-        TurboJpeg.tjDestroy(_turboJpegDecompress);
+        _ = TurboJpeg.tjDestroy(_turboJpegDecompress);
       _turboJpegDecompress = null;
     }
   }
 
-  private unsafe uint getRawVideoDataSize(Beam.VideoHeader videoHeader, out uint[] videoPlaneSizes)
+  private static unsafe uint GetRawVideoDataSize(Beam.VideoHeader videoHeader, out uint[] videoPlaneSizes)
   {
     uint rawVideoDataSize = 0;
     // get the plane sizes for the current frame format and size
+    videoPlaneSizes = Beam.GetPlaneSizes(videoHeader.Format, videoHeader.Height, videoHeader.Linesize);
+    if (videoPlaneSizes.Length == 0) // unsupported format
+      return rawVideoDataSize;
+
+    for (int planeIndex = 0; planeIndex < videoPlaneSizes.Length; planeIndex++)
+      rawVideoDataSize += videoPlaneSizes[planeIndex];
+    return rawVideoDataSize;
+  }
+  private unsafe void ChangeHeaderToBgra(ref Beam.VideoHeader videoHeader)
+  {
+    videoHeader.Format = video_format.VIDEO_FORMAT_BGRA;
     fixed (uint* linesize = videoHeader.Linesize)
     {
-      videoPlaneSizes = Beam.GetPlaneSizes(videoHeader.Format, videoHeader.Height, linesize);
-      if (videoPlaneSizes.Length == 0) // unsupported format
-        return rawVideoDataSize;
-
-      for (int planeIndex = 0; planeIndex < videoPlaneSizes.Length; planeIndex++)
-        rawVideoDataSize += videoPlaneSizes[planeIndex];
-      return rawVideoDataSize;
+      new Span<uint>(linesize, Beam.VideoHeader.MAX_AV_PLANES).Clear(); // BGRA means only one plane, don't use the original YUV linesizes
+      linesize[0] = videoHeader.Width * 4; // BGRA has 4 bytes per pixel
     }
   }
 
-  private async Task processDataLoopAsync(Socket? socket, NamedPipeClientStream? pipeStream, CancellationToken cancellationToken)
+  #endregion unsafe helper functions
+
+  private async Task ProcessDataLoopAsync(Socket? socket, NamedPipeClientStream? pipeStream, CancellationToken cancellationToken)
   {
     string endpointName;
     PipeReader pipeReader;
@@ -328,8 +329,6 @@ public class BeamReceiver
     var videoHeader = new Beam.VideoHeader();
     var audioHeader = new Beam.AudioHeader();
 
-    uint[] videoPlaneSizes = Array.Empty<uint>();
-
     int videoHeaderSize = Beam.VideoHeader.VideoHeaderDataSize;
     uint rawVideoDataSize = 0;
 
@@ -340,17 +339,19 @@ public class BeamReceiver
     byte[] receivedFrameData = Array.Empty<byte>();
     byte[] lz4DecompressBuffer = Array.Empty<byte>();
 
-    var frameReceivedTime = DateTime.UtcNow;
+    DateTime frameReceivedTime;
     ulong lastVideoTimestamp = 0;
-    ulong senderVideoTimestamp = 0;
+    ulong senderVideoTimestamp;
 
-    FrameBuffer frameBuffer = new FrameBuffer();
-    frameBuffer.FrameBufferTimeMs = FrameBufferTimeMs;
+    var frameBuffer = new FrameBuffer
+    {
+      FrameBufferTimeMs = FrameBufferTimeMs
+    };
 
     bool firstFrame = true;
 
     if (EncoderSupport.LibJpegTurbo)
-      turboJpegDecompressInit();
+      TurboJpegDecompressInit();
 
     // main loop
     while (!cancellationToken.IsCancellationRequested)
@@ -399,7 +400,7 @@ public class BeamReceiver
             videoHeader.Timestamp = 1;
           }
           else
-            videoHeader.Timestamp = videoHeader.Timestamp - _frameTimestampOffset;
+            videoHeader.Timestamp -= _frameTimestampOffset;
 
           // read video data
           if (videoHeader.DataSize > 0)
@@ -424,14 +425,14 @@ public class BeamReceiver
             if (sizeChanged || firstFrame) // re-allocate the arrays matching the new necessary size
             {
               firstFrame = false;
-              rawVideoDataSize = getRawVideoDataSize(videoHeader, out videoPlaneSizes);
+              rawVideoDataSize = GetRawVideoDataSize(videoHeader, out _);
               maxVideoDataSize = (int)(videoHeader.Width * videoHeader.Height * 4);
               receivedFrameData = new byte[rawVideoDataSize];
               lz4DecompressBuffer = new byte[maxVideoDataSize];
-              _rawDataBufferPool = ArrayPool<byte>.Create(maxVideoDataSize, 2);
+              RawDataBufferPool = ArrayPool<byte>.Create(maxVideoDataSize, 2);
             }
 
-            var rawDataBuffer = _rawDataBufferPool.Rent(maxVideoDataSize);
+            var rawDataBuffer = RawDataBufferPool.Rent(maxVideoDataSize);
             if (videoHeader.Compression == Beam.CompressionTypes.None)
               readResult.Buffer.Slice(0, videoHeader.DataSize).CopyTo(rawDataBuffer);
             else
@@ -464,10 +465,9 @@ public class BeamReceiver
               {
                 //TODO: output to YUV instead of BGRA by default, the necessary turboJpegDecompressToYuv() function is already there but hasn't been tested yet
                 // this would save libjpeg-turbo from having to do a conversion from native JPEG YUV to BGRA, but also add significant code complexity since the plane sizes need to be determined, the question is whether that's actually worth it
-                turboJpegDecompressToBgra(receivedFrameData, (int)maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
-                videoHeader.Format = ObsInterop.video_format.VIDEO_FORMAT_BGRA; // we decompressed to BGRA
-                new Span<uint>(videoHeader.Linesize).Clear(); // BGRA also means only one plane, don't use the original YUV linesizes
-                videoHeader.Linesize[0] = videoHeader.Width * 4; // BGRA has 4 bytes per pixel
+                TurboJpegDecompressToBgra(receivedFrameData, maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
+                // Module.Log($"Video data: Linesize[0]={videoHeader.Linesize[0]} bytes.", ObsLogLevel.Debug);
+                ChangeHeaderToBgra(ref videoHeader); // we decompressed to BGRA
               }
             }
 
@@ -533,12 +533,12 @@ public class BeamReceiver
             audioHeader.Timestamp = 1;
           }
           else
-            audioHeader.Timestamp = audioHeader.Timestamp - _frameTimestampOffset;
+            audioHeader.Timestamp -= _frameTimestampOffset;
 
           // read audio data
           if (audioHeader.DataSize > 0)
           {
-            readResult = await pipeReader.ReadAtLeastAsync(audioHeader.DataSize);
+            readResult = await pipeReader.ReadAtLeastAsync(audioHeader.DataSize, cancellationToken);
             if (readResult.IsCanceled || (readResult.Buffer.IsEmpty && readResult.IsCompleted))
             {
               if (readResult.IsCanceled)
@@ -597,7 +597,7 @@ public class BeamReceiver
         pipeReader.Complete(ex);
         break;
       }
-      catch (System.Exception ex)
+      catch (Exception ex)
       {
         Module.Log($"{ex.GetType().Name} while trying to process or retrieve data: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
         pipeReader.Complete(ex);
@@ -620,9 +620,9 @@ public class BeamReceiver
       try { pipeStream.Dispose(); } catch (Exception ex) { Module.Log($"{ex.GetType().Name} when disposing pipe: {ex.Message}", ObsLogLevel.Error); }
     }
     Module.Log($"Disconnected from {endpointName}.", ObsLogLevel.Info);
-    turboJpegDecompressDestroy();
+    TurboJpegDecompressDestroy();
     stream?.Close();
-    _isConnected = false;
+    IsConnected = false;
     OnDisconnected();
   }
 

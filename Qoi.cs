@@ -35,7 +35,10 @@ class Qoi
   //TODO: explore options to work with frame difference based compression in addition, some ideas and a link to "QOV" here: https://github.com/phoboslab/qoi/issues/228 and here: https://github.com/nigeltao/qoi2-bikeshed/issues/37
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  static int pixelHash(Pixel pixel) => (pixel.R * 3 + pixel.G * 5 + pixel.B * 7 + pixel.A * 11) % 64;
+  static int PixelHash(Pixel pixel)
+  {
+    return ((pixel.R * 3) + (pixel.G * 5) + (pixel.B * 7) + (pixel.A * 11)) % 64;
+  }
 
   public static unsafe int Encode(byte* data, int startIndex, int dataSize, int channels, byte[] output)
   {
@@ -78,7 +81,7 @@ class Qoi
           run = 0;
         }
 
-        var hash = pixelHash(pixel);
+        var hash = PixelHash(pixel);
         if (seenBuffer[hash].Value == pixel.Value)
           output[writeIndex++] = (byte)(QOI_OP_INDEX | hash);
         else
@@ -100,7 +103,7 @@ class Qoi
                 vb > -3 && vb < 2
             )
             {
-              output[writeIndex++] = (byte)(QOI_OP_DIFF | (vr + 2) << 4 | (vg + 2) << 2 | (vb + 2));
+              output[writeIndex++] = (byte)(QOI_OP_DIFF | ((vr + 2) << 4) | ((vg + 2) << 2) | (vb + 2));
             }
             else if (
                 vg_r > -9 && vg_r < 8 &&
@@ -109,7 +112,7 @@ class Qoi
             )
             {
               output[writeIndex++] = (byte)(QOI_OP_LUMA | (vg + 32));
-              output[writeIndex++] = (byte)((vg_r + 8) << 4 | (vg_b + 8));
+              output[writeIndex++] = (byte)(((vg_r + 8) << 4) | (vg_b + 8));
             }
             else
             {
@@ -192,7 +195,7 @@ class Qoi
         else if ((b1 & QOI_MASK_2) == QOI_OP_RUN)
           run = b1 & 0x3f;
 
-        seenBuffer[pixelHash(pixel) % 64] = pixel;
+        seenBuffer[PixelHash(pixel) % 64] = pixel;
       }
 
       output[outCursor + 0] = pixel.B;

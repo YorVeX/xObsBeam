@@ -17,10 +17,7 @@ public static class SettingsDialog
   static unsafe obs_source* _source;
   static unsafe obs_properties* _properties;
 
-  static bool _initialized = false;
-  static bool _qoiCompression = false;
-  static bool _jpegCompression = false;
-  static bool _lz4Compression = false;
+  static bool _initialized;
 
   public static unsafe void Register()
   {
@@ -36,7 +33,7 @@ public static class SettingsDialog
       sourceInfo.update = &settings_update;
       sourceInfo.get_defaults = &settings_get_defaults;
       sourceInfo.get_properties = &settings_get_properties;
-      ObsSource.obs_register_source_s(&sourceInfo, (nuint)Marshal.SizeOf(sourceInfo));
+      ObsSource.obs_register_source_s(&sourceInfo, (nuint)sizeof(obs_source_info));
       var source = Obs.obs_source_create((sbyte*)id, (sbyte*)id, null, null);
       string configPath = Module.GetString(Obs.obs_module_get_config_path(Module.ObsModule, null));
       Directory.CreateDirectory(configPath); // ensure this directory exists
@@ -79,7 +76,7 @@ public static class SettingsDialog
     }
   }
 
-  public static unsafe bool Lz4Compression => _lz4Compression;
+  public static unsafe bool Lz4Compression { get; private set; }
   public static unsafe bool Lz4CompressionSyncQoiSkips
   {
     get
@@ -95,38 +92,26 @@ public static class SettingsDialog
     {
       fixed (byte* propertyLz4CompressionLevelId = "compression_lz4_level"u8)
       {
-        switch (ObsData.obs_data_get_int(_settings, (sbyte*)propertyLz4CompressionLevelId))
+        return ObsData.obs_data_get_int(_settings, (sbyte*)propertyLz4CompressionLevelId) switch
         {
-          case 1:
-            return K4os.Compression.LZ4.LZ4Level.L00_FAST;
-          case 2:
-            return K4os.Compression.LZ4.LZ4Level.L03_HC;
-          case 3:
-            return K4os.Compression.LZ4.LZ4Level.L04_HC;
-          case 4:
-            return K4os.Compression.LZ4.LZ4Level.L05_HC;
-          case 5:
-            return K4os.Compression.LZ4.LZ4Level.L06_HC;
-          case 6:
-            return K4os.Compression.LZ4.LZ4Level.L07_HC;
-          case 7:
-            return K4os.Compression.LZ4.LZ4Level.L08_HC;
-          case 8:
-            return K4os.Compression.LZ4.LZ4Level.L09_HC;
-          case 9:
-            return K4os.Compression.LZ4.LZ4Level.L10_OPT;
-          case 10:
-            return K4os.Compression.LZ4.LZ4Level.L11_OPT;
-          case 11:
-            return K4os.Compression.LZ4.LZ4Level.L12_MAX;
-          default:
-            return K4os.Compression.LZ4.LZ4Level.L00_FAST;
-        }
+          1 => K4os.Compression.LZ4.LZ4Level.L00_FAST,
+          2 => K4os.Compression.LZ4.LZ4Level.L03_HC,
+          3 => K4os.Compression.LZ4.LZ4Level.L04_HC,
+          4 => K4os.Compression.LZ4.LZ4Level.L05_HC,
+          5 => K4os.Compression.LZ4.LZ4Level.L06_HC,
+          6 => K4os.Compression.LZ4.LZ4Level.L07_HC,
+          7 => K4os.Compression.LZ4.LZ4Level.L08_HC,
+          8 => K4os.Compression.LZ4.LZ4Level.L09_HC,
+          9 => K4os.Compression.LZ4.LZ4Level.L10_OPT,
+          10 => K4os.Compression.LZ4.LZ4Level.L11_OPT,
+          11 => K4os.Compression.LZ4.LZ4Level.L12_MAX,
+          _ => K4os.Compression.LZ4.LZ4Level.L00_FAST,
+        };
       }
     }
   }
 
-  public static unsafe bool JpegCompression => _jpegCompression;
+  public static unsafe bool JpegCompression { get; private set; }
   public static unsafe int JpegCompressionLevel
   {
     get
@@ -154,7 +139,7 @@ public static class SettingsDialog
     }
   }
 
-  public static bool QoiCompression => _qoiCompression;
+  public static bool QoiCompression { get; private set; }
 
   public static unsafe int QoiCompressionLevel
   {
@@ -174,8 +159,7 @@ public static class SettingsDialog
     }
   }
 
-  private static unsafe video_format[]? _requireVideoFormats = null;
-  public static video_format[]? RequireVideoFormats { get => _requireVideoFormats; }
+  public static video_format[]? RequireVideoFormats { get; private set; }
 
   public static unsafe bool UsePipe
   {
@@ -237,6 +221,8 @@ public static class SettingsDialog
         return (int)ObsData.obs_data_get_int(_settings, (sbyte*)propertyListenPortId);
     }
   }
+
+#pragma warning disable IDE1006
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe sbyte* settings_get_name(void* data)
@@ -483,7 +469,7 @@ public static class SettingsDialog
     {
       _initialized = true;
       // compression settings use global variables that need to be initialized
-      updateCompressionSettings(_properties, settings);
+      UpdateCompressionSettings(_properties, settings);
     }
 
     fixed (byte* propertyEnableId = "enable"u8)
@@ -502,6 +488,8 @@ public static class SettingsDialog
       }
     }
   }
+#pragma warning restore IDE1006
+
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte AutomaticListenPortEnabledChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
@@ -573,14 +561,14 @@ public static class SettingsDialog
     if (Convert.ToBoolean(Obs.obs_get_video_info(obsVideoInfo)) && (obsVideoInfo != null))
     {
       // some compression algorithms can only work with specific color formats
-      if (!RequireVideoFormats.Contains<video_format>(obsVideoInfo->output_format)) // is a specific format required that is not the currently configured format?
+      if (!RequireVideoFormats.Contains(obsVideoInfo->output_format)) // is a specific format required that is not the currently configured format?
         requiredVideoFormat = RequireVideoFormats[0]; // the first item on the list is always the preferred format
     }
     ObsBmem.bfree(obsVideoInfo);
     return requiredVideoFormat;
   }
 
-  private static unsafe void updateCompressionSettings(obs_properties* properties, obs_data* settings)
+  private static unsafe void UpdateCompressionSettings(obs_properties* properties, obs_data* settings)
   {
     fixed (byte*
       propertyCompressionJpegId = "compression_jpeg"u8,
@@ -613,36 +601,36 @@ public static class SettingsDialog
       }
 
       // react to setting changes, avoid mixing incompatible settings
-      if (jpegCompressionEnabled && !_jpegCompression)
+      if (jpegCompressionEnabled && !JpegCompression)
       {
         // if JPEG was just enabled disable QOI and LZ4 instead (mixing this doesn't make sense)
-        _jpegCompression = jpegCompressionEnabled;
-        _qoiCompression = false;
-        _lz4Compression = false;
-        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(_qoiCompression));
-        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(_lz4Compression));
+        JpegCompression = jpegCompressionEnabled;
+        QoiCompression = false;
+        Lz4Compression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(Lz4Compression));
       }
-      else if (qoiCompressionEnabled && !_qoiCompression)
+      else if (qoiCompressionEnabled && !QoiCompression)
       {
         // if QOI was just enabled disable JPEG instead (mixing this doesn't make sense)
-        _lz4Compression = lz4CompressionEnabled;
-        _qoiCompression = qoiCompressionEnabled;
-        _jpegCompression = false;
-        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(_jpegCompression));
+        Lz4Compression = lz4CompressionEnabled;
+        QoiCompression = qoiCompressionEnabled;
+        JpegCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
       }
-      else if (lz4CompressionEnabled && !_lz4Compression)
+      else if (lz4CompressionEnabled && !Lz4Compression)
       {
         // if LZ4 was just enabled disable JPEG instead (mixing this doesn't make sense)
-        _qoiCompression = qoiCompressionEnabled;
-        _lz4Compression = lz4CompressionEnabled;
-        _jpegCompression = false;
-        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(_jpegCompression));
+        QoiCompression = qoiCompressionEnabled;
+        Lz4Compression = lz4CompressionEnabled;
+        JpegCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
       }
       else
       {
-        _jpegCompression = jpegCompressionEnabled;
-        _qoiCompression = qoiCompressionEnabled;
-        _lz4Compression = lz4CompressionEnabled;
+        JpegCompression = jpegCompressionEnabled;
+        QoiCompression = qoiCompressionEnabled;
+        Lz4Compression = lz4CompressionEnabled;
       }
 
       // JPEG: enable quality setting and disable level setting if lossless is disabled or vice versa
@@ -657,13 +645,13 @@ public static class SettingsDialog
 
       // derive video format requirements from the settings
       if (QoiCompression || (JpegCompression && JpegCompressionLossless))
-        _requireVideoFormats = new[] { video_format.VIDEO_FORMAT_BGRA };
+        RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_BGRA };
       else if (JpegCompression && !JpegCompressionLossless)
-        _requireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_NV12 };
+        RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_NV12 };
       else
-        _requireVideoFormats = null;
+        RequireVideoFormats = null;
 
-      var requiredVideoFormatConversion = SettingsDialog.GetRequiredVideoFormatConversion();
+      var requiredVideoFormatConversion = GetRequiredVideoFormatConversion();
       if (requiredVideoFormatConversion != video_format.VIDEO_FORMAT_NONE)
       {
         var compressionFormatWarningProperty = ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionFormatWarningId);
@@ -675,13 +663,13 @@ public static class SettingsDialog
         ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionFormatWarningId), Convert.ToByte(false));
 
 
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(_qoiCompression || _jpegCompression || _lz4Compression));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4SyncQoiSkipsId), Convert.ToByte(_qoiCompression && (qoiLevel < 10)));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(QoiCompression || JpegCompression || Lz4Compression));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4SyncQoiSkipsId), Convert.ToByte(QoiCompression && (qoiLevel < 10)));
 
       // LZ4: set compression algorithm info text
       var lz4Level = ObsData.obs_data_get_int(settings, (sbyte*)propertyCompressionLz4LevelId);
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4LevelFastInfoId), Convert.ToByte(lz4Level == 1));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4LevelHcInfoId), Convert.ToByte((lz4Level > 1) && (lz4Level < 9)));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4LevelHcInfoId), Convert.ToByte(lz4Level is > 1 and < 9));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4LevelOptInfoId), Convert.ToByte(lz4Level >= 9));
 
     }
@@ -690,7 +678,7 @@ public static class SettingsDialog
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte CompressionSettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
-    updateCompressionSettings(properties, settings);
+    UpdateCompressionSettings(properties, settings);
     return Convert.ToByte(true);
   }
 

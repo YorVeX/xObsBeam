@@ -19,15 +19,15 @@ public class Source
   }
 
   #region Class fields
-  static uint _sourceCount = 0;
-  static ConcurrentDictionary<uint, Source> _sourceList = new ConcurrentDictionary<uint, Source>();
+  static uint _sourceCount;
+  static readonly ConcurrentDictionary<uint, Source> _sourceList = new();
   #endregion Class fields
 
   #region Instance fields
-  BeamReceiver BeamReceiver = new BeamReceiver();
+  readonly BeamReceiver BeamReceiver = new();
   IntPtr ContextPointer;
-  uint[] _videoPlaneSizes = new uint[0];
-  uint _audioPlaneSize = 0;
+  uint[] _videoPlaneSizes = Array.Empty<uint>();
+  uint _audioPlaneSize;
 
   #endregion Instance fields
 
@@ -52,19 +52,19 @@ public class Source
       sourceInfo.get_properties = &source_get_properties;
       sourceInfo.update = &source_update;
       sourceInfo.save = &source_save;
-      ObsSource.obs_register_source_s(&sourceInfo, (nuint)Marshal.SizeOf(sourceInfo));
+      ObsSource.obs_register_source_s(&sourceInfo, (nuint)sizeof(obs_source_info));
     }
   }
 
-  private static unsafe Source getSource(void* data)
+  private static unsafe Source GetSource(void* data)
   {
     var context = (Context*)data;
     return _sourceList[(*context).SourceId];
   }
 
-  private unsafe void connect()
+  private unsafe void Connect()
   {
-    var context = (Context*)this.ContextPointer;
+    var context = (Context*)ContextPointer;
     var settings = context->Settings;
 
     fixed (byte*
@@ -110,6 +110,7 @@ public class Source
   #endregion Helper methods
 
   #region Source API methods
+#pragma warning disable IDE1006
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe sbyte* source_get_name(void* data)
   {
@@ -134,14 +135,14 @@ public class Source
     thisSource.BeamReceiver.VideoFrameReceived += thisSource.VideoFrameReceivedEventHandler;
     thisSource.BeamReceiver.AudioFrameReceived += thisSource.AudioFrameReceivedEventHandler;
     thisSource.BeamReceiver.Disconnected += thisSource.DisconnectedEventHandler;
-    return (void*)context;
+    return context;
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe void source_destroy(void* data)
   {
     Module.Log("source_destroy called", ObsLogLevel.Debug);
-    var thisSource = getSource(data);
+    var thisSource = GetSource(data);
     thisSource.BeamReceiver.Disconnect();
     thisSource.BeamReceiver.Disconnected -= thisSource.DisconnectedEventHandler;
     thisSource.BeamReceiver.VideoFrameReceived -= thisSource.VideoFrameReceivedEventHandler;
@@ -159,7 +160,7 @@ public class Source
     Module.Log("source_show called", ObsLogLevel.Debug);
 
     // the activate/deactivate events are not triggered by Studio Mode, so we need to connect/disconnect in show/hide events if the source should also work in Studio Mode
-    getSource(data).connect();
+    GetSource(data).Connect();
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -167,7 +168,7 @@ public class Source
   {
     Module.Log("source_hide called", ObsLogLevel.Debug);
     // the activate/deactivate events are not triggered by Studio Mode, so we need to connect/disconnect in show/hide events if the source should also work in Studio Mode
-    getSource(data).BeamReceiver.Disconnect();
+    GetSource(data).BeamReceiver.Disconnect();
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -263,11 +264,11 @@ public class Source
   public static unsafe void source_update(void* data, obs_data* settings)
   {
     Module.Log("source_update called", ObsLogLevel.Debug);
-    var thisSource = getSource(data);
+    var thisSource = GetSource(data);
     if (thisSource.BeamReceiver.IsConnected)
       thisSource.BeamReceiver.Disconnect();
     if (Convert.ToBoolean(Obs.obs_source_showing(((Context*)data)->Source))) // auto-reconnect if the source is visible
-      thisSource.connect();
+      thisSource.Connect();
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -279,14 +280,15 @@ public class Source
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe uint source_get_width(void* data)
   {
-    return getSource(data).BeamReceiver.Width;
+    return GetSource(data).BeamReceiver.Width;
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe uint source_get_height(void* data)
   {
-    return getSource(data).BeamReceiver.Height;
+    return GetSource(data).BeamReceiver.Height;
   }
+#pragma warning restore IDE1006
 
   #endregion Source API methods
 
@@ -313,7 +315,7 @@ public class Source
     {
       var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
       ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(!connectionTypePipe));
-      connectionTypeChanged(connectionTypePipe, properties);
+      ConnectionTypeChanged(connectionTypePipe, properties);
       return Convert.ToByte(true);
     }
   }
@@ -325,12 +327,12 @@ public class Source
     {
       var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
       ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(connectionTypePipe));
-      connectionTypeChanged(connectionTypePipe, properties);
+      ConnectionTypeChanged(connectionTypePipe, properties);
       return Convert.ToByte(true);
     }
   }
 
-  private static unsafe void connectionTypeChanged(bool connectionTypePipe, obs_properties* properties)
+  private static unsafe void ConnectionTypeChanged(bool connectionTypePipe, obs_properties* properties)
   {
     fixed (byte*
       propertyTargetHostId = "host"u8,
@@ -347,7 +349,7 @@ public class Source
 
   private unsafe void DisconnectedEventHandler(object? sender, EventArgs e)
   {
-    var context = (Context*)this.ContextPointer;
+    var context = (Context*)ContextPointer;
 
     // reset video output
     Obs.obs_source_output_video(context->Source, null);
@@ -357,14 +359,14 @@ public class Source
       Task.Delay(1000).ContinueWith(_ =>
       {
         if (Convert.ToBoolean(Obs.obs_source_showing(context->Source))) // some time has passed, check again whether the source is still visible
-          connect(); // reconnect
+          Connect(); // reconnect
       });
     }
 
   }
   private unsafe void VideoFrameReceivedEventHandler(object? sender, Beam.BeamVideoData videoFrame)
   {
-    var context = (Context*)this.ContextPointer;
+    var context = (Context*)ContextPointer;
 
     // did the frame format or size change?
     if ((context->Video->width != videoFrame.Header.Width) || (context->Video->height != videoFrame.Header.Height) || (context->Video->format != videoFrame.Header.Format))
@@ -376,7 +378,10 @@ public class Source
       context->Video->width = videoFrame.Header.Width;
       context->Video->height = videoFrame.Header.Height;
       for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++)
+      {
         context->Video->linesize[i] = videoFrame.Header.Linesize[i];
+        Module.Log("VideoFrameReceivedEventHandler(): linesize[" + i + "] = " + context->Video->linesize[i], ObsLogLevel.Debug);
+      }
       // get the plane sizes for the current frame format and size
       _videoPlaneSizes = Beam.GetPlaneSizes(context->Video->format, context->Video->height, context->Video->linesize);
       ObsVideo.video_format_get_parameters_for_format(videoFrame.Header.Colorspace, videoFrame.Header.Range, videoFrame.Header.Format, context->Video->color_matrix, context->Video->color_range_min, context->Video->color_range_max);
@@ -400,13 +405,13 @@ public class Source
       // Module.Log($"VideoFrameReceivedEventHandler(): Output timestamp {videoFrame.Header.Timestamp}", ObsLogLevel.Debug);
       Obs.obs_source_output_video(context->Source, context->Video);
     }
-    this.BeamReceiver.RawDataBufferPool.Return(videoFrame.Data);
+    BeamReceiver.RawDataBufferPool.Return(videoFrame.Data);
   }
 
 
   private unsafe void AudioFrameReceivedEventHandler(object? sender, Beam.BeamAudioData audioFrame)
   {
-    var context = (Context*)this.ContextPointer;
+    var context = (Context*)ContextPointer;
 
     // did the frame format or size change?
     if ((context->Audio->samples_per_sec != audioFrame.Header.SampleRate) || (context->Audio->frames != audioFrame.Header.Frames) || (context->Audio->speakers != audioFrame.Header.Speakers) || (context->Audio->format != audioFrame.Header.Format))
@@ -419,8 +424,7 @@ public class Source
       context->Audio->format = audioFrame.Header.Format;
       context->Audio->frames = audioFrame.Header.Frames;
       // calculate the plane size for the current frame format and size
-      int audioBytesPerSample;
-      Beam.GetAudioDataSize(audioFrame.Header.Format, audioFrame.Header.Speakers, audioFrame.Header.Frames, out _, out audioBytesPerSample);
+      Beam.GetAudioDataSize(audioFrame.Header.Format, audioFrame.Header.Speakers, audioFrame.Header.Frames, out _, out int audioBytesPerSample);
       _audioPlaneSize = (uint)audioBytesPerSample * audioFrame.Header.Frames;
       Module.Log("AudioFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
     }

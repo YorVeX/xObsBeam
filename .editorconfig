@@ -1,0 +1,83 @@
+# EditorConfig is awesome: https://EditorConfig.org
+
+# top-most EditorConfig file
+root = true
+
+[*]
+indent_style = space
+indent_size = 2
+end_of_line = crlf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+dotnet_analyzer_diagnostic.category-Performance.severity = warning
+
+dotnet_analyzer_diagnostic.category-Maintainability.severity = warning
+
+dotnet_analyzer_diagnostic.category-Reliability.severity = warning
+
+dotnet_analyzer_diagnostic.category-Security.severity = warning
+
+dotnet_analyzer_diagnostic.category-Usage.severity = warning
+
+dotnet_analyzer_diagnostic.category-CodeQuality.severity = suggestion
+
+
+# 'System.Runtime.InteropServices.Marshal.SizeOf<*>(*)' uses runtime marshalling even when 'DisableRuntimeMarshallingAttribute' is applied. Use features like 'sizeof' and pointers directly to ensure accurate results.
+# - raise the severity of this, since we are using the DisableRuntimeMarshalling attribute and want to avoid countering this with this kind of marshalling code
+# - also read the comments next to the DisableRuntimeMarshalling attribute
+dotnet_diagnostic.CA1421.severity = warning
+
+# Don't know what it is, seems to be broken, see: https://github.com/dotnet/roslyn/issues/67949
+dotnet_diagnostic.IDE0251.severity = none
+
+# --------------- Style ---------------
+dotnet_analyzer_diagnostic.category-Style.severity = suggestion
+
+# 'if' statement can be simplified
+dotnet_diagnostic.IDE0045.severity = silent
+dotnet_diagnostic.IDE0046.severity = silent
+
+# Populate switch
+dotnet_diagnostic.IDE0010.severity = silent
+dotnet_diagnostic.IDE0072.severity = silent
+
+# Namespace "*" does not match folder structure, expected "*"
+dotnet_diagnostic.IDE0130.severity = silent
+
+# Remove unnecessary expression value
+dotnet_diagnostic.IDE0058.severity = silent
+
+# Use explicit type instead of 'var'
+dotnet_diagnostic.IDE0008.severity = none
+
+# Accessibility modifiers required
+dotnet_diagnostic.IDE0040.severity = none
+
+# Add braces to 'if' statement.
+dotnet_diagnostic.IDE0011.severity = none
+
+# Convert to block scoped namespace
+dotnet_diagnostic.IDE0160.severity = none
+
+# Parentheses can be removed
+dotnet_diagnostic.IDE0047.severity = none
+
+[libjpeg-turbo/**]
+# disable naming rules, as this wrapper is a mapping of the original C API
+dotnet_diagnostic.IDE1006.severity = none
+
+# P/Invoke method '*' should not be visible
+# this whole plugin is full of unsafe code, not going to write extra wrapper methods for this specific library just to satisfy a rule
+dotnet_diagnostic.CA1401.severity = none
+
+# Mark the method '*' with 'LibraryImportAttribute' instead of 'DllImportAttribute' to generate P/Invoke marshalling code at compile time
+# - the ClangSharpPInvokeGenerator already generates the code in a way that LibraryImport wouldn't give any benefits (e.g. not using arrays and strings)
+# - as also explained for csbindgen here: https://neuecc.medium.com/csbindgen-generate-c-native-code-bridge-automatically-or-modern-approaches-to-native-code-78d9f9a616fb
+# - also read the comments next to the DisableRuntimeMarshalling attribute
+dotnet_diagnostic.SYSLIB1054.severity = none

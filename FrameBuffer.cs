@@ -1,10 +1,6 @@
 ﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
-using System.Buffers;
-using System.Buffers.Binary;
-using ObsInterop;
-
 namespace xObsBeam;
 
 /*
@@ -20,7 +16,7 @@ With sync feeds these problems don't exist, the order stays unaltered and audio 
 
 public class FrameBuffer
 {
-  List<Beam.IBeamData> _frameList = new List<Beam.IBeamData>();
+  readonly List<Beam.IBeamData> _frameList = new();
 
   //TODO: make buffering more useful
   /*

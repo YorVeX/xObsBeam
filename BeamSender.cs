@@ -19,40 +19,40 @@ public class BeamSender
   public const int MaxFrameQueueSize = 5;
   public const int DefaultPort = 13629;
 
-  ConcurrentDictionary<string, BeamSenderClient> _clients = new ConcurrentDictionary<string, BeamSenderClient>();
-  ConcurrentDictionary<string, NamedPipeServerStream> _pipeServers = new ConcurrentDictionary<string, NamedPipeServerStream>();
+  readonly ConcurrentDictionary<string, BeamSenderClient> _clients = new();
+  readonly ConcurrentDictionary<string, NamedPipeServerStream> _pipeServers = new();
 
-  TcpListener _listener = new TcpListener(IPAddress.Loopback, DefaultPort);
+  TcpListener _listener = new(IPAddress.Loopback, DefaultPort);
   string _pipeName = "";
-  CancellationTokenSource _listenCancellationSource = new CancellationTokenSource();
+  CancellationTokenSource _listenCancellationSource = new();
   ArrayPool<byte>? _videoDataPool;
-  int _videoDataPoolMaxSize = 0;
+  int _videoDataPoolMaxSize;
   ArrayPool<byte>? _qoiVideoDataPool;
-  int _qoiVideoDataPoolMaxSize = 0;
-  private int _videoFramesProcessed = 0;
-  private int _videoFramesCompressed = 0;
+  int _qoiVideoDataPoolMaxSize;
+  private int _videoFramesProcessed;
+  private int _videoFramesCompressed;
   ArrayPool<byte>? _lz4VideoDataPool;
-  int _lz4VideoDataPoolMaxSize = 0;
+  int _lz4VideoDataPoolMaxSize;
   Beam.VideoHeader _videoHeader;
   Beam.AudioHeader _audioHeader;
-  int _videoDataSize = 0;
+  int _videoDataSize;
   uint[] _videoPlaneSizes = Array.Empty<uint>();
   uint[] _jpegYuvPlaneSizes = Array.Empty<uint>();
-  int _audioDataSize = 0;
-  int _audioBytesPerSample = 0;
+  int _audioDataSize;
+  int _audioBytesPerSample;
 
   // cached compression settings
-  bool _jpegCompression = false;
-  bool _jpegCompressionLossless = false;
+  bool _jpegCompression;
+  bool _jpegCompressionLossless;
   int _jpegCompressionQuality = 90;
   TJSAMP _jpegSubsampling = TJSAMP.TJSAMP_444;
   TJPF _jpegPixelFormat = TJPF.TJPF_RGB;
   TJCS _jpegColorspace = TJCS.TJCS_RGB;
-  bool _jpegYuv = false;
-  bool _libJpegTurboV3 = false;
-  bool _qoiCompression = false;
+  bool _jpegYuv;
+  bool _libJpegTurboV3;
+  bool _qoiCompression;
   private double _compressionThreshold = 1;
-  bool _lz4Compression = false;
+  bool _lz4Compression;
   bool _lz4CompressionSyncQoiSkips = true;
   LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
   bool _compressionThreadingSync = true;
@@ -108,18 +108,19 @@ public class BeamSender
     }
 
     // create the video header with current frame base info as a template for every frame - in most cases only the timestamp changes so that this instance can be reused without copies of it being created
-    _videoHeader = new Beam.VideoHeader()
+    var videoHeader = new Beam.VideoHeader()
     {
       Type = Beam.Type.Video,
       DataSize = _videoDataSize,
       Width = info->width,
       Height = info->height,
-      Linesize = new ReadOnlySpan<uint>(linesize, Beam.VideoHeader.MAX_AV_PLANES).ToArray(),
       Fps = info->fps_num,
       Format = format,
       Range = info->range,
       Colorspace = info->colorspace,
     };
+    new ReadOnlySpan<uint>(linesize, Beam.VideoHeader.MAX_AV_PLANES).CopyTo(new Span<uint>(videoHeader.Linesize, Beam.VideoHeader.MAX_AV_PLANES));
+    _videoHeader = videoHeader;
 
     // prepare generic video data pool that can be used for operations that need buffers with the raw video data size for the current format (e.g. raw managed copy or JPEG deinterleaving)
     _videoDataPoolMaxSize = _videoDataSize;
@@ -187,11 +188,9 @@ public class BeamSender
     };
   }
 
-  public bool CanStart
-  {
-    get => (_videoDataSize > 0) && (_audioDataSize > 0);
-  }
+  public bool CanStart => ((_videoDataSize > 0) && (_audioDataSize > 0));
 
+#pragma warning disable IDE0060 //TODO: PeerDiscovery: identifier parameter will be used when PeerDiscovery is implemented, then remove this pragma
   public async void Start(string identifier, IPAddress localAddr, int port = DefaultPort)
   {
     if (_videoDataSize == 0)
@@ -223,7 +222,7 @@ public class BeamSender
           break;
         if ((clientSocket != null) && (clientSocket.RemoteEndPoint != null))
         {
-          Module.Log($"Accept after {stopwatch.ElapsedMilliseconds} ms! Pending: {_listener.Pending()}, Data available: {clientSocket.Available}, Blocking: {clientSocket.Blocking}, Connected: {clientSocket.Connected}, DontFragment: {clientSocket.DontFragment}, Dual: {clientSocket.DualMode}, Broadcast: {clientSocket.EnableBroadcast}, Excl: {clientSocket.ExclusiveAddressUse}, Bound: {clientSocket.IsBound}, Linger: {clientSocket.LingerState!.ToString()}, NoDelay: {clientSocket.NoDelay}, RecvBuff: {clientSocket.ReceiveBufferSize}, SendBuff: {clientSocket.SendBufferSize}, TTL: {clientSocket.Ttl}", ObsLogLevel.Debug);
+          Module.Log($"Accept after {stopwatch.ElapsedMilliseconds} ms! Pending: {_listener.Pending()}, Data available: {clientSocket.Available}, Blocking: {clientSocket.Blocking}, Connected: {clientSocket.Connected}, DontFragment: {clientSocket.DontFragment}, Dual: {clientSocket.DualMode}, Broadcast: {clientSocket.EnableBroadcast}, Excl: {clientSocket.ExclusiveAddressUse}, Bound: {clientSocket.IsBound}, Linger: {clientSocket.LingerState!}, NoDelay: {clientSocket.NoDelay}, RecvBuff: {clientSocket.ReceiveBufferSize}, SendBuff: {clientSocket.SendBufferSize}, TTL: {clientSocket.Ttl}", ObsLogLevel.Debug);
           string clientId = clientSocket.RemoteEndPoint.ToString()!;
           var client = new BeamSenderClient(clientId, clientSocket, _videoHeader, _audioHeader);
           client.Disconnected += ClientDisconnectedEventHandler;
@@ -238,7 +237,7 @@ public class BeamSender
         Module.Log($"Listener loop cancelled through {ex.GetType().Name}.", ObsLogLevel.Debug);
         break;
       }
-      catch (System.Exception ex)
+      catch (Exception ex)
       {
         Module.Log($"{ex.GetType().Name} in BeamSender.Start: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
         throw;
@@ -257,7 +256,7 @@ public class BeamSender
 
     _pipeName = pipeName;
 
-    var pipeStream = new NamedPipeServerStream(_pipeName, PipeDirection.InOut, 10, PipeTransmissionMode.Byte, System.IO.Pipes.PipeOptions.Asynchronous);
+    var pipeStream = new NamedPipeServerStream(_pipeName, PipeDirection.InOut, 10, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
 
     Module.Log($"Listening on {_pipeName}.", ObsLogLevel.Info);
 
@@ -281,7 +280,7 @@ public class BeamSender
           break;
 
         // generate GUID for the client
-        string clientId = System.Guid.NewGuid().ToString();
+        string clientId = Guid.NewGuid().ToString();
         Module.Log($"Accept after {stopwatch.ElapsedMilliseconds} ms!", ObsLogLevel.Debug);
 
         // create a new BeamSenderClient
@@ -291,7 +290,7 @@ public class BeamSender
         _clients.AddOrUpdate(clientId, client, (key, oldClient) => client);
 
         // create a new pipe for the next client
-        pipeStream = new NamedPipeServerStream(_pipeName, PipeDirection.InOut, 10, PipeTransmissionMode.Byte, System.IO.Pipes.PipeOptions.Asynchronous);
+        pipeStream = new NamedPipeServerStream(_pipeName, PipeDirection.InOut, 10, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
 
       }
       catch (OperationCanceledException ex)
@@ -299,7 +298,7 @@ public class BeamSender
         Module.Log($"Listener loop cancelled through {ex.GetType().Name}.", ObsLogLevel.Debug);
         break;
       }
-      catch (System.Exception ex)
+      catch (Exception ex)
       {
         Module.Log($"{ex.GetType().Name} in BeamSender.Start: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
         throw;
@@ -309,6 +308,7 @@ public class BeamSender
     pipeStream.Dispose();
     Module.Log($"Listener stopped.", ObsLogLevel.Info);
   }
+#pragma warning restore IDE0060 //TODO: PeerDiscovery: identifier parameter will be used when PeerDiscovery is implemented, then remove this pragma
 
   public void Stop()
   {
@@ -323,14 +323,14 @@ public class BeamSender
 
       Module.Log($"Stopped BeamSender.", ObsLogLevel.Debug);
     }
-    catch (System.Exception ex)
+    catch (Exception ex)
     {
       Module.Log($"{ex.GetType().Name} in BeamReceiver.Stop: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
     }
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private unsafe void sendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataJpeg, byte[]? encodedDataQoi, byte[]? encodedDataLz4)
+  private unsafe void SendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataJpeg, byte[]? encodedDataQoi, byte[]? encodedDataLz4)
   {
     try
     {
@@ -349,13 +349,12 @@ public class BeamSender
           if (EncoderSupport.LibJpegTurboV3)
           {
             turboJpegCompress = TurboJpeg.tj3Init((int)TJINIT.TJINIT_COMPRESS);
-            TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_NOREALLOC, 1);
-            TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_COLORSPACE, (int)_jpegColorspace);
-            TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_SUBSAMP, (int)_jpegSubsampling);
-            if (_jpegCompressionLossless)
-              TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_LOSSLESS, 1);
-            else
-              TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_QUALITY, _jpegCompressionQuality);
+            _ = TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_NOREALLOC, 1);
+            _ = TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_COLORSPACE, (int)_jpegColorspace);
+            _ = TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_SUBSAMP, (int)_jpegSubsampling);
+            _ = _jpegCompressionLossless
+              ? TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_LOSSLESS, 1)
+              : TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_QUALITY, _jpegCompressionQuality);
           }
           else
             turboJpegCompress = TurboJpeg.tjInitCompress();
@@ -381,7 +380,7 @@ public class BeamSender
             else
             {
               compressResult = TurboJpeg.tjCompressFromYUVPlanes(turboJpegCompress, planes, (int)videoHeader.Width, null, (int)videoHeader.Height, (int)_jpegSubsampling, &jpegBuf, &jpegDataLength, _jpegCompressionQuality, TurboJpeg.TJFLAG_NOREALLOC);
-              TurboJpeg.tjDestroy(turboJpegCompress);
+              _ = TurboJpeg.tjDestroy(turboJpegCompress);
             }
           }
           else
@@ -394,7 +393,7 @@ public class BeamSender
             else
             {
               compressResult = TurboJpeg.tjCompress2(turboJpegCompress, rawData, (int)videoHeader.Width, 0, (int)videoHeader.Height, (int)_jpegPixelFormat, &jpegBuf, &jpegDataLength, (int)_jpegSubsampling, _jpegCompressionQuality, TurboJpeg.TJFLAG_NOREALLOC);
-              TurboJpeg.tjDestroy(turboJpegCompress);
+              _ = TurboJpeg.tjDestroy(turboJpegCompress);
             }
           }
           encodedDataLength = (int)jpegDataLength;
@@ -474,7 +473,7 @@ public class BeamSender
       }
 
     }
-    catch (System.Exception ex)
+    catch (Exception ex)
     {
       Module.Log($"{ex.GetType().Name} in sendCompressed(): {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
       throw;
@@ -493,7 +492,7 @@ public class BeamSender
 
   public unsafe void SendVideo(ulong timestamp, byte* data)
   {
-    if (_clients.Count == 0)
+    if (_clients.IsEmpty)
       return;
 
     // make sure clients know the order of the frames, needs to be done here in a sync context
@@ -547,11 +546,11 @@ public class BeamSender
         byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize);
         EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneSizes);
         fixed (byte* videoData = managedDataCopy)
-          sendCompressed(timestamp, _videoHeader, videoData, encodedDataJpeg, encodedDataQoi, encodedDataLz4);
+          SendCompressed(timestamp, _videoHeader, videoData, encodedDataJpeg, encodedDataQoi, encodedDataLz4);
         _videoDataPool!.Return(managedDataCopy);
       }
       else
-        sendCompressed(timestamp, _videoHeader, data, encodedDataJpeg, encodedDataQoi, encodedDataLz4); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
+        SendCompressed(timestamp, _videoHeader, data, encodedDataJpeg, encodedDataQoi, encodedDataLz4); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
     }
     else
     {
@@ -568,17 +567,17 @@ public class BeamSender
       {
         var capturedBeamVideoData = (Beam.BeamVideoData)state!; // capture into thread-local context
         fixed (byte* videoData = capturedBeamVideoData.Data)
-          sendCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, encodedDataJpeg, encodedDataQoi, encodedDataLz4);
+          SendCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, encodedDataJpeg, encodedDataQoi, encodedDataLz4);
         _videoDataPool!.Return(capturedBeamVideoData.Data);
       }, beamVideoData);
     }
   }
 
-  public unsafe void SendAudio(ulong timestamp, int speakers, byte* data)
+  public unsafe void SendAudio(ulong timestamp, byte* data)
   {
     // send the audio data to all currently connected clients
     foreach (var client in _clients.Values)
-      client.EnqueueAudio(timestamp, data, speakers, _audioBytesPerSample);
+      client.EnqueueAudio(timestamp, data);
   }
 
   #region Event handlers

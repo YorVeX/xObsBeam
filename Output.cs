@@ -17,12 +17,12 @@ public static class Output
   static Context _outputData;
   static IntPtr _outputDataPointer;
 
-  unsafe static video_output_info* _videoInfo = null;
-  unsafe static audio_output_info* _audioInfo = null;
-  unsafe static video_format _conversionVideoFormat = video_format.VIDEO_FORMAT_NONE;
-  static ulong _videoFrameCycleCounter = 0;
-  static ulong _audioFrameCycleCounter = 0;
-  static BeamSender _beamSender = new BeamSender();
+  static unsafe video_output_info* _videoInfo = null;
+  static unsafe audio_output_info* _audioInfo = null;
+  static unsafe video_format _conversionVideoFormat = video_format.VIDEO_FORMAT_NONE;
+  static ulong _videoFrameCycleCounter;
+  static ulong _audioFrameCycleCounter;
+  static readonly BeamSender _beamSender = new();
 
   #region Helper methods
   public static unsafe void Register()
@@ -39,7 +39,7 @@ public static class Output
       outputInfo.stop = &output_stop;
       outputInfo.raw_video = &output_raw_video;
       outputInfo.raw_audio = &output_raw_audio;
-      ObsOutput.obs_register_output_s(&outputInfo, (nuint)Marshal.SizeOf(outputInfo));
+      ObsOutput.obs_register_output_s(&outputInfo, (nuint)sizeof(obs_output_info));
     }
   }
   public static unsafe void Create()
@@ -48,15 +48,9 @@ public static class Output
       Obs.obs_output_create((sbyte*)id, (sbyte*)id, null, null);
   }
 
-  public static unsafe bool IsReady
-  {
-    get => (_outputData.Output != null);
-  }
+  public static unsafe bool IsReady => (_outputData.Output != null);
 
-  public static unsafe bool IsActive
-  {
-    get => ((_outputData.Output != null) && Convert.ToBoolean(Obs.obs_output_active(_outputData.Output)));
-  }
+  public static unsafe bool IsActive => ((_outputData.Output != null) && Convert.ToBoolean(Obs.obs_output_active(_outputData.Output)));
 
   public static unsafe void Start()
   {
@@ -96,6 +90,7 @@ public static class Output
   #endregion Helper methods
 
   #region Output API methods
+#pragma warning disable IDE1006
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe sbyte* output_get_name(void* data)
   {
@@ -110,14 +105,13 @@ public static class Output
   {
     Module.Log("output_create called", ObsLogLevel.Debug);
 
-    var context = new Context();
-    IntPtr mem = Marshal.AllocCoTaskMem(Marshal.SizeOf(context));
-    Context* obsOutputDataPointer = (Context*)mem;
+    IntPtr context = Marshal.AllocCoTaskMem(sizeof(Context));
+    Context* obsOutputDataPointer = (Context*)context;
     obsOutputDataPointer->Settings = settings;
     obsOutputDataPointer->Output = output;
-    _outputDataPointer = mem;
+    _outputDataPointer = context;
     _outputData = *obsOutputDataPointer;
-    return (void*)mem;
+    return (void*)context;
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -230,7 +224,7 @@ public static class Output
       }
     }
 
-    _beamSender.SendAudio(frames->timestamp, (int)_audioInfo->speakers, frames->data.e0);
+    _beamSender.SendAudio(frames->timestamp, frames->data.e0);
     _audioFrameCycleCounter++;
     if ((_audioFrameCycleCounter > 5) && (_audioFrameCycleCounter > Obs.obs_get_active_fps())) // do this only roughly once per second
     {
@@ -239,6 +233,7 @@ public static class Output
     }
 
   }
+#pragma warning restore IDE1006
   #endregion Output API methods
 
 

@@ -1,11 +1,10 @@
 ﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
+
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Runtime.InteropServices;
 using ObsInterop;
-
 namespace xObsBeam;
 
 
@@ -48,8 +47,8 @@ public class Beam
 
   public static unsafe uint[] GetYuvPlaneSizes(video_format format, uint width, uint height)
   {
-    uint halfHeight = 0;
-    uint halfwidth = 0;
+    uint halfHeight;
+    uint halfwidth;
     uint[] planeSizes;
 
     switch (format)
@@ -169,7 +168,6 @@ public class Beam
       videoDataSize += (int)planeSizes[planeIndex];
     var header = new VideoHeader()
     {
-      Linesize = planeSizes,
       Format = format,
       Width = linesize[0],
       Height = height,
@@ -181,6 +179,7 @@ public class Beam
       QoiDataSize = 0,
       DataSize = videoDataSize,
     };
+    new ReadOnlySpan<uint>(linesize, VideoHeader.MAX_AV_PLANES).CopyTo(new Span<uint>(header.Linesize, VideoHeader.MAX_AV_PLANES));
     return new BeamVideoData(header, new byte[videoDataSize], timestamp);
   }
 
@@ -280,8 +279,7 @@ public class Beam
     public int QoiDataSize;
     public uint Width;
     public uint Height;
-    public uint[] Linesize = new uint[MAX_AV_PLANES];
-    // public fixed uint Linesize[MAX_AV_PLANES]; 
+    public fixed uint Linesize[MAX_AV_PLANES];
     public uint Fps;
     public video_format Format;
     public video_range_type Range;
@@ -297,7 +295,7 @@ public class Beam
       get
       {
         if (_headerDataSize == -1)
-          _headerDataSize = Marshal.SizeOf<VideoHeader>();
+          _headerDataSize = sizeof(VideoHeader);
         return _headerDataSize;
       }
     }
@@ -306,7 +304,9 @@ public class Beam
     {
       var reader = new SequenceReader<byte>(header);
 
+#pragma warning disable IDE0018 // explicit declaration for better readability and visibility of the below comment
       int tempInt; // only needed for casting, annoying but necessary until this is implemented: https://github.com/dotnet/runtime/issues/30580
+#pragma warning restore IDE0018
 
       // read uint Type from the first 4 bytes in header
       reader.TryReadLittleEndian(out tempInt);
@@ -325,7 +325,7 @@ public class Beam
       reader.TryReadLittleEndian(out tempInt);
       Height = (uint)tempInt;
       // read uint linesize from the next 8 chunks of 4 bytes in header
-      for (int i = 0; i < VideoHeader.MAX_AV_PLANES; i++)
+      for (int i = 0; i < MAX_AV_PLANES; i++)
       {
         reader.TryReadLittleEndian(out tempInt);
         Linesize[i] = (uint)tempInt;
@@ -361,7 +361,7 @@ public class Beam
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), QoiDataSize); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Width); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Height); headerBytes += 4;
-      for (int i = 0; i < VideoHeader.MAX_AV_PLANES; i++)
+      for (int i = 0; i < MAX_AV_PLANES; i++)
       {
         BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Linesize[i]);
         headerBytes += 4;
@@ -397,7 +397,7 @@ public class Beam
       get
       {
         if (_headerDataSize == -1)
-          _headerDataSize = Marshal.SizeOf<AudioHeader>();
+          _headerDataSize = sizeof(AudioHeader);
         return _headerDataSize;
       }
     }
@@ -406,7 +406,9 @@ public class Beam
     {
       var reader = new SequenceReader<byte>(header);
 
+#pragma warning disable IDE0018 // explicit declaration for better readability and visibility of the below comment
       int tempInt; // only needed for casting, annoying but necessary until this is implemented: https://github.com/dotnet/runtime/issues/30580
+#pragma warning restore IDE0018
 
       // read uint Type from the first 4 bytes in header
       reader.TryReadLittleEndian(out tempInt);
