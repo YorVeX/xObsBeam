@@ -363,6 +363,7 @@ public class BeamSender
           {
             if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12) // packed format, was converted so that libjpeg-turbo can handle it, reflect this in the header
               videoHeader.Format = video_format.VIDEO_FORMAT_I420;
+
             // the data planes are contiguous in memory as validated by SetVideoParameters(), only need to set the pointers to the start of each plane
             var planes = stackalloc byte*[_jpegYuvPlaneSizes.Length];
             uint currentOffset = 0;

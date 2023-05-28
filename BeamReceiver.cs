@@ -466,7 +466,6 @@ public class BeamReceiver
                 //TODO: output to YUV instead of BGRA by default, the necessary turboJpegDecompressToYuv() function is already there but hasn't been tested yet
                 // this would save libjpeg-turbo from having to do a conversion from native JPEG YUV to BGRA, but also add significant code complexity since the plane sizes need to be determined, the question is whether that's actually worth it
                 TurboJpegDecompressToBgra(receivedFrameData, maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
-                // Module.Log($"Video data: Linesize[0]={videoHeader.Linesize[0]} bytes.", ObsLogLevel.Debug);
                 ChangeHeaderToBgra(ref videoHeader); // we decompressed to BGRA
               }
             }

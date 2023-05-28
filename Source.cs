@@ -365,14 +365,15 @@ public class Source
     var context = (Context*)ContextPointer;
 
     // did the frame format or size change?
-    if ((context->Video->width != videoFrame.Header.Width) || (context->Video->height != videoFrame.Header.Height) || (context->Video->format != videoFrame.Header.Format))
+    if ((context->Video->width != videoFrame.Header.Width) || (context->Video->height != videoFrame.Header.Height) || (context->Video->format != videoFrame.Header.Format) || (context->Video->full_range != Convert.ToByte(videoFrame.Header.Range == video_range_type.VIDEO_RANGE_FULL)))
     {
-      Module.Log($"VideoFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Video->format} {context->Video->width}x{context->Video->height} -> {videoFrame.Header.Format} {videoFrame.Header.Width}x{videoFrame.Header.Height})", ObsLogLevel.Debug);
+      Module.Log($"VideoFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Video->format} {(Convert.ToBoolean(context->Video->full_range) ? "FULL" : "LIMITED")} {context->Video->width}x{context->Video->height} -> {videoFrame.Header.Format} {((videoFrame.Header.Range == video_range_type.VIDEO_RANGE_FULL) ? "FULL" : "LIMITED")} {videoFrame.Header.Width}x{videoFrame.Header.Height})", ObsLogLevel.Debug);
 
       // initialize the frame base settings with the new frame format and size
       context->Video->format = videoFrame.Header.Format;
       context->Video->width = videoFrame.Header.Width;
       context->Video->height = videoFrame.Header.Height;
+      context->Video->full_range = Convert.ToByte(videoFrame.Header.Range == video_range_type.VIDEO_RANGE_FULL);
       for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++)
       {
         context->Video->linesize[i] = videoFrame.Header.Linesize[i];
