@@ -9,7 +9,7 @@ using System.Net.Sockets;
 
 namespace xObsBeam;
 
-class BeamSenderClient
+sealed class BeamSenderClient
 {
   readonly Socket? _socket;
   readonly NamedPipeServerStream? _pipeStream;
@@ -27,6 +27,13 @@ class BeamSenderClient
   readonly ManualResetEvent _sendLoopExited = new(false);
 
   public string ClientId { get; } = "";
+
+  // the following block of fields is needed for direct send mode
+  PipeWriter? _pipeWriter;
+  readonly AutoResetEvent _flushFinished = new(true);
+  uint _fps;
+  uint _frameCycle;
+  ulong _totalBytes;
 
   public BeamSenderClient(string clientId, Socket socket, Beam.VideoHeader videoHeader, Beam.AudioHeader audioHeader)
   {
@@ -56,7 +63,17 @@ class BeamSenderClient
       _stream = _pipeStream;
     else
       throw new InvalidOperationException("No socket or pipe stream available.");
-    _ = Task.Run(() => SendLoopAsync(PipeWriter.Create(_stream), _cancellationSource.Token));
+    if (SettingsDialog.DirectSend)
+    {
+      _fps = 30;
+      _frameCycle = 1;
+      _totalBytes = 0;
+      _flushFinished.Set();
+      _pipeWriter = PipeWriter.Create(_stream);
+    }
+    else
+      _ = Task.Run(() => SendLoopAsync(PipeWriter.Create(_stream), _cancellationSource.Token));
+
     _ = Task.Run(() => ReceiveLoopAsync(PipeReader.Create(_stream), _cancellationSource.Token));
   }
 
@@ -65,7 +82,24 @@ class BeamSenderClient
     Module.Log($"<{ClientId}> Disconnecting client...", ObsLogLevel.Info);
     _cancellationSource.Cancel();
     _frameAvailable.Set();
-    if (!_sendLoopExited.WaitOne(blockingTimeout))
+    if (SettingsDialog.DirectSend)
+    {
+      _flushFinished.WaitOne(1000);
+      try { _pipeWriter?.Complete(); } catch { }
+      _pipeWriter = null;
+
+      if (_socket != null)
+      {
+        _socket.Shutdown(SocketShutdown.Both);
+        _socket.Disconnect(false);
+        if (_socket.Connected)
+          _socket.Close();
+      }
+      _stream?.Close();
+      OnDisconnected();
+      Module.Log($"<{ClientId}> Disconnected.", ObsLogLevel.Info);
+    }
+    else if (!_sendLoopExited.WaitOne(blockingTimeout))
       Module.Log($"<{ClientId}> Disconnecting client timed out.", ObsLogLevel.Error);
   }
 
@@ -152,7 +186,8 @@ class BeamSenderClient
     /*
     We want to send data out as fast as possible, however, a small queue is still needed for two reasons:
     1. The main rendering thread should be blocked as short as possible, we don't want to wait for network functions.
-    2. The PipeWriter workflow ends with "FlushAsync" (implicitly through WriteAsync). Since this call is async it could still be busy while the next frame is already being processed (and in tests this indeed has occasionally happened).
+    2. In async mode frames might be sent into the queue in the wrong order, the _frameTimestampQueue is used to ensure the correct order.
+    3. The PipeWriter workflow ends with "FlushAsync" (implicitly through WriteAsync). Since this call is async it could still be busy while the next frame is already being processed (and in tests this indeed has occasionally happened).
        As part of this processing the next call to PipeWriter.GetMemory() would be made, but: "Calling GetMemory or GetSpan while there's an incomplete call to FlushAsync isn't safe.", see:
        https://learn.microsoft.com/en-us/dotnet/standard/io/pipelines#pipewriter-common-problems
     */
@@ -358,6 +393,80 @@ class BeamSenderClient
     _frameTimestampQueue.Enqueue(timestamp);
   }
 
+  private async Task FlushPipeAsync()
+  {
+    try
+    {
+      await _pipeWriter!.FlushAsync();
+    }
+    catch (Exception ex)
+    {
+      Module.Log($"<{ClientId}> {ex.GetType().Name} in FlushPipeAsync(): {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
+      Disconnect(0);
+    }
+    finally
+    {
+      _flushFinished.Set();
+    }
+  }
+
+  public unsafe void SendVideoFrame(ulong timestamp, Beam.VideoHeader videoHeader, byte* videoData)
+  {
+    if (_pipeWriter == null)
+      return;
+
+    try
+    {
+
+      if ((videoHeader.Fps > 0) && (_fps != videoHeader.Fps))
+      {
+        _totalBytes = 0;
+        _frameCycle = 1;
+        _fps = videoHeader.Fps;
+      }
+
+      // wait for potential previous flushes to finish, necessary before calling _pipeWriter.GetSpan()
+      if (!_flushFinished.WaitOne(1000))
+      {
+        Module.Log($"<{ClientId}> Flush timeout while trying to send video data.", ObsLogLevel.Error);
+        Disconnect(0);
+        return;
+      }
+
+      // write video header data
+      var headerBytes = videoHeader.WriteTo(_pipeWriter.GetSpan(Beam.VideoHeader.VideoHeaderDataSize), timestamp);
+      _pipeWriter.Advance(headerBytes);
+
+      // write video frame data
+      _pipeWriter.Write(new ReadOnlySpan<byte>(videoData, videoHeader.DataSize));
+
+      // flush data to the pipe in the background
+      Task.Run(FlushPipeAsync);
+
+      _totalBytes += (ulong)headerBytes + (ulong)videoHeader.DataSize;
+      if (_frameCycle >= _fps)
+      {
+        var mBitsPerSecond = (_totalBytes * 8) / 1000000;
+        Module.Log($"<{ClientId}> Sent {headerBytes} + {videoHeader.DataSize} bytes of video data ({mBitsPerSecond} mbps)", ObsLogLevel.Debug);
+        _totalBytes = 0;
+      }
+      if (_frameCycle++ >= _fps)
+        _frameCycle = 1;
+
+    }
+    catch (IOException ex)
+    {
+      // happens when the receiver closes the connection
+      Module.Log($"<{ClientId}> Lost connection to receiver ({ex.GetType().Name}) while trying to send video data.", ObsLogLevel.Error);
+      Disconnect(0);
+    }
+    catch (Exception ex)
+    {
+      Module.Log($"<{ClientId}> SendVideoFrame(): {ex.GetType().Name} sending video data: {ex.Message}", ObsLogLevel.Error);
+      Disconnect(0);
+    }
+  }
+
   public unsafe bool EnqueueVideoFrame(ulong timestamp, Beam.VideoHeader videoHeader, byte[] videoData)
   {
     long videoFrameCount = Interlocked.Increment(ref _videoFrameCount);
@@ -410,6 +519,47 @@ class BeamSenderClient
     _frames.AddOrUpdate(timestamp, frame, (key, oldValue) => frame);
     _frameAvailable.Set();
     return true;
+  }
+
+  public unsafe void SendAudio(ulong timestamp, byte* audioData)
+  {
+    if (_pipeWriter == null)
+      return;
+
+    try
+    {
+      // wait for potential previous flushes to finish, necessary before calling _pipeWriter.GetSpan()
+      if (!_flushFinished.WaitOne(1000))
+      {
+        Module.Log($"<{ClientId}> Flush timeout while trying to send audio data.", ObsLogLevel.Error);
+        Disconnect(0);
+        return;
+      }
+
+      // write audio header data
+      var headerBytes = _audioHeader.WriteTo(_pipeWriter.GetSpan(Beam.AudioHeader.AudioHeaderDataSize), timestamp);
+      _pipeWriter.Advance(headerBytes);
+
+      // write audio frame data
+      _pipeWriter.Write(new ReadOnlySpan<byte>(audioData, _audioHeader.DataSize));
+
+      // flush data to the pipe in the background
+      Task.Run(FlushPipeAsync);
+
+      if (_frameCycle >= _fps)
+        Module.Log($"<{ClientId}> Sent {headerBytes} + {_audioHeader.DataSize} bytes of audio data", ObsLogLevel.Debug);
+    }
+    catch (IOException ex)
+    {
+      // happens when the receiver closes the connection
+      Module.Log($"<{ClientId}> Lost connection to receiver ({ex.GetType().Name}) while trying to send audio data.", ObsLogLevel.Error);
+      Disconnect(0);
+    }
+    catch (Exception ex)
+    {
+      Module.Log($"<{ClientId}> SendAudio(): {ex.GetType().Name} sending audio data: {ex.Message}", ObsLogLevel.Error);
+      Disconnect(0);
+    }
   }
 
   public unsafe void EnqueueAudio(ulong timestamp, byte* audioData)
