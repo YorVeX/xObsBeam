@@ -170,8 +170,6 @@ public static class SettingsDialog
     }
   }
 
-  public static bool DirectSend => UsePipe && !Lz4Compression && !JpegCompression && !QoiCompression;
-
   public static unsafe string Identifier
   {
     get

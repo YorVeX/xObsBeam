@@ -56,7 +56,6 @@ public class BeamSender
   bool _lz4CompressionSyncQoiSkips = true;
   LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
   bool _compressionThreadingSync = true;
-  bool _directSend;
 
   public unsafe bool SetVideoParameters(video_output_info* info, video_format conversionVideoFormat, uint* linesize, video_data._data_e__FixedBuffer data)
   {
@@ -79,7 +78,6 @@ public class BeamSender
     _lz4CompressionLevel = SettingsDialog.Lz4CompressionLevel;
     _compressionThreadingSync = SettingsDialog.CompressionMainThread;
     _lz4CompressionSyncQoiSkips = SettingsDialog.Lz4CompressionSyncQoiSkips;
-    _directSend = SettingsDialog.DirectSend;
 
     var format = info->format;
     if (conversionVideoFormat != video_format.VIDEO_FORMAT_NONE)
@@ -496,13 +494,6 @@ public class BeamSender
     if (_clients.IsEmpty)
       return;
 
-    if (_directSend) // for this special case "raw + local pipe" no queueing is needed, for more info see: https://github.com/YorVeX/xObsBeam/issues/7
-    {
-      foreach (var client in _clients.Values)
-        client.SendVideoFrame(timestamp, _videoHeader, data);
-      return;
-    }
-
     // make sure clients know the order of the frames, needs to be done here in a sync context
     foreach (var client in _clients.Values)
       client.EnqueueVideoTimestamp(timestamp);
@@ -584,16 +575,8 @@ public class BeamSender
   public unsafe void SendAudio(ulong timestamp, byte* data)
   {
     // send the audio data to all currently connected clients
-    if (_directSend) // for this special case "raw + local pipe" no queueing is needed, for more info see: https://github.com/YorVeX/xObsBeam/issues/7
-    {
-      foreach (var client in _clients.Values)
-        client.SendAudio(timestamp, data);
-    }
-    else
-    {
-      foreach (var client in _clients.Values)
-        client.EnqueueAudio(timestamp, data);
-    }
+    foreach (var client in _clients.Values)
+      client.EnqueueAudio(timestamp, data);
   }
 
   #region Event handlers
