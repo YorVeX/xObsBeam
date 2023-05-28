@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 
 namespace xObsBeam;
 
-class Qoi
+sealed class Qoi
 {
 
   public const int PaddingLength = 8;
