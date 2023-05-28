@@ -23,6 +23,7 @@ public static class Output
   static ulong _videoFrameCycleCounter;
   static ulong _audioFrameCycleCounter;
   static readonly BeamSender _beamSender = new();
+  static bool _firstFrame = true;
 
   #region Helper methods
   public static unsafe void Register()
@@ -132,6 +133,9 @@ public static class Output
     if (!Convert.ToBoolean(Obs.obs_output_can_begin_data_capture(_outputData.Output, ObsOutput.OBS_OUTPUT_AV))) //TODO: as soon as it's implemented in an OBS release use the new "2" function, we actually don't need to specify flags, see: https://github.com/obsproject/obs-studio/commit/d314d4725df2fef18a968ec4e12a80312359fef0
       return Convert.ToByte(false);
 
+    _videoInfo = ObsVideo.video_output_get_info(Obs.obs_output_video(_outputData.Output));
+    _firstFrame = true;
+
     // color format compatibility check
     var requiredVideoFormatConversion = SettingsDialog.GetRequiredVideoFormatConversion();
     if (requiredVideoFormatConversion != video_format.VIDEO_FORMAT_NONE)
@@ -140,6 +144,9 @@ public static class Output
       video_scale_info* videoScaleInfo = ObsBmem.bzalloc<video_scale_info>();
       _conversionVideoFormat = requiredVideoFormatConversion;
       videoScaleInfo->format = _conversionVideoFormat;
+      videoScaleInfo->range = _videoInfo->range; // needs to be explicitly set to leave it as it is, otherwise it will be converted to whatever video_range_type.VIDEO_RANGE_DEFAULT is
+      videoScaleInfo->colorspace = _videoInfo->colorspace; // needs to be explicitly set to leave it as it is, otherwise it will be converted to whatever video_colorspace.VIDEO_CS_DEFAULT is
+
       Module.Log($"Setting video conversion to {videoScaleInfo->width}x{videoScaleInfo->height} {videoScaleInfo->format} {videoScaleInfo->colorspace} {videoScaleInfo->range}", ObsLogLevel.Debug);
       Obs.obs_output_set_video_conversion(_outputData.Output, videoScaleInfo);
     }
@@ -176,9 +183,9 @@ public static class Output
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe void output_raw_video(void* data, video_data* frame)
   {
-    if (_videoInfo == null) // this is the first frame since the last output (re)start, get video info
+    if (_firstFrame) // this is the first frame since the last output (re)start, get video info
     {
-      _videoInfo = ObsVideo.video_output_get_info(Obs.obs_output_video(_outputData.Output));
+      _firstFrame = false;
       //TODO: use obs_output_get_video_conversion() here
       // video_scale_info* videoScaleInfo = Obs.obs_output_get_video_conversion(_outputData.Output);
       // the correct behavior would be: if videoScaleInfo is not null (meaning conversion is active), then fields in videoScaleInfo override the general settings in _videoInfo and these should be considered
