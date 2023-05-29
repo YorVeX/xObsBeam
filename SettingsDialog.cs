@@ -644,7 +644,7 @@ public static class SettingsDialog
       if (QoiCompression || (JpegCompression && JpegCompressionLossless))
         RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_BGRA };
       else if (JpegCompression && !JpegCompressionLossless)
-        RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_NV12 };
+        RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_NV12 };
       else
         RequireVideoFormats = null;
 

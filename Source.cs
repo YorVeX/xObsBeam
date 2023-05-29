@@ -377,7 +377,7 @@ public class Source
       // get the plane sizes for the current frame format and size
       if (videoFrame.Header.Compression == Beam.CompressionTypes.JpegLossy)
       {
-        EncoderSupport.GetJpegPlaneSizes((int)context->Video->width, (int)context->Video->height, out _videoPlaneSizes, out var jpeglineSize);
+        EncoderSupport.GetJpegPlaneSizes(context->Video->format, (int)context->Video->width, (int)context->Video->height, out _videoPlaneSizes, out var jpeglineSize);
         for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++)
         {
           context->Video->linesize[i] = jpeglineSize[i];

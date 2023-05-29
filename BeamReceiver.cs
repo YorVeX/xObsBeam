@@ -420,17 +420,18 @@ public class BeamReceiver
 
               if (videoHeader.Compression == Beam.CompressionTypes.JpegLossy)
               {
+                var jpegSubsampling = (int)EncoderSupport.ObsToJpegSubsampling(videoHeader.Format);
                 if (EncoderSupport.LibJpegTurboV3)
-                  rawVideoDataSize = (uint)TurboJpeg.tj3YUVBufSize((int)videoHeader.Width, 1, (int)videoHeader.Height, (int)TJSAMP.TJSAMP_420);
+                  rawVideoDataSize = (uint)TurboJpeg.tj3YUVBufSize((int)videoHeader.Width, 1, (int)videoHeader.Height, jpegSubsampling);
                 else if (EncoderSupport.LibJpegTurbo)
-                  rawVideoDataSize = (uint)TurboJpeg.tjBufSizeYUV2((int)videoHeader.Width, 1, (int)videoHeader.Height, (int)TJSAMP.TJSAMP_420);
+                  rawVideoDataSize = (uint)TurboJpeg.tjBufSizeYUV2((int)videoHeader.Width, 1, (int)videoHeader.Height, jpegSubsampling);
                 else
                 {
                   rawVideoDataSize = 0;
                   Module.Log($"Error: JPEG library is not available, cannot decompress received video data!", ObsLogLevel.Error);
                   break;
                 }
-                EncoderSupport.GetJpegPlaneSizes((int)videoHeader.Width, (int)videoHeader.Height, out videoPlaneSizes, out _);
+                EncoderSupport.GetJpegPlaneSizes(videoHeader.Format, (int)videoHeader.Width, (int)videoHeader.Height, out videoPlaneSizes, out _);
               }
               else
                 rawVideoDataSize = GetRawVideoDataSize(videoHeader);

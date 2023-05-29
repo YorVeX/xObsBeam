@@ -185,24 +185,25 @@ namespace xObsBeam
       return (FormatIsYuv(obsVideoFormat)) ? TJCS.TJCS_YCbCr : TJCS.TJCS_RGB;
     }
 
-    public static void GetJpegPlaneSizes(int width, int height, out uint[] videoPlaneSizes, out uint[] linesize)
+    public static void GetJpegPlaneSizes(video_format format, int width, int height, out uint[] videoPlaneSizes, out uint[] linesize)
     {
       videoPlaneSizes = new uint[Beam.VideoHeader.MAX_AV_PLANES];
       linesize = new uint[Beam.VideoHeader.MAX_AV_PLANES];
+      var jpegSubsampling = (int)ObsToJpegSubsampling(format);
       if (LibJpegTurboV3)
       {
         for (int i = 0; i < videoPlaneSizes.Length; i++)
         {
-          videoPlaneSizes[i] = (uint)TurboJpeg.tj3YUVPlaneSize(i, width, 0, height, (int)TJSAMP.TJSAMP_420);
-          linesize[i] = (uint)TurboJpeg.tj3YUVPlaneWidth(i, width, (int)TJSAMP.TJSAMP_420);
+          videoPlaneSizes[i] = (uint)TurboJpeg.tj3YUVPlaneSize(i, width, 0, height, jpegSubsampling);
+          linesize[i] = (uint)TurboJpeg.tj3YUVPlaneWidth(i, width, jpegSubsampling);
         }
       }
       else if (LibJpegTurbo)
       {
         for (int i = 0; i < videoPlaneSizes.Length; i++)
         {
-          videoPlaneSizes[i] = (uint)TurboJpeg.tjPlaneSizeYUV(i, width, 0, height, (int)TJSAMP.TJSAMP_420);
-          linesize[i] = (uint)TurboJpeg.tjPlaneWidth(i, width, (int)TJSAMP.TJSAMP_420);
+          videoPlaneSizes[i] = (uint)TurboJpeg.tjPlaneSizeYUV(i, width, 0, height, jpegSubsampling);
+          linesize[i] = (uint)TurboJpeg.tjPlaneWidth(i, width, jpegSubsampling);
         }
       }
       else
