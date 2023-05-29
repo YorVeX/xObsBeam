@@ -91,6 +91,9 @@ public class BeamSender
       return false;
     }
 
+    for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++)
+      Module.Log("SetVideoParameters(): linesize[" + i + "] = " + linesize[i], ObsLogLevel.Debug);
+
     var pointerOffset = (IntPtr)data.e0;
     for (int planeIndex = 0; planeIndex < _videoPlaneSizes.Length; planeIndex++)
     {
@@ -101,7 +104,7 @@ public class BeamSender
       if (pointerOffset != (IntPtr)data[planeIndex])
       {
         // either the GetPlaneSizes() returned wrong information or the video data plane pointers are not contiguous in memory (which we currently rely on)
-        Module.Log($"Video data plane pointer for plane {planeIndex} of format {info->format} has a difference of {pointerOffset - (IntPtr)data[planeIndex]}.", ObsLogLevel.Error);
+        Module.Log($"Video data plane pointer for plane {planeIndex} of format {info->format} has a difference of {pointerOffset - (IntPtr)data[planeIndex]}.", ObsLogLevel.Warning);
         //BUG: this is currently happening for odd resolutions like 1279x719 on YUV formats, because padding is not properly handled by GetPlaneSizes(), leading to image distortion
       }
       pointerOffset += (int)_videoPlaneSizes[planeIndex];
@@ -163,12 +166,12 @@ public class BeamSender
     }
 
     var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoDataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
-    if (!_qoiCompression && !_lz4Compression)
+    if (!_qoiCompression && !_lz4Compression && !_jpegCompression)
       Module.Log($"Video output feed initialized, theoretical uncompressed net bandwidth demand is {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
     else
     {
       string lz4WithLevelString = $"LZ4 ({SettingsDialog.Lz4CompressionLevel})";
-      Module.Log($"Video output feed initialized with {(_qoiCompression ? (_lz4Compression ? "QOI + " + lz4WithLevelString : "QOI") : lz4WithLevelString)} compression. Sync to render thread: {_compressionThreadingSync}. Theoretical uncompressed net bandwidth demand would be {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
+      Module.Log($"Video output feed initialized with {(_jpegCompression ? "JPEG" : (_qoiCompression ? (_lz4Compression ? "QOI + " + lz4WithLevelString : "QOI") : lz4WithLevelString))} compression. Sync to render thread: {_compressionThreadingSync}. Theoretical uncompressed net bandwidth demand would be {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
     }
 
     return true;
@@ -411,7 +414,7 @@ public class BeamSender
 
         if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
         {
-          videoHeader.Compression = Beam.CompressionTypes.Jpeg;
+          videoHeader.Compression = (_jpegCompressionLossless ? Beam.CompressionTypes.JpegLossless : Beam.CompressionTypes.JpegLossy);
           videoHeader.DataSize = encodedDataLength;
         }
       }
@@ -454,7 +457,8 @@ public class BeamSender
 
       switch (videoHeader.Compression)
       {
-        case Beam.CompressionTypes.Jpeg:
+        case Beam.CompressionTypes.JpegLossy:
+        case Beam.CompressionTypes.JpegLossless:
           foreach (var client in _clients.Values)
             client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataJpeg!);
           break;

@@ -374,13 +374,25 @@ public class Source
       context->Video->width = videoFrame.Header.Width;
       context->Video->height = videoFrame.Header.Height;
       context->Video->full_range = Convert.ToByte(videoFrame.Header.Range == video_range_type.VIDEO_RANGE_FULL);
-      for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++)
-      {
-        context->Video->linesize[i] = videoFrame.Header.Linesize[i];
-        Module.Log("VideoFrameReceivedEventHandler(): linesize[" + i + "] = " + context->Video->linesize[i], ObsLogLevel.Debug);
-      }
       // get the plane sizes for the current frame format and size
-      _videoPlaneSizes = Beam.GetPlaneSizes(context->Video->format, context->Video->height, context->Video->linesize);
+      if (videoFrame.Header.Compression == Beam.CompressionTypes.JpegLossy)
+      {
+        EncoderSupport.GetJpegPlaneSizes((int)context->Video->width, (int)context->Video->height, out _videoPlaneSizes, out var jpeglineSize);
+        for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++)
+        {
+          context->Video->linesize[i] = jpeglineSize[i];
+          Module.Log("VideoFrameReceivedEventHandler(): linesize[" + i + "] = " + context->Video->linesize[i], ObsLogLevel.Debug);
+        }
+      }
+      else
+      {
+        _videoPlaneSizes = Beam.GetPlaneSizes(context->Video->format, context->Video->height, context->Video->linesize);
+        for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++)
+        {
+          context->Video->linesize[i] = videoFrame.Header.Linesize[i];
+          Module.Log("VideoFrameReceivedEventHandler(): linesize[" + i + "] = " + context->Video->linesize[i], ObsLogLevel.Debug);
+        }
+      }
       ObsVideo.video_format_get_parameters_for_format(videoFrame.Header.Colorspace, videoFrame.Header.Range, videoFrame.Header.Format, context->Video->color_matrix, context->Video->color_range_min, context->Video->color_range_max);
       Module.Log("VideoFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
     }

@@ -15,7 +15,8 @@ public class Beam
     Qoi = 1,
     Lz4 = 2,
     QoiLz4 = 3,
-    Jpeg = 4,
+    JpegLossy = 4,
+    JpegLossless = 5,
   }
 
   #region helper methods
@@ -43,7 +44,7 @@ public class Beam
     return reader.Position;
   }
 
-  public static unsafe uint[] GetYuvPlaneSizes(video_format format, uint width, uint height)
+  public static uint[] GetYuvPlaneSizes(video_format format, uint width, uint height)
   {
     uint halfHeight;
     uint halfwidth;

@@ -10,7 +10,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using LibJpegTurbo;
 using K4os.Compression.LZ4;
-using ObsInterop;
 
 namespace xObsBeam;
 
@@ -276,26 +275,18 @@ public class BeamReceiver
     }
   }
 
-  private static unsafe uint GetRawVideoDataSize(Beam.VideoHeader videoHeader, out uint[] videoPlaneSizes)
+  private static unsafe uint GetRawVideoDataSize(Beam.VideoHeader videoHeader)
   {
     uint rawVideoDataSize = 0;
     // get the plane sizes for the current frame format and size
-    videoPlaneSizes = Beam.GetPlaneSizes(videoHeader.Format, videoHeader.Height, videoHeader.Linesize);
+    var videoPlaneSizes = Beam.GetPlaneSizes(videoHeader.Format, videoHeader.Height, videoHeader.Linesize);
     if (videoPlaneSizes.Length == 0) // unsupported format
       return rawVideoDataSize;
 
     for (int planeIndex = 0; planeIndex < videoPlaneSizes.Length; planeIndex++)
       rawVideoDataSize += videoPlaneSizes[planeIndex];
+
     return rawVideoDataSize;
-  }
-  private unsafe void ChangeHeaderToBgra(ref Beam.VideoHeader videoHeader)
-  {
-    videoHeader.Format = video_format.VIDEO_FORMAT_BGRA;
-    fixed (uint* linesize = videoHeader.Linesize)
-    {
-      new Span<uint>(linesize, Beam.VideoHeader.MAX_AV_PLANES).Clear(); // BGRA means only one plane, don't use the original YUV linesizes
-      linesize[0] = videoHeader.Width * 4; // BGRA has 4 bytes per pixel
-    }
   }
 
   #endregion unsafe helper functions
@@ -331,6 +322,7 @@ public class BeamReceiver
 
     int videoHeaderSize = Beam.VideoHeader.VideoHeaderDataSize;
     uint rawVideoDataSize = 0;
+    uint[] videoPlaneSizes = new uint[Beam.VideoHeader.MAX_AV_PLANES];
 
     uint fps = 30;
     uint logCycle = 0;
@@ -425,7 +417,24 @@ public class BeamReceiver
             if (sizeChanged || firstFrame) // re-allocate the arrays matching the new necessary size
             {
               firstFrame = false;
-              rawVideoDataSize = GetRawVideoDataSize(videoHeader, out _);
+
+              if (videoHeader.Compression == Beam.CompressionTypes.JpegLossy)
+              {
+                if (EncoderSupport.LibJpegTurboV3)
+                  rawVideoDataSize = (uint)TurboJpeg.tj3YUVBufSize((int)videoHeader.Width, 1, (int)videoHeader.Height, (int)TJSAMP.TJSAMP_420);
+                else if (EncoderSupport.LibJpegTurbo)
+                  rawVideoDataSize = (uint)TurboJpeg.tjBufSizeYUV2((int)videoHeader.Width, 1, (int)videoHeader.Height, (int)TJSAMP.TJSAMP_420);
+                else
+                {
+                  rawVideoDataSize = 0;
+                  Module.Log($"Error: JPEG library is not available, cannot decompress received video data!", ObsLogLevel.Error);
+                  break;
+                }
+                EncoderSupport.GetJpegPlaneSizes((int)videoHeader.Width, (int)videoHeader.Height, out videoPlaneSizes, out _);
+              }
+              else
+                rawVideoDataSize = GetRawVideoDataSize(videoHeader);
+
               maxVideoDataSize = (int)(videoHeader.Width * videoHeader.Height * 4);
               receivedFrameData = new byte[rawVideoDataSize];
               lz4DecompressBuffer = new byte[maxVideoDataSize];
@@ -460,14 +469,12 @@ public class BeamReceiver
               // need to decompress QOI only
               else if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
                 Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
-              // need to decompress JPEG only
-              else if (videoHeader.Compression == Beam.CompressionTypes.Jpeg)
-              {
-                //TODO: output to YUV instead of BGRA by default, the necessary turboJpegDecompressToYuv() function is already there but hasn't been tested yet
-                // this would save libjpeg-turbo from having to do a conversion from native JPEG YUV to BGRA, but also add significant code complexity since the plane sizes need to be determined, the question is whether that's actually worth it
+              // need to decompress JPEG lossless only
+              else if (videoHeader.Compression == Beam.CompressionTypes.JpegLossless)
                 TurboJpegDecompressToBgra(receivedFrameData, maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
-                ChangeHeaderToBgra(ref videoHeader); // we decompressed to BGRA
-              }
+              // need to decompress JPEG lossy only
+              else if (videoHeader.Compression == Beam.CompressionTypes.JpegLossy)
+                TurboJpegDecompressToYuv(receivedFrameData, maxVideoDataSize, rawDataBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
             }
 
             // process the frame
