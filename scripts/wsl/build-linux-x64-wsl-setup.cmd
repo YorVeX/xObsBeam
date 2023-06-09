@@ -5,7 +5,7 @@ echo Before running this you first need to manually install WSL with Ubuntu-20.0
 echo This script assumes use of Ubuntu-20.04 LTS instead of the latest version so that produced binaries are also
 echo compatible with older glibc versions. 
 echo To install this open a PowerShell console with administrator privileges and execute this:
-echo wsl --install Ubuntu-20.04
+echo wsl --install --distribution Ubuntu-20.04
 echo.
 echo After installation was finished run `sudo apt update` and `sudo apt upgrade` once so that all packages are up to date.
 echo Then exit this script, restart and only continue when the following lines list the WSL environment you want to use for building as default.
