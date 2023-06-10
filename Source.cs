@@ -2,7 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Text;
 using ObsInterop;
 
 namespace xObsBeam;
@@ -62,6 +66,39 @@ public class Source
     return _sourceList[(*context).SourceId];
   }
 
+  public unsafe string NetworkInterfaceName
+  {
+    get
+    {
+      fixed (byte* propertyNetworkInterfaceListId = "network_interface_list"u8)
+        return Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(((Context*)ContextPointer)->Settings, (sbyte*)propertyNetworkInterfaceListId))!;
+    }
+  }
+
+  public unsafe IPAddress NetworkInterfaceAddress
+  {
+    get
+    {
+      var configuredNetworkInterfaceName = NetworkInterfaceName;
+      if (configuredNetworkInterfaceName == "Any: 0.0.0.0")
+        return IPAddress.Any;
+
+      foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
+      {
+        foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
+        {
+          if (ip.Address.AddressFamily != AddressFamily.InterNetwork)
+            continue;
+          string networkInterfaceDisplayName = networkInterface.Name + ": " + ip.Address + " / " + ip.IPv4Mask;
+          if (networkInterfaceDisplayName == configuredNetworkInterfaceName)
+            return ip.Address;
+        }
+      }
+      Module.Log($"Didn't find configured network interface \"{configuredNetworkInterfaceName}\", falling back to loopback interface.", ObsLogLevel.Error);
+      return IPAddress.Loopback;
+    }
+  }
+
   private unsafe void Connect()
   {
     var context = (Context*)ContextPointer;
@@ -103,7 +140,7 @@ public class Source
         if (string.IsNullOrEmpty(targetHost) || targetHost == ".")
           targetHost = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_default_string(settings, (sbyte*)propertyTargetHostId))!;
         int targetPort = (int)ObsData.obs_data_get_int(settings, (sbyte*)propertyTargetPortId);
-        BeamReceiver.Connect(targetHost, targetPort);
+        BeamReceiver.Connect(NetworkInterfaceAddress, targetHost, targetPort);
       }
     }
   }
@@ -202,7 +239,10 @@ public class Source
       propertyConnectionTypePipeText = Module.ObsText("ConnectionTypePipeText"),
       propertyConnectionTypeSocketId = "connection_type_socket"u8,
       propertyConnectionTypeSocketCaption = Module.ObsText("ConnectionTypeSocketCaption"),
-      propertyConnectionTypeSocketText = Module.ObsText("ConnectionTypeSocketText")
+      propertyConnectionTypeSocketText = Module.ObsText("ConnectionTypeSocketText"),
+      propertyNetworkInterfaceListId = "network_interface_list"u8,
+      propertyNetworkInterfaceListCaption = Module.ObsText("NetworkInterfaceListCaption"),
+      propertyNetworkInterfaceListText = Module.ObsText("NetworkInterfaceListText")
     )
     {
       // frame buffer
@@ -225,6 +265,27 @@ public class Source
       var connectionTypeSocketProperty = ObsProperties.obs_properties_add_bool(connectionTypePropertyGroup, (sbyte*)propertyConnectionTypeSocketId, (sbyte*)propertyConnectionTypeSocketCaption);
       ObsProperties.obs_property_set_long_description(connectionTypeSocketProperty, (sbyte*)propertyConnectionTypeSocketText);
       ObsProperties.obs_property_set_modified_callback(connectionTypeSocketProperty, &ConnectionTypeSocketChangedEventHandler);
+
+      // network interface selection
+      var networkInterfacesList = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyNetworkInterfaceListId, (sbyte*)propertyNetworkInterfaceListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
+      ObsProperties.obs_property_set_long_description(networkInterfacesList, (sbyte*)propertyNetworkInterfaceListText);
+      fixed (byte* networkInterfaceAnyListItem = "Any: 0.0.0.0"u8)
+        ObsProperties.obs_property_list_add_string(networkInterfacesList, (sbyte*)networkInterfaceAnyListItem, (sbyte*)networkInterfaceAnyListItem);
+      foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
+      {
+        if (networkInterface.OperationalStatus == OperationalStatus.Up)
+        {
+          foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
+          {
+            if (ip.Address.AddressFamily != AddressFamily.InterNetwork)
+              continue;
+            string networkInterfaceDisplayName = networkInterface.Name + ": " + ip.Address + " / " + ip.IPv4Mask;
+            Module.Log($"Found network interface: {networkInterfaceDisplayName}", ObsLogLevel.Debug);
+            fixed (byte* networkInterfaceListItem = Encoding.UTF8.GetBytes(networkInterfaceDisplayName))
+              ObsProperties.obs_property_list_add_string(networkInterfacesList, (sbyte*)networkInterfaceListItem, (sbyte*)networkInterfaceListItem);
+          }
+        }
+      }
 
       // target socket/pipe server address
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyTargetHostId, (sbyte*)propertyTargetHostCaption, obs_text_type.OBS_TEXT_DEFAULT), (sbyte*)propertyTargetHostText);
@@ -308,7 +369,10 @@ public class Source
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte ConnectionTypePipeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
-    fixed (byte* propertyConnectionTypePipeId = "connection_type_pipe"u8, propertyConnectionTypeSocketId = "connection_type_socket"u8)
+    fixed (byte*
+      propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyConnectionTypeSocketId = "connection_type_socket"u8
+    )
     {
       var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
       ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(!connectionTypePipe));
@@ -334,11 +398,13 @@ public class Source
     fixed (byte*
       propertyTargetHostId = "host"u8,
       propertyTargetPipeNameId = "pipe_name"u8,
-      propertyTargetPortId = "port"u8
+      propertyTargetPortId = "port"u8,
+      propertyNetworkInterfaceListId = "network_interface_list"u8
     )
     {
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetHostId), Convert.ToByte(!connectionTypePipe));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetPipeNameId), Convert.ToByte(connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetPortId), Convert.ToByte(!connectionTypePipe));
       Module.Log("Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
     }

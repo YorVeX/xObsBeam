@@ -5,6 +5,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.Pipelines;
 using System.IO.Pipes;
+using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -51,12 +52,12 @@ public class BeamReceiver
 
   public int FrameBufferTimeMs { get; set; }
 
-  public void Connect(string hostname, int port)
+  public void Connect(IPAddress bindAddress, string hostname, int port)
   {
-    Task.Run(() => ConnectAsync(hostname, port));
+    Task.Run(() => ConnectAsync(bindAddress, hostname, port));
   }
 
-  public async Task ConnectAsync(string hostname, int port)
+  public async Task ConnectAsync(IPAddress bindAddress, string hostname, int port)
   {
     if (_isConnecting || IsConnected)
       return;
@@ -76,6 +77,7 @@ public class BeamReceiver
       try
       {
         Module.Log($"Connecting to {_targetHostname}:{_targetPort}...", ObsLogLevel.Debug);
+        socket.Bind(new IPEndPoint(bindAddress, 0));
         await socket.ConnectAsync(_targetHostname, _targetPort, _cancellationSource.Token);
       }
       catch (Exception ex)
