@@ -248,6 +248,7 @@ public static class SettingsDialog
   public static unsafe obs_properties* settings_get_properties(void* data)
   {
     var properties = ObsProperties.obs_properties_create();
+    //BUG: this flag became useless as of OBS 29.1.2, causing constant updates on every GUI element change, see: https://github.com/obsproject/obs-studio/commit/58fb63030cf2ee858ccf72d242cfabf3394f16f1
     ObsProperties.obs_properties_set_flags(properties, ObsProperties.OBS_PROPERTIES_DEFER_UPDATE);
 
     fixed (byte*
