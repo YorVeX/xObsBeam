@@ -350,6 +350,7 @@ public class Source
 
     // reset video output
     Obs.obs_source_output_video(context->Source, null);
+    context->Video->format = video_format.VIDEO_FORMAT_NONE; // make sure the source is reinitialized on the next frame
 
     if (Convert.ToBoolean(Obs.obs_source_showing(context->Source))) // auto-reconnect if the source is visible
     {
