@@ -1,3 +1,6 @@
+# If ClangSharpPInvokeGenerator is missing, just run this from a CMD window:
+# dotnet tool install --global ClangSharpPInvokeGenerator
+
 $turboJpegVersion = "2.1.91" # Version 3 Beta 2
 $filePath = "LibJpegTurbo.cs"
 $sourceFolder = "libjpeg-turbo-$turboJpegVersion"
@@ -15,7 +18,7 @@ ClangSharpPInvokeGenerator `
 	--remap tjtransform=TJTransform  <# rename classes breaking naming convention and align with the Java API #>  `
 	--remap tjscalingfactor=TJScalingFactor  <# rename classes breaking naming convention and align with the Java API #>  `
 	--with-using TJRegion=ClangSharp <# central namespace for the generic attributes that all ClangSharp generated classes need #>  `
-	--file .\libjpeg-turbo-2.1.91\turbojpeg.h <# file we want to generate bindings for #>  `
+	--file .\$sourceFolder\turbojpeg.h <# file we want to generate bindings for #>  `
     -n LibJpegTurbo <# namespace of the bindings #> `
     --methodClassName TurboJpeg <# class name where to put methods #> `
     --libraryPath turbojpeg <# name of the DLL #> `
