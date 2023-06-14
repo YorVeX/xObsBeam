@@ -338,7 +338,6 @@ public class BeamSender
   {
     try
     {
-
       int encodedDataLength = 0;
 
       if (encodedDataJpeg != null) // apply JPEG compression if enabled
@@ -437,7 +436,8 @@ public class BeamSender
           //TODO: reuse this
           var qoirEncodeOptions = ObsBmem.bzalloc<qoir_encode_options_struct>();
           qoirEncodeOptions->lossiness = 0; // lossless
-          //TODO: set qoirEncodeOptions->contextual_malloc_func and contextual_free_func so that we can also free the memory allocated by qoir_encode() in dst_ptr - maybe use the OBS functions for that so that we have the memory leak tracking?
+          qoirEncodeOptions->contextual_malloc_func = &EncoderSupport.QoirMAlloc; // important to use our own memory allocator, so that we can also free the memory later
+          qoirEncodeOptions->contextual_free_func = &EncoderSupport.QoirFree;
           //TODO: set qoirEncodeOptions->encbuf to a fixed buffer to avoid constant memory allocations by QoirLib
           var qoirEncodeResult = Qoir.qoir_encode(qoirPixelBuffer, qoirEncodeOptions);
           ObsBmem.bfree(qoirEncodeOptions);
@@ -455,7 +455,8 @@ public class BeamSender
           // Module.Log($"QOIR compressed from {videoHeader.DataSize} to {qoirResult.dst_len} vs. {encodedDataLength}.", ObsLogLevel.Warning);
 
           encodedDataLength = (int)qoirEncodeResult.dst_len;
-          Marshal.Copy((IntPtr)qoirEncodeResult.dst_ptr, encodedDataQoi, 0, encodedDataLength);
+          new ReadOnlySpan<byte>(qoirEncodeResult.dst_ptr, encodedDataLength).CopyTo(encodedDataQoi);
+          ObsBmem.bfree(qoirEncodeResult.dst_ptr);
 
           // --------------- QOIR PoC code end ---------------
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using ObsInterop;
 using LibJpegTurbo;
 using QoirLib;
@@ -252,4 +253,21 @@ public static class EncoderSupport
       vPlane[i] = uvPlane[(2 * i) + 1];
     }
   }
+
+#pragma warning disable IDE0060 // we don't make use of the memory_func_context parameter but it needs to be there
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+  public static unsafe void* QoirMAlloc(void* memory_func_context, nuint len)
+  {
+    // return Marshal.AllocHGlobal((int)len).ToPointer();
+    return ObsBmem.bmalloc(len);
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+  public static unsafe void QoirFree(void* memory_func_context, void* ptr)
+  {
+    // Marshal.FreeHGlobal(new IntPtr(ptr));
+    ObsBmem.bfree(ptr);
+  }
+#pragma warning restore IDE0060 // we don't make use of the memory_func_context parameter but it needs to be there
+
 }
