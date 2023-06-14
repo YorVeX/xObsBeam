@@ -10,6 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using K4os.Compression.LZ4;
 using LibJpegTurbo;
+using QoirLib;
 using ObsInterop;
 
 namespace xObsBeam;
@@ -422,7 +423,41 @@ public class BeamSender
       {
         if (encodedDataQoi != null) // apply QOI compression if enabled
         {
-          encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedDataQoi); // encode the frame with QOI
+          // encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedDataQoi); // encode the frame with QOI
+
+          // --------------- QOIR PoC code begin ---------------
+          //TODO: reuse this and only change the data pointer for every frame
+          var qoirPixelBuffer = (qoir_pixel_buffer_struct*)ObsBmem.bmalloc((nuint)sizeof(qoir_pixel_buffer_struct));
+          qoirPixelBuffer->pixcfg.width_in_pixels = videoHeader.Width;
+          qoirPixelBuffer->pixcfg.height_in_pixels = videoHeader.Height;
+          qoirPixelBuffer->pixcfg.pixfmt = Qoir.QOIR_PIXEL_FORMAT__BGRA_NONPREMUL;
+          qoirPixelBuffer->data = rawData;
+          qoirPixelBuffer->stride_in_bytes = videoHeader.Linesize[0];
+
+          //TODO: reuse this
+          var qoirEncodeOptions = ObsBmem.bzalloc<qoir_encode_options_struct>();
+          qoirEncodeOptions->lossiness = 0; // lossless
+          //TODO: set qoirEncodeOptions->contextual_malloc_func and contextual_free_func so that we can also free the memory allocated by qoir_encode() in dst_ptr - maybe use the OBS functions for that so that we have the memory leak tracking?
+          //TODO: set qoirEncodeOptions->encbuf to a fixed buffer to avoid constant memory allocations by QoirLib
+          var qoirEncodeResult = Qoir.qoir_encode(qoirPixelBuffer, qoirEncodeOptions);
+          ObsBmem.bfree(qoirEncodeOptions);
+          ObsBmem.bfree(qoirPixelBuffer);
+          if (qoirEncodeResult.status_message != null)
+          {
+            Module.Log("QOIR compression failed with error: " + Marshal.PtrToStringUTF8((IntPtr)qoirEncodeResult.status_message), ObsLogLevel.Error);
+            return;
+          }
+          if (qoirEncodeResult.dst_len == 0)
+          {
+            Module.Log("QOIR compression failed.", ObsLogLevel.Error);
+            return;
+          }
+          // Module.Log($"QOIR compressed from {videoHeader.DataSize} to {qoirResult.dst_len} vs. {encodedDataLength}.", ObsLogLevel.Warning);
+
+          encodedDataLength = (int)qoirEncodeResult.dst_len;
+          Marshal.Copy((IntPtr)qoirEncodeResult.dst_ptr, encodedDataQoi, 0, encodedDataLength);
+
+          // --------------- QOIR PoC code end ---------------
 
           if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
           {

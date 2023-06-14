@@ -4,6 +4,8 @@
 using System.Runtime.CompilerServices;
 using ObsInterop;
 using LibJpegTurbo;
+using QoirLib;
+
 namespace xObsBeam;
 
 enum Encoders
@@ -17,7 +19,7 @@ public static class EncoderSupport
 {
   static readonly Dictionary<Encoders, bool> _checkResults = new();
 
-  public static unsafe bool Qoir
+  public static unsafe bool QoirLib
   {
     get
     {
@@ -26,7 +28,7 @@ public static class EncoderSupport
       {
         try
         {
-          QoirLib.Qoir.qoir_encode(null, null);
+          Qoir.qoir_encode(null, null);
           _checkResults.Add(encoder, true);
         }
         catch (Exception ex)

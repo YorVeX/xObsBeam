@@ -10,7 +10,9 @@ using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using LibJpegTurbo;
+using QoirLib;
 using K4os.Compression.LZ4;
+using ObsInterop;
 
 namespace xObsBeam;
 
@@ -257,6 +259,24 @@ public class BeamReceiver
     }
   }
 
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  private unsafe void QoirDecompress(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, int rawDataSize)
+  {
+    fixed (byte* qoirBuf = receivedFrameData, dstBuf = rawDataBuffer)
+    {
+      var qoirDecodeOptions = ObsBmem.bzalloc<qoir_decode_options_struct>();
+      new Span<byte>(qoirDecodeOptions, sizeof(qoir_decode_options_struct)).Clear();
+      qoirDecodeOptions->pixfmt = Qoir.QOIR_PIXEL_FORMAT__BGRA_NONPREMUL;
+      //TODO: set qoirDecodeOptions->contextual_malloc_func and contextual_free_func so that we can also free the memory allocated by qoir_encode() in dst_ptr - maybe use the OBS functions for that so that we have the memory leak tracking?
+      //TODO: set qoirDecodeOptions->decbuf to a fixed buffer to avoid constant memory allocations by QoirLib
+      var qoirDecodeResult = Qoir.qoir_decode(qoirBuf, (nuint)dataSize, qoirDecodeOptions);
+      ObsBmem.bfree(qoirDecodeOptions);
+      if (qoirDecodeResult.status_message != null)
+        Module.Log("QOIR decompression failed with error: " + Marshal.PtrToStringUTF8((IntPtr)qoirDecodeResult.status_message), ObsLogLevel.Error);
+      new Span<byte>(qoirDecodeResult.dst_pixbuf.data, rawDataSize).CopyTo(new Span<byte>(dstBuf, rawDataSize));
+    }
+  }
+
   private unsafe void TurboJpegDecompressInit()
   {
     if (EncoderSupport.LibJpegTurboV3)
@@ -471,7 +491,12 @@ public class BeamReceiver
               }
               // need to decompress QOI only
               else if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
-                Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
+              {
+                // Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
+                // --------------- QOIR PoC code begin ---------------
+                QoirDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
+                // --------------- QOIR PoC code end ---------------
+              }
               // need to decompress JPEG lossless only
               else if (videoHeader.Compression == Beam.CompressionTypes.JpegLossless)
                 TurboJpegDecompressToBgra(receivedFrameData, maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);

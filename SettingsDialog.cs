@@ -356,6 +356,8 @@ public static class SettingsDialog
       ObsProperties.obs_property_set_long_description(compressionQoiLevelProperty, (sbyte*)propertyCompressionLevelText);
       ObsProperties.obs_property_set_modified_callback(compressionQoiLevelProperty, &CompressionSettingChangedEventHandler);
 
+      // QOIR compression options group //TODO: add QOIR options
+
       // LZ4 compression options group
       var compressionLz4Group = ObsProperties.obs_properties_create();
       var compressionLz4GroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionLz4Id, (sbyte*)propertyCompressionLz4Caption, obs_group_type.OBS_GROUP_CHECKABLE, compressionLz4Group);
