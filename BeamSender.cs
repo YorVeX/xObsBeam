@@ -57,6 +57,9 @@ public class BeamSender
   bool _lz4CompressionSyncQoiSkips = true;
   LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
   bool _compressionThreadingSync = true;
+  unsafe qoir_encode_options_struct* _qoirEncodeOptions = null;
+
+
 
   public unsafe bool SetVideoParameters(video_output_info* info, video_format conversionVideoFormat, uint* linesize, video_data._data_e__FixedBuffer data)
   {
@@ -139,6 +142,20 @@ public class BeamSender
         _qoiVideoDataPoolMaxSize = 2147483591;
       _qoiVideoDataPool = ArrayPool<byte>.Create(_qoiVideoDataPoolMaxSize, MaxFrameQueueSize);
       _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
+
+      //TODO: only for testing/PoC, move to it's own "if" block for QOIR later
+      if (_qoirEncodeOptions != null)
+      {
+        //TODO: add a destructor to BeamSender and do it there too, otherwise the last object is leaked
+        ObsBmem.bfree(_qoirEncodeOptions);
+        _qoirEncodeOptions = null;
+      }
+      _qoirEncodeOptions = ObsBmem.bzalloc<qoir_encode_options_struct>();
+      _qoirEncodeOptions->lossiness = 0; // lossless - 1 loses 1 bit and results in 7 bit colors, 2 results in 6 bit colors, etc., even setting this to 7 is working :-D
+      //TODO: consider to make QoirMAlloc and QoirFree functions work with a memory pool
+      _qoirEncodeOptions->contextual_malloc_func = &EncoderSupport.QoirMAlloc; // important to use our own memory allocator, so that we can also free the memory later
+      _qoirEncodeOptions->contextual_free_func = &EncoderSupport.QoirFree;
+      //TODO: set _qoirEncodeOptions->encbuf to a fixed buffer to avoid constant memory allocations by QoirLib
     }
 
     if (_jpegCompression)
@@ -425,7 +442,6 @@ public class BeamSender
           // encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedDataQoi); // encode the frame with QOI
 
           // --------------- QOIR PoC code begin ---------------
-          //TODO: reuse this and only change the data pointer for every frame
           var qoirPixelBuffer = (qoir_pixel_buffer_struct*)ObsBmem.bmalloc((nuint)sizeof(qoir_pixel_buffer_struct));
           qoirPixelBuffer->pixcfg.width_in_pixels = videoHeader.Width;
           qoirPixelBuffer->pixcfg.height_in_pixels = videoHeader.Height;
@@ -433,14 +449,7 @@ public class BeamSender
           qoirPixelBuffer->data = rawData;
           qoirPixelBuffer->stride_in_bytes = videoHeader.Linesize[0];
 
-          //TODO: reuse this
-          var qoirEncodeOptions = ObsBmem.bzalloc<qoir_encode_options_struct>();
-          qoirEncodeOptions->lossiness = 0; // lossless
-          qoirEncodeOptions->contextual_malloc_func = &EncoderSupport.QoirMAlloc; // important to use our own memory allocator, so that we can also free the memory later
-          qoirEncodeOptions->contextual_free_func = &EncoderSupport.QoirFree;
-          //TODO: set qoirEncodeOptions->encbuf to a fixed buffer to avoid constant memory allocations by QoirLib
-          var qoirEncodeResult = Qoir.qoir_encode(qoirPixelBuffer, qoirEncodeOptions);
-          ObsBmem.bfree(qoirEncodeOptions);
+          var qoirEncodeResult = Qoir.qoir_encode(qoirPixelBuffer, _qoirEncodeOptions);
           ObsBmem.bfree(qoirPixelBuffer);
           if (qoirEncodeResult.status_message != null)
           {
