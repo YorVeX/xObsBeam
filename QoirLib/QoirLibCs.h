@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// The modification to this file compared to the original is that "__declspec(dllexport)" has been added to the qoir_encode and qoir_decode function declarations and that the
+// QOIR_IMPLEMENTATION define has been removed and all code that was within that define. This is so that this class can serve as a pure header file template for the C# wrapper.
+
 #ifndef QOIR_INCLUDE_GUARD
 #define QOIR_INCLUDE_GUARD
 

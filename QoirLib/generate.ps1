@@ -1,4 +1,6 @@
 # If ClangSharpPInvokeGenerator is missing, just run this from a CMD window:
+# winget install LLVM.LLVM
+# For an installation that works without admin permissions you can also use this command, but it might install an older version:
 # dotnet tool install --global ClangSharpPInvokeGenerator
 
 $filePath = "Qoir.cs"

@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The only modification to this file compared to the original is that "__declspec(dllexport)" has been added to the qoir_encode and qoir_decode function declarations.
-
 #ifndef QOIR_INCLUDE_GUARD
 #define QOIR_INCLUDE_GUARD
 
@@ -401,7 +399,7 @@ typedef struct qoir_decode_options_struct {
 //
 // A NULL options is valid and is equivalent to a non-NULL pointer to a
 // zero-valued struct (where all fields are zero / NULL / false).
-__declspec(dllexport) qoir_decode_result  //
+QOIR_MAYBE_STATIC qoir_decode_result  //
 qoir_decode(                          //
     const uint8_t* src_ptr,           //
     const size_t src_len,             //
@@ -475,14 +473,14 @@ typedef struct qoir_encode_options_struct {
 //
 // A NULL options is valid and is equivalent to a non-NULL pointer to a
 // zero-valued struct (where all fields are zero / NULL / false).
-__declspec(dllexport) qoir_encode_result      //
+QOIR_MAYBE_STATIC qoir_encode_result      //
 qoir_encode(                              //
     const qoir_pixel_buffer* src_pixbuf,  //
     const qoir_encode_options* options);
 
 // ================================ -Public Interface
 
-#ifdef QOIR_IMPLEMENTATION
+//#ifdef QOIR_IMPLEMENTATION
 
 // ================================ +Private Implementation
 
@@ -6987,7 +6985,7 @@ qoir_encode(                              //
 
 // ================================ -Private Implementation
 
-#endif  // QOIR_IMPLEMENTATION
+//#endif  // QOIR_IMPLEMENTATION
 
 #ifdef __cplusplus
 }  // extern "C"
