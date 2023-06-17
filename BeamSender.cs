@@ -150,8 +150,7 @@ public class BeamSender
 
     if (_qoirEncodeOptions != null)
     {
-      //TODO: add a destructor to BeamSender and do it there too, otherwise the last object is leaked
-      ObsBmem.bfree(_qoirEncodeOptions);
+      EncoderSupport.FreePooledPinned(_qoirEncodeOptions);
       _qoirEncodeOptions = null;
     }
     if (_qoirCompression)
@@ -161,16 +160,14 @@ public class BeamSender
         _qoiVideoDataPoolMaxSize = 2147483591;
       _qoiVideoDataPool = ArrayPool<byte>.Create(_qoiVideoDataPoolMaxSize, MaxFrameQueueSize);
 
-      _qoirEncodeOptions = ObsBmem.bzalloc<qoir_encode_options_struct>();
+      _qoirEncodeOptions = EncoderSupport.MAllocPooledPinned<qoir_encode_options_struct>();
       // 0 = lossless - 1 loses 1 bit and results in 7 bit colors, 2 results in 6 bit colors, etc., even setting this to 7 is working :-D
       if (SettingsDialog.QoirCompressionLossless)
         _qoirEncodeOptions->lossiness = 0;
       else
         _qoirEncodeOptions->lossiness = 8 - (uint)SettingsDialog.QoirCompressionQuality;
-      //TODO: consider to make QoirMAlloc and QoirFree functions work with a memory pool
       _qoirEncodeOptions->contextual_malloc_func = &EncoderSupport.QoirMAlloc; // important to use our own memory allocator, so that we can also free the memory later
       _qoirEncodeOptions->contextual_free_func = &EncoderSupport.QoirFree;
-      //TODO: set _qoirEncodeOptions->encbuf to a fixed buffer to avoid constant memory allocations by QoirLib
       _compressionThreshold = SettingsDialog.QoirCompressionLevel / 10.0;
     }
 
@@ -466,14 +463,14 @@ public class BeamSender
           }
           else if (_qoirCompression)
           {
-            var qoirPixelBuffer = (qoir_pixel_buffer_struct*)ObsBmem.bmalloc((nuint)sizeof(qoir_pixel_buffer_struct));
+            var qoirPixelBuffer = EncoderSupport.MAllocPooledPinned<qoir_pixel_buffer_struct>();
             qoirPixelBuffer->pixcfg.width_in_pixels = videoHeader.Width;
             qoirPixelBuffer->pixcfg.height_in_pixels = videoHeader.Height;
             qoirPixelBuffer->pixcfg.pixfmt = Qoir.QOIR_PIXEL_FORMAT__BGRA_NONPREMUL;
             qoirPixelBuffer->data = rawData;
             qoirPixelBuffer->stride_in_bytes = videoHeader.Linesize[0];
             var qoirEncodeResult = Qoir.qoir_encode(qoirPixelBuffer, _qoirEncodeOptions);
-            ObsBmem.bfree(qoirPixelBuffer);
+            EncoderSupport.FreePooledPinned(qoirPixelBuffer);
             if (qoirEncodeResult.status_message != null)
             {
               Module.Log("QOIR compression failed with error: " + Marshal.PtrToStringUTF8((IntPtr)qoirEncodeResult.status_message), ObsLogLevel.Error);
@@ -492,7 +489,7 @@ public class BeamSender
               videoHeader.Compression = Beam.CompressionTypes.Qoir;
               videoHeader.DataSize = encodedDataLength;
             }
-            ObsBmem.bfree(qoirEncodeResult.dst_ptr);
+            EncoderSupport.FreePooledPinned(qoirEncodeResult.dst_ptr);
           }
         }
 

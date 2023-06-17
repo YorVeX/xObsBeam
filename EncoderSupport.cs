@@ -1,6 +1,8 @@
 ﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
+using System.Buffers;
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using ObsInterop;
@@ -19,6 +21,7 @@ enum Encoders
 public static class EncoderSupport
 {
   static readonly Dictionary<Encoders, bool> _checkResults = new();
+  static readonly unsafe ConcurrentDictionary<IntPtr, (GCHandle, byte[])> _gcHandles = new();
 
   public static unsafe bool QoirLib
   {
@@ -255,19 +258,42 @@ public static class EncoderSupport
   }
 
 #pragma warning disable IDE0060 // we don't make use of the memory_func_context parameter but it needs to be there
+
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
   public static unsafe void* QoirMAlloc(void* memory_func_context, nuint len)
   {
-    // return Marshal.AllocHGlobal((int)len).ToPointer();
-    return ObsBmem.bmalloc(len);
+    var pooledByteArray = ArrayPool<byte>.Shared.Rent((int)len);
+    var gcHandle = GCHandle.Alloc(pooledByteArray, GCHandleType.Pinned); // pin the array so it can be used by unmanaged code
+    var arrayTuple = (gcHandle, pooledByteArray);
+    var pinnedHandle = gcHandle.AddrOfPinnedObject();
+    _gcHandles.AddOrUpdate(pinnedHandle, arrayTuple, (key, oldArrayTuple) => arrayTuple);
+    return pinnedHandle.ToPointer();
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
   public static unsafe void QoirFree(void* memory_func_context, void* ptr)
   {
-    // Marshal.FreeHGlobal(new IntPtr(ptr));
-    ObsBmem.bfree(ptr);
+    _gcHandles.Remove((IntPtr)ptr, out var arrayTuple);
+    arrayTuple.Item1.Free(); // free the pinned GC handle
+    ArrayPool<byte>.Shared.Return(arrayTuple.Item2); // return the allocated array memory to the pool
   }
+
 #pragma warning restore IDE0060 // we don't make use of the memory_func_context parameter but it needs to be there
 
+  public static unsafe T* MAllocPooledPinned<T>() where T : unmanaged
+  {
+    var pooledByteArray = ArrayPool<byte>.Shared.Rent(sizeof(T));
+    var gcHandle = GCHandle.Alloc(pooledByteArray, GCHandleType.Pinned); // pin the array so it can be used by unmanaged code
+    var arrayTuple = (gcHandle, pooledByteArray);
+    var pinnedHandle = gcHandle.AddrOfPinnedObject();
+    _gcHandles.AddOrUpdate(pinnedHandle, arrayTuple, (key, oldArrayTuple) => arrayTuple);
+    return (T*)pinnedHandle.ToPointer();
+  }
+
+  public static unsafe void FreePooledPinned(void* ptr)
+  {
+    _gcHandles.Remove((IntPtr)ptr, out var arrayTuple);
+    arrayTuple.Item1.Free(); // free the pinned GC handle
+    ArrayPool<byte>.Shared.Return(arrayTuple.Item2); // return the allocated array memory to the pool
+  }
 }

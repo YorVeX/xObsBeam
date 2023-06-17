@@ -12,7 +12,6 @@ using System.Runtime.InteropServices;
 using LibJpegTurbo;
 using QoirLib;
 using K4os.Compression.LZ4;
-using ObsInterop;
 
 namespace xObsBeam;
 
@@ -289,13 +288,13 @@ public class BeamReceiver
       if (qoirDecodeResult.status_message != null)
         Module.Log("QOIR decompression failed with error: " + Marshal.PtrToStringUTF8((IntPtr)qoirDecodeResult.status_message), ObsLogLevel.Error);
       new Span<byte>(qoirDecodeResult.dst_pixbuf.data, rawDataSize).CopyTo(new Span<byte>(dstBuf, rawDataSize));
-      ObsBmem.bfree(qoirDecodeResult.owned_memory);
+      EncoderSupport.FreePooledPinned(qoirDecodeResult.owned_memory);
     }
   }
 
   private unsafe void QoirDecompressInit()
   {
-    _qoirDecodeOptions = ObsBmem.bzalloc<qoir_decode_options_struct>();
+    _qoirDecodeOptions = EncoderSupport.MAllocPooledPinned<qoir_decode_options_struct>();
     new Span<byte>(_qoirDecodeOptions, sizeof(qoir_decode_options_struct)).Clear();
     _qoirDecodeOptions->pixfmt = Qoir.QOIR_PIXEL_FORMAT__BGRA_NONPREMUL;
     _qoirDecodeOptions->contextual_malloc_func = &EncoderSupport.QoirMAlloc; // important to use our own memory allocator, so that we can also free the memory later
@@ -306,7 +305,7 @@ public class BeamReceiver
   {
     if (_qoirDecodeOptions != null)
     {
-      ObsBmem.bfree(_qoirDecodeOptions);
+      EncoderSupport.FreePooledPinned(_qoirDecodeOptions);
       _qoirDecodeOptions = null;
     }
   }
