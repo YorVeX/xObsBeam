@@ -10,6 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using K4os.Compression.LZ4;
 using LibJpegTurbo;
+using QoirLib;
 using ObsInterop;
 
 namespace xObsBeam;
@@ -51,11 +52,15 @@ public class BeamSender
   bool _jpegYuv;
   bool _libJpegTurboV3;
   bool _qoiCompression;
+  bool _qoirCompression;
+  bool _qoirCompressionLossless;
+  int _qoirCompressionQuality = 90;
   private double _compressionThreshold = 1;
   bool _lz4Compression;
   bool _lz4CompressionSyncQoiSkips = true;
   LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
   bool _compressionThreadingSync = true;
+  unsafe qoir_encode_options_struct* _qoirEncodeOptions = null;
 
   public unsafe bool SetVideoParameters(video_output_info* info, video_format conversionVideoFormat, uint* linesize, video_data._data_e__FixedBuffer data)
   {
@@ -70,6 +75,9 @@ public class BeamSender
     _lz4VideoDataPool = null;
 
     // cache settings values
+    _qoirCompression = SettingsDialog.QoirCompression && EncoderSupport.QoirLib;
+    _qoirCompressionLossless = _qoirCompression && SettingsDialog.QoirCompressionLossless;
+    _qoirCompressionQuality = SettingsDialog.QoirCompressionQuality;
     _jpegCompression = SettingsDialog.JpegCompression && EncoderSupport.LibJpegTurbo;
     _jpegCompressionLossless = _jpegCompression && SettingsDialog.JpegCompressionLossless && EncoderSupport.LibJpegTurboLossless;
     _jpegCompressionQuality = SettingsDialog.JpegCompressionQuality;
@@ -138,6 +146,29 @@ public class BeamSender
         _qoiVideoDataPoolMaxSize = 2147483591;
       _qoiVideoDataPool = ArrayPool<byte>.Create(_qoiVideoDataPoolMaxSize, MaxFrameQueueSize);
       _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
+    }
+
+    if (_qoirEncodeOptions != null)
+    {
+      EncoderSupport.FreePooledPinned(_qoirEncodeOptions);
+      _qoirEncodeOptions = null;
+    }
+    if (_qoirCompression)
+    {
+      _qoiVideoDataPoolMaxSize = (int)((info->width * info->height * 4)); // this buffer will only be used if compression actually reduced the frame size
+      if (_qoiVideoDataPoolMaxSize > 2147483591) // maximum byte array size
+        _qoiVideoDataPoolMaxSize = 2147483591;
+      _qoiVideoDataPool = ArrayPool<byte>.Create(_qoiVideoDataPoolMaxSize, MaxFrameQueueSize);
+
+      _qoirEncodeOptions = EncoderSupport.MAllocPooledPinned<qoir_encode_options_struct>();
+      // 0 = lossless - 1 loses 1 bit and results in 7 bit colors, 2 results in 6 bit colors, etc., even setting this to 7 is working :-D
+      if (SettingsDialog.QoirCompressionLossless)
+        _qoirEncodeOptions->lossiness = 0;
+      else
+        _qoirEncodeOptions->lossiness = 8 - (uint)SettingsDialog.QoirCompressionQuality;
+      _qoirEncodeOptions->contextual_malloc_func = &EncoderSupport.QoirMAlloc; // important to use our own memory allocator, so that we can also free the memory later
+      _qoirEncodeOptions->contextual_free_func = &EncoderSupport.QoirFree;
+      _compressionThreshold = SettingsDialog.QoirCompressionLevel / 10.0;
     }
 
     if (_jpegCompression)
@@ -337,7 +368,6 @@ public class BeamSender
   {
     try
     {
-
       int encodedDataLength = 0;
 
       if (encodedDataJpeg != null) // apply JPEG compression if enabled
@@ -420,14 +450,46 @@ public class BeamSender
       }
       else
       {
-        if (encodedDataQoi != null) // apply QOI compression if enabled
+        if (encodedDataQoi != null) // apply QOI(R) compression if enabled
         {
-          encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedDataQoi); // encode the frame with QOI
-
-          if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
+          if (_qoiCompression)
           {
-            videoHeader.Compression = Beam.CompressionTypes.Qoi;
-            videoHeader.DataSize = encodedDataLength;
+            encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedDataQoi); // encode the frame with QOI
+            if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
+            {
+              videoHeader.Compression = Beam.CompressionTypes.Qoi;
+              videoHeader.DataSize = encodedDataLength;
+            }
+          }
+          else if (_qoirCompression)
+          {
+            var qoirPixelBuffer = EncoderSupport.MAllocPooledPinned<qoir_pixel_buffer_struct>();
+            qoirPixelBuffer->pixcfg.width_in_pixels = videoHeader.Width;
+            qoirPixelBuffer->pixcfg.height_in_pixels = videoHeader.Height;
+            qoirPixelBuffer->pixcfg.pixfmt = Qoir.QOIR_PIXEL_FORMAT__BGRA_NONPREMUL;
+            qoirPixelBuffer->data = rawData;
+            qoirPixelBuffer->stride_in_bytes = videoHeader.Linesize[0];
+            var qoirEncodeResult = Qoir.qoir_encode(qoirPixelBuffer, _qoirEncodeOptions);
+            EncoderSupport.FreePooledPinned(qoirPixelBuffer);
+            if (qoirEncodeResult.status_message != null)
+            {
+              Module.Log("QOIR compression failed with error: " + Marshal.PtrToStringUTF8((IntPtr)qoirEncodeResult.status_message), ObsLogLevel.Error);
+              return;
+            }
+            if (qoirEncodeResult.dst_len == 0)
+            {
+              Module.Log("QOIR compression failed.", ObsLogLevel.Error);
+              return;
+            }
+            encodedDataLength = (int)qoirEncodeResult.dst_len;
+
+            if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
+            {
+              new ReadOnlySpan<byte>(qoirEncodeResult.dst_ptr, encodedDataLength).CopyTo(encodedDataQoi);
+              videoHeader.Compression = Beam.CompressionTypes.Qoir;
+              videoHeader.DataSize = encodedDataLength;
+            }
+            EncoderSupport.FreePooledPinned(qoirEncodeResult.dst_ptr);
           }
         }
 
@@ -463,6 +525,7 @@ public class BeamSender
             client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataJpeg!);
           break;
         case Beam.CompressionTypes.Qoi:
+        case Beam.CompressionTypes.Qoir:
           foreach (var client in _clients.Values)
             client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataQoi!);
           break;
@@ -504,7 +567,7 @@ public class BeamSender
       client.EnqueueVideoTimestamp(timestamp);
 
     // no compression of any kind, we also stay sync so just enqueue the raw data right away from the original unmanaged memory
-    if (!_qoiCompression && !_lz4Compression && !_jpegCompression)
+    if (!_qoiCompression && !_lz4Compression && !_jpegCompression && !_qoirCompression)
     {
       foreach (var client in _clients.Values)
         client.EnqueueVideoFrame(timestamp, _videoHeader, data);
@@ -519,13 +582,13 @@ public class BeamSender
     if (_jpegCompression && compressThisFrame)
       encodedDataJpeg = _videoDataPool!.Rent(_videoDataPoolMaxSize);
 
-    // prepare QOI compression buffer
+    // prepare QOI(R) compression buffer
     byte[]? encodedDataQoi = null;
-    if (_qoiCompression && compressThisFrame)
+    if ((_qoiCompression || _qoirCompression) && compressThisFrame)
       encodedDataQoi = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
 
     // frame skipping logic
-    if (_compressionThreshold < 1) // is QOI frame skipping enabled?
+    if (_compressionThreshold < 1) // is frame skipping enabled?
     {
       _videoFramesProcessed++;
       if (compressThisFrame)

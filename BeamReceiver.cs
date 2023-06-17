@@ -10,6 +10,7 @@ using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using LibJpegTurbo;
+using QoirLib;
 using K4os.Compression.LZ4;
 
 namespace xObsBeam;
@@ -25,6 +26,7 @@ public class BeamReceiver
   bool _isConnecting;
   ulong _frameTimestampOffset;
   unsafe void* _turboJpegDecompress = null;
+  unsafe qoir_decode_options_struct* _qoirDecodeOptions;
 
   public ArrayPool<byte> RawDataBufferPool { get; private set; } = ArrayPool<byte>.Create();
 
@@ -210,6 +212,26 @@ public class BeamReceiver
   }
 
   #region unsafe helper functions
+  private unsafe void TurboJpegDecompressInit()
+  {
+    if (EncoderSupport.LibJpegTurboV3)
+      _turboJpegDecompress = TurboJpeg.tj3Init((int)TJINIT.TJINIT_DECOMPRESS);
+    else if (EncoderSupport.LibJpegTurbo)
+      _turboJpegDecompress = TurboJpeg.tjInitDecompress();
+  }
+
+  private unsafe void TurboJpegDecompressDestroy()
+  {
+    if (_turboJpegDecompress != null)
+    {
+      if (EncoderSupport.LibJpegTurboV3)
+        TurboJpeg.tj3Destroy(_turboJpegDecompress);
+      else
+        _ = TurboJpeg.tjDestroy(_turboJpegDecompress);
+      _turboJpegDecompress = null;
+    }
+  }
+
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   private unsafe void TurboJpegDecompressToBgra(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, int width, int height)
   {
@@ -257,23 +279,34 @@ public class BeamReceiver
     }
   }
 
-  private unsafe void TurboJpegDecompressInit()
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  private unsafe void QoirDecompress(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, int rawDataSize)
   {
-    if (EncoderSupport.LibJpegTurboV3)
-      _turboJpegDecompress = TurboJpeg.tj3Init((int)TJINIT.TJINIT_DECOMPRESS);
-    else if (EncoderSupport.LibJpegTurbo)
-      _turboJpegDecompress = TurboJpeg.tjInitDecompress();
+    fixed (byte* qoirBuf = receivedFrameData, dstBuf = rawDataBuffer)
+    {
+      var qoirDecodeResult = Qoir.qoir_decode(qoirBuf, (nuint)dataSize, _qoirDecodeOptions);
+      if (qoirDecodeResult.status_message != null)
+        Module.Log("QOIR decompression failed with error: " + Marshal.PtrToStringUTF8((IntPtr)qoirDecodeResult.status_message), ObsLogLevel.Error);
+      new Span<byte>(qoirDecodeResult.dst_pixbuf.data, rawDataSize).CopyTo(new Span<byte>(dstBuf, rawDataSize));
+      EncoderSupport.FreePooledPinned(qoirDecodeResult.owned_memory);
+    }
   }
 
-  private unsafe void TurboJpegDecompressDestroy()
+  private unsafe void QoirDecompressInit()
   {
-    if (_turboJpegDecompress != null)
+    _qoirDecodeOptions = EncoderSupport.MAllocPooledPinned<qoir_decode_options_struct>();
+    new Span<byte>(_qoirDecodeOptions, sizeof(qoir_decode_options_struct)).Clear();
+    _qoirDecodeOptions->pixfmt = Qoir.QOIR_PIXEL_FORMAT__BGRA_NONPREMUL;
+    _qoirDecodeOptions->contextual_malloc_func = &EncoderSupport.QoirMAlloc; // important to use our own memory allocator, so that we can also free the memory later
+    _qoirDecodeOptions->contextual_free_func = &EncoderSupport.QoirFree;
+  }
+
+  private unsafe void QoirDecompressDestroy()
+  {
+    if (_qoirDecodeOptions != null)
     {
-      if (EncoderSupport.LibJpegTurboV3)
-        TurboJpeg.tj3Destroy(_turboJpegDecompress);
-      else
-        _ = TurboJpeg.tjDestroy(_turboJpegDecompress);
-      _turboJpegDecompress = null;
+      EncoderSupport.FreePooledPinned(_qoirDecodeOptions);
+      _qoirDecodeOptions = null;
     }
   }
 
@@ -346,6 +379,8 @@ public class BeamReceiver
 
     if (EncoderSupport.LibJpegTurbo)
       TurboJpegDecompressInit();
+    if (EncoderSupport.QoirLib)
+      QoirDecompressInit();
 
     // main loop
     while (!cancellationToken.IsCancellationRequested)
@@ -472,6 +507,9 @@ public class BeamReceiver
               // need to decompress QOI only
               else if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
                 Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
+              // need to decompress QOIR only
+              else if (videoHeader.Compression == Beam.CompressionTypes.Qoir)
+                QoirDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
               // need to decompress JPEG lossless only
               else if (videoHeader.Compression == Beam.CompressionTypes.JpegLossless)
                 TurboJpegDecompressToBgra(receivedFrameData, maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
@@ -630,6 +668,7 @@ public class BeamReceiver
     }
     Module.Log($"Disconnected from {endpointName}.", ObsLogLevel.Info);
     TurboJpegDecompressDestroy();
+    QoirDecompressDestroy();
     stream?.Close();
     IsConnected = false;
     OnDisconnected();

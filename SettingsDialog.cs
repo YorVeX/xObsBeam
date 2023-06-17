@@ -150,6 +150,35 @@ public static class SettingsDialog
     }
   }
 
+  public static bool QoirCompression { get; private set; }
+
+  public static unsafe int QoirCompressionLevel
+  {
+    get
+    {
+      fixed (byte* propertyCompressionQoirLevelId = "compression_qoir_level"u8)
+        return (int)ObsData.obs_data_get_int(_settings, (sbyte*)propertyCompressionQoirLevelId);
+    }
+  }
+
+  public static unsafe int QoirCompressionQuality
+  {
+    get
+    {
+      fixed (byte* propertyCompressionQoirQualityId = "compression_qoir_quality"u8)
+        return (int)ObsData.obs_data_get_int(_settings, (sbyte*)propertyCompressionQoirQualityId);
+    }
+  }
+
+  public static unsafe bool QoirCompressionLossless
+  {
+    get
+    {
+      fixed (byte* propertyCompressionQoirLosslessId = "compression_qoir_lossless"u8)
+        return Convert.ToBoolean(ObsData.obs_data_get_bool(_settings, (sbyte*)propertyCompressionQoirLosslessId));
+    }
+  }
+
   public static unsafe bool CompressionMainThread
   {
     get
@@ -286,6 +315,17 @@ public static class SettingsDialog
       propertyCompressionQoiText = Module.ObsText("CompressionQOIText"),
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
       propertyCompressionQoiLevelCaption = Module.ObsText("CompressionQOILevelCaption"),
+      propertyCompressionQoirId = "compression_qoir"u8,
+      propertyCompressionQoirCaption = Module.ObsText("CompressionQoirCaption"),
+      propertyCompressionQoirText = Module.ObsText("CompressionQoirText"),
+      propertyCompressionQoirLosslessId = "compression_qoir_lossless"u8,
+      propertyCompressionQoirLosslessCaption = Module.ObsText("CompressionQoirLosslessCaption"),
+      propertyCompressionQoirLosslessText = Module.ObsText("CompressionQoirLosslessText"),
+      propertyCompressionQoirQualityId = "compression_qoir_quality"u8,
+      propertyCompressionQoirQualityCaption = Module.ObsText("CompressionQoirQualityCaption"),
+      propertyCompressionQoirQualityText = Module.ObsText("CompressionQoirQualityText"),
+      propertyCompressionQoirLevelId = "compression_qoir_level"u8,
+      propertyCompressionQoirLevelCaption = Module.ObsText("CompressionQoirLevelCaption"),
       propertyCompressionLz4Id = "compression_lz4"u8,
       propertyCompressionLz4Caption = Module.ObsText("CompressionLZ4Caption"),
       propertyCompressionLz4Text = Module.ObsText("CompressionLZ4Text"),
@@ -355,6 +395,24 @@ public static class SettingsDialog
       var compressionQoiLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoiGroup, (sbyte*)propertyCompressionQoiLevelId, (sbyte*)propertyCompressionQoiLevelCaption, 1, 10, 1);
       ObsProperties.obs_property_set_long_description(compressionQoiLevelProperty, (sbyte*)propertyCompressionLevelText);
       ObsProperties.obs_property_set_modified_callback(compressionQoiLevelProperty, &CompressionSettingChangedEventHandler);
+
+      // QOIR compression options group
+      var compressionQoirGroup = ObsProperties.obs_properties_create();
+      var compressionQoirGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionQoirId, (sbyte*)propertyCompressionQoirCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionQoirGroup);
+      ObsProperties.obs_property_set_visible(compressionQoirGroupProperty, Convert.ToByte(EncoderSupport.QoirLib));
+      ObsProperties.obs_property_set_long_description(compressionQoirGroupProperty, (sbyte*)propertyCompressionQoirText);
+      ObsProperties.obs_property_set_modified_callback(compressionQoirGroupProperty, &CompressionSettingChangedEventHandler);
+      // QOIR lossless compression option
+      var compressionQoirLosslessProperty = ObsProperties.obs_properties_add_bool(compressionQoirGroup, (sbyte*)propertyCompressionQoirLosslessId, (sbyte*)propertyCompressionQoirLosslessCaption);
+      ObsProperties.obs_property_set_long_description(compressionQoirLosslessProperty, (sbyte*)propertyCompressionQoirLosslessText);
+      ObsProperties.obs_property_set_modified_callback(compressionQoirLosslessProperty, &CompressionSettingChangedEventHandler);
+      // QOIR compression quality
+      var compressionQoirQualityProperty = ObsProperties.obs_properties_add_int_slider(compressionQoirGroup, (sbyte*)propertyCompressionQoirQualityId, (sbyte*)propertyCompressionQoirQualityCaption, 1, 7, 1);
+      ObsProperties.obs_property_set_long_description(compressionQoirQualityProperty, (sbyte*)propertyCompressionQoirQualityText);
+      // QOIR compression level (skip frames)
+      var compressionQoirLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoirGroup, (sbyte*)propertyCompressionQoirLevelId, (sbyte*)propertyCompressionQoirLevelCaption, 1, 10, 1);
+      ObsProperties.obs_property_set_long_description(compressionQoirLevelProperty, (sbyte*)propertyCompressionLevelText);
+      ObsProperties.obs_property_set_modified_callback(compressionQoirLevelProperty, &CompressionSettingChangedEventHandler);
 
       // LZ4 compression options group
       var compressionLz4Group = ObsProperties.obs_properties_create();
@@ -434,6 +492,9 @@ public static class SettingsDialog
       propertyIdentifierId = "identifier"u8,
       propertyIdentifierDefaultText = "BeamSender"u8,
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
+      propertyCompressionQoirQualityId = "compression_qoir_quality"u8,
+      propertyCompressionQoirLevelId = "compression_qoir_level"u8,
+      propertyCompressionQoirLosslessId = "compression_qoir_lossless"u8,
       propertyCompressionJpegQualityId = "compression_jpeg_quality"u8,
       propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
       propertyCompressionLz4SyncQoiSkipsId = "compression_lz4_sync_qoi_skips"u8,
@@ -448,6 +509,9 @@ public static class SettingsDialog
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(false));
       ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierDefaultText);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoiLevelId, 10);
+      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoirQualityId, 7);
+      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoirLevelId, 10);
+      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionQoirLosslessId, Convert.ToByte(true));
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionJpegQualityId, 90);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionJpegLevelId, 10);
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionLz4SyncQoiSkipsId, Convert.ToByte(true));
@@ -575,6 +639,10 @@ public static class SettingsDialog
       propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
       propertyCompressionQoiId = "compression_qoi"u8,
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
+      propertyCompressionQoirId = "compression_qoir"u8,
+      propertyCompressionQoirLosslessId = "compression_qoir_lossless"u8,
+      propertyCompressionQoirQualityId = "compression_qoir_quality"u8,
+      propertyCompressionQoirLevelId = "compression_qoir_level"u8,
       propertyCompressionLz4Id = "compression_lz4"u8,
       propertyCompressionLz4SyncQoiSkipsId = "compression_lz4_sync_qoi_skips"u8,
       propertyCompressionLz4LevelId = "compression_lz4_level"u8,
@@ -588,6 +656,7 @@ public static class SettingsDialog
       // get current settings after the change
       var jpegCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionJpegId));
       var qoiCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoiId));
+      var qoirCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoirId));
       var qoiLevel = ObsData.obs_data_get_int(settings, (sbyte*)propertyCompressionQoiLevelId);
       var lz4CompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionLz4Id));
 
@@ -598,36 +667,61 @@ public static class SettingsDialog
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(jpegCompressionEnabled));
       }
 
+      // handle the special case where QOIR is enabled but the library couldn't be loaded, in this case force disable this option
+      if (qoirCompressionEnabled && !EncoderSupport.QoirLib)
+      {
+        qoirCompressionEnabled = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(qoirCompressionEnabled));
+      }
+
       // react to setting changes, avoid mixing incompatible settings
       if (jpegCompressionEnabled && !JpegCompression)
       {
-        // if JPEG was just enabled disable QOI and LZ4 instead (mixing this doesn't make sense)
+        // if JPEG was just enabled disable QOIR, QOI and LZ4 instead (mixing this doesn't make sense)
         JpegCompression = jpegCompressionEnabled;
+        QoirCompression = false;
         QoiCompression = false;
         Lz4Compression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(Lz4Compression));
       }
       else if (qoiCompressionEnabled && !QoiCompression)
       {
-        // if QOI was just enabled disable JPEG instead (mixing this doesn't make sense)
+        // if QOI was just enabled disable JPEG and QOIR instead (mixing this doesn't make sense)
         Lz4Compression = lz4CompressionEnabled;
         QoiCompression = qoiCompressionEnabled;
+        QoirCompression = false;
+        JpegCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
+      }
+      else if (qoirCompressionEnabled && !QoirCompression)
+      {
+        // if QOIR was just enabled disable JPEG, QOI and LZ4 instead (mixing this doesn't make sense)
+        QoirCompression = qoirCompressionEnabled;
+        QoiCompression = false;
+        Lz4Compression = false;
         JpegCompression = false;
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(Lz4Compression));
       }
       else if (lz4CompressionEnabled && !Lz4Compression)
       {
-        // if LZ4 was just enabled disable JPEG instead (mixing this doesn't make sense)
+        // if LZ4 was just enabled disable JPEG and QOIR instead (mixing this doesn't make sense)
         QoiCompression = qoiCompressionEnabled;
         Lz4Compression = lz4CompressionEnabled;
         JpegCompression = false;
+        QoirCompression = false;
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
       }
       else
       {
         JpegCompression = jpegCompressionEnabled;
         QoiCompression = qoiCompressionEnabled;
+        QoirCompression = qoirCompressionEnabled;
         Lz4Compression = lz4CompressionEnabled;
       }
 
@@ -641,8 +735,13 @@ public static class SettingsDialog
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionJpegQualityId), Convert.ToByte(!jpegLossless));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionJpegLevelId), Convert.ToByte(jpegLossless));
 
+      // QOIR: enable quality setting and disable level setting if lossless is disabled or vice versa
+      var qoirLossless = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoirLosslessId));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionQoirQualityId), Convert.ToByte(!qoirLossless));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionQoirLevelId), Convert.ToByte(qoirLossless));
+
       // derive video format requirements from the settings
-      if (QoiCompression || (JpegCompression && JpegCompressionLossless))
+      if (QoiCompression || QoirCompression || (JpegCompression && JpegCompressionLossless))
         RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_BGRA };
       else if (JpegCompression && !JpegCompressionLossless)
         RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_NV12 };
@@ -660,7 +759,7 @@ public static class SettingsDialog
       else
         ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionFormatWarningId), Convert.ToByte(false));
 
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(QoiCompression || JpegCompression || Lz4Compression));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(QoiCompression || QoirCompression || JpegCompression || Lz4Compression));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4SyncQoiSkipsId), Convert.ToByte(QoiCompression && (qoiLevel < 10)));
 
       // LZ4: set compression algorithm info text
