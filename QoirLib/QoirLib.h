@@ -480,7 +480,7 @@ qoir_encode(                              //
 
 // ================================ -Public Interface
 
-//#ifdef QOIR_IMPLEMENTATION
+#ifdef QOIR_IMPLEMENTATION
 
 // ================================ +Private Implementation
 
@@ -6985,7 +6985,7 @@ qoir_encode(                              //
 
 // ================================ -Private Implementation
 
-//#endif  // QOIR_IMPLEMENTATION
+#endif  // QOIR_IMPLEMENTATION
 
 #ifdef __cplusplus
 }  // extern "C"

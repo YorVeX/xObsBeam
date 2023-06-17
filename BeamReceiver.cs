@@ -494,12 +494,10 @@ public class BeamReceiver
               }
               // need to decompress QOI only
               else if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
-              {
-                // Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
-                // --------------- QOIR PoC code begin ---------------
+                Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
+              // need to decompress QOIR only
+              else if (videoHeader.Compression == Beam.CompressionTypes.Qoir)
                 QoirDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
-                // --------------- QOIR PoC code end ---------------
-              }
               // need to decompress JPEG lossless only
               else if (videoHeader.Compression == Beam.CompressionTypes.JpegLossless)
                 TurboJpegDecompressToBgra(receivedFrameData, maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
