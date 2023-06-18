@@ -150,6 +150,17 @@ public static class SettingsDialog
     }
   }
 
+  public static bool PngCompression { get; private set; }
+
+  public static unsafe int PngCompressionLevel
+  {
+    get
+    {
+      fixed (byte* propertyCompressionPngLevelId = "compression_png_level"u8)
+        return (int)ObsData.obs_data_get_int(_settings, (sbyte*)propertyCompressionPngLevelId);
+    }
+  }
+
   public static bool QoirCompression { get; private set; }
 
   public static unsafe int QoirCompressionLevel
@@ -315,6 +326,11 @@ public static class SettingsDialog
       propertyCompressionQoiText = Module.ObsText("CompressionQOIText"),
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
       propertyCompressionQoiLevelCaption = Module.ObsText("CompressionQOILevelCaption"),
+      propertyCompressionPngId = "compression_png"u8,
+      propertyCompressionPngCaption = Module.ObsText("CompressionPngCaption"),
+      propertyCompressionPngText = Module.ObsText("CompressionPngText"),
+      propertyCompressionPngLevelId = "compression_png_level"u8,
+      propertyCompressionPngLevelCaption = Module.ObsText("CompressionPngLevelCaption"),
       propertyCompressionQoirId = "compression_qoir"u8,
       propertyCompressionQoirCaption = Module.ObsText("CompressionQoirCaption"),
       propertyCompressionQoirText = Module.ObsText("CompressionQoirText"),
@@ -385,6 +401,16 @@ public static class SettingsDialog
       var compressionJpegLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionJpegGroup, (sbyte*)propertyCompressionJpegLevelId, (sbyte*)propertyCompressionJpegLevelCaption, 1, 10, 1);
       ObsProperties.obs_property_set_long_description(compressionJpegLevelProperty, (sbyte*)propertyCompressionLevelText);
       ObsProperties.obs_property_set_modified_callback(compressionJpegLevelProperty, &CompressionSettingChangedEventHandler);
+
+      // PNG compression options group
+      var compressionPngGroup = ObsProperties.obs_properties_create();
+      var compressionPngGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionPngId, (sbyte*)propertyCompressionPngCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionPngGroup);
+      ObsProperties.obs_property_set_long_description(compressionPngGroupProperty, (sbyte*)propertyCompressionPngText);
+      ObsProperties.obs_property_set_modified_callback(compressionPngGroupProperty, &CompressionSettingChangedEventHandler);
+      // PNG compression level (skip frames)
+      var compressionPngLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionPngGroup, (sbyte*)propertyCompressionPngLevelId, (sbyte*)propertyCompressionPngLevelCaption, 1, 10, 1);
+      ObsProperties.obs_property_set_long_description(compressionPngLevelProperty, (sbyte*)propertyCompressionLevelText);
+      ObsProperties.obs_property_set_modified_callback(compressionPngLevelProperty, &CompressionSettingChangedEventHandler);
 
       // QOI compression options group
       var compressionQoiGroup = ObsProperties.obs_properties_create();
@@ -492,6 +518,7 @@ public static class SettingsDialog
       propertyIdentifierId = "identifier"u8,
       propertyIdentifierDefaultText = "BeamSender"u8,
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
+      propertyCompressionPngLevelId = "compression_png_level"u8,
       propertyCompressionQoirQualityId = "compression_qoir_quality"u8,
       propertyCompressionQoirLevelId = "compression_qoir_level"u8,
       propertyCompressionQoirLosslessId = "compression_qoir_lossless"u8,
@@ -509,6 +536,7 @@ public static class SettingsDialog
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(false));
       ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierDefaultText);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoiLevelId, 10);
+      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionPngLevelId, 10);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoirQualityId, 7);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoirLevelId, 10);
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionQoirLosslessId, Convert.ToByte(true));
@@ -639,6 +667,8 @@ public static class SettingsDialog
       propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
       propertyCompressionQoiId = "compression_qoi"u8,
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
+      propertyCompressionPngId = "compression_png"u8,
+      propertyCompressionPngLevelId = "compression_png_level"u8,
       propertyCompressionQoirId = "compression_qoir"u8,
       propertyCompressionQoirLosslessId = "compression_qoir_lossless"u8,
       propertyCompressionQoirQualityId = "compression_qoir_quality"u8,
@@ -656,6 +686,7 @@ public static class SettingsDialog
       // get current settings after the change
       var jpegCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionJpegId));
       var qoiCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoiId));
+      var pngCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionPngId));
       var qoirCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoirId));
       var qoiLevel = ObsData.obs_data_get_int(settings, (sbyte*)propertyCompressionQoiLevelId);
       var lz4CompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionLz4Id));
@@ -674,53 +705,82 @@ public static class SettingsDialog
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(qoirCompressionEnabled));
       }
 
+      // handle the special case where PNG is enabled but the library couldn't be loaded, in this case force disable this option
+      if (pngCompressionEnabled && !EncoderSupport.FpngeLib)
+      {
+        pngCompressionEnabled = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionPngId, Convert.ToByte(pngCompressionEnabled));
+      }
+
       // react to setting changes, avoid mixing incompatible settings
       if (jpegCompressionEnabled && !JpegCompression)
       {
-        // if JPEG was just enabled disable QOIR, QOI and LZ4 instead (mixing this doesn't make sense)
+        // if JPEG was just enabled disable other lossless formats instead (mixing this doesn't make sense)
         JpegCompression = jpegCompressionEnabled;
-        QoirCompression = false;
         QoiCompression = false;
+        PngCompression = false;
+        QoirCompression = false;
         Lz4Compression = false;
-        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionPngId, Convert.ToByte(PngCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(Lz4Compression));
       }
       else if (qoiCompressionEnabled && !QoiCompression)
       {
-        // if QOI was just enabled disable JPEG and QOIR instead (mixing this doesn't make sense)
+        // if QOI was just enabled disable JPEG and other lossless formats instead (mixing this doesn't make sense)
         Lz4Compression = lz4CompressionEnabled;
         QoiCompression = qoiCompressionEnabled;
-        QoirCompression = false;
         JpegCompression = false;
+        PngCompression = false;
+        QoirCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionPngId, Convert.ToByte(PngCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
       }
+      else if (pngCompressionEnabled && !PngCompression)
+      {
+        // if PNG was just enabled disable JPEG and other lossless formats instead (mixing this doesn't make sense)
+        PngCompression = pngCompressionEnabled;
+        QoiCompression = false;
+        Lz4Compression = false;
+        JpegCompression = false;
+        QoirCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(Lz4Compression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
+      }
       else if (qoirCompressionEnabled && !QoirCompression)
       {
-        // if QOIR was just enabled disable JPEG, QOI and LZ4 instead (mixing this doesn't make sense)
+        // if QOIR was just enabled disable JPEG and other lossless formats instead (mixing this doesn't make sense)
         QoirCompression = qoirCompressionEnabled;
+        PngCompression = false;
         QoiCompression = false;
         Lz4Compression = false;
         JpegCompression = false;
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionPngId, Convert.ToByte(PngCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(Lz4Compression));
       }
       else if (lz4CompressionEnabled && !Lz4Compression)
       {
-        // if LZ4 was just enabled disable JPEG and QOIR instead (mixing this doesn't make sense)
+        // if LZ4 was just enabled disable JPEG and other lossless formats instead (mixing this doesn't make sense)
         QoiCompression = qoiCompressionEnabled;
         Lz4Compression = lz4CompressionEnabled;
         JpegCompression = false;
+        PngCompression = false;
         QoirCompression = false;
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionPngId, Convert.ToByte(PngCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
       }
       else
       {
         JpegCompression = jpegCompressionEnabled;
         QoiCompression = qoiCompressionEnabled;
+        PngCompression = pngCompressionEnabled;
         QoirCompression = qoirCompressionEnabled;
         Lz4Compression = lz4CompressionEnabled;
       }
@@ -743,6 +803,8 @@ public static class SettingsDialog
       // derive video format requirements from the settings
       if (QoiCompression || QoirCompression || (JpegCompression && JpegCompressionLossless))
         RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_BGRA };
+      else if (PngCompression)
+        RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_RGBA };
       else if (JpegCompression && !JpegCompressionLossless)
         RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_NV12 };
       else
@@ -759,7 +821,7 @@ public static class SettingsDialog
       else
         ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionFormatWarningId), Convert.ToByte(false));
 
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(QoiCompression || QoirCompression || JpegCompression || Lz4Compression));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(QoiCompression || PngCompression || QoirCompression || JpegCompression || Lz4Compression));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4SyncQoiSkipsId), Convert.ToByte(QoiCompression && (qoiLevel < 10)));
 
       // LZ4: set compression algorithm info text
