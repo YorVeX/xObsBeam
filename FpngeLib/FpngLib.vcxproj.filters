@@ -18,18 +18,12 @@
     <ClCompile Include="fpnge.cc">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="FpngLib.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="fpng.cpp">
+    <ClCompile Include="FpngeLib.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="fpnge.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="fpng.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

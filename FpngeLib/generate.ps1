@@ -4,27 +4,16 @@
 # winget install LLVM.LLVM
 
 
-$filePath = "Fpng.cs"
+$filePath = "Fpnge.cs"
 
 ClangSharpPInvokeGenerator `
 	-c single-file preview-codegen generate-macro-bindings unix-types <# configuration for the generator, need unix-types even on Windows so that "unsigned long" becomes nuint and not uint #> `
-	--remap vector=Vector `
 	--exclude FPNGEFillOptions <# don't need this for using the library #>  `
-	--exclude fpng_adler32 <# don't need this for using the library #>  `
-	--exclude fpng_crc32 <# don't need this for using the library #>  `
-	--exclude fpng_encode_image_to_file <# don't need this for using the library #>  `
-	--exclude fpng_decode_file <# don't need this for using the library #>  `
-	--exclude FPNG_ENCODE_SLOWER <# don't need this for using the library #>  `
-	--exclude FPNG_FORCE_UNCOMPRESSED <# don't need this for using the library #>  `
-	--with-using FPNG_CRC32_INIT=ClangSharp FPNG_CRC32_INIT=System.Numerics <# central namespace for the generic attributes that all ClangSharp generated classes need #>  `
-	--with-using FPNG_CRC32_INIT=System.Numerics <# needed for SIMD Vector #>  `
-  --with-class FPNG_DECODE_SUCCESS=FPNG_DECODE_RESULT <# group this anonymous enum #>  `
-  --with-class FPNG_DECODE_NOT_FPNG=FPNG_DECODE_RESULT <# group this anonymous enum #>  `
-	--file fpng.h <# file we want to generate bindings for #>  `
+	--with-using FPNGECicpColorspace=ClangSharp <# central namespace for the generic attributes that all ClangSharp generated classes need #>  `
 	--file fpnge.h <# file we want to generate bindings for #>  `
-    -n FpngLib <# namespace of the bindings #> `
-    --methodClassName Fpng <# class name where to put methods #> `
-    --libraryPath FpngLib <# name of the DLL #> `
+    -n FpngeLib <# namespace of the bindings #> `
+    --methodClassName Fpnge <# class name where to put methods #> `
+    --libraryPath FpngeLib <# name of the DLL #> `
     -o .\$filePath <# output #>
 
 

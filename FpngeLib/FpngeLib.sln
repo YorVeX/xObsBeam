@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.6.33801.468
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FpngLib", "FpngLib.vcxproj", "{B20259E3-FA8A-4B7C-9124-101C26368C64}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FpngeLib", "FpngeLib.vcxproj", "{B20259E3-FA8A-4B7C-9124-101C26368C64}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -26,6 +26,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {AA6FA43C-8F88-4D90-8349-1E20F851C37B}
+		SolutionGuid = {F891F2CB-184E-42BC-8945-A2BBB6717E59}
 	EndGlobalSection
 EndGlobal

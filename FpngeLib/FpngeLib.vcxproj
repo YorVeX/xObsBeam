@@ -19,12 +19,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="fpng.cpp" />
     <ClCompile Include="fpnge.cc" />
-    <ClCompile Include="FpngLib.cpp" />
+    <ClCompile Include="FpngeLib.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="fpng.h" />
     <ClInclude Include="fpnge.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
@@ -33,6 +31,7 @@
     <ProjectGuid>{b20259e3-fa8a-4b7c-9124-101c26368c64}</ProjectGuid>
     <RootNamespace>FpngLib</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>FpngeLib</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

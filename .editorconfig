@@ -252,7 +252,7 @@ dotnet_diagnostic.CA1401.severity = none
 # - also read the comments next to the DisableRuntimeMarshalling attribute
 dotnet_diagnostic.SYSLIB1054.severity = none
 
-[FpngLib/**]
+[FpngeLib/**]
 # don't care about paranthesis readability here, it's more important that this can be generated and directly used
 dotnet_diagnostic.IDE0048.severity = none
 
