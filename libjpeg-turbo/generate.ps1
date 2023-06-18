@@ -1,5 +1,7 @@
-# If ClangSharpPInvokeGenerator is missing, just run this from a CMD window:
+# If ClangSharpPInvokeGenerator is missing, just run this from a CMD or PowerShell window:
 # dotnet tool install --global ClangSharpPInvokeGenerator
+# You might also need to run this:
+# winget install LLVM.LLVM
 
 $turboJpegVersion = "2.1.91" # Version 3 Beta 2
 $filePath = "LibJpegTurbo.cs"
