@@ -25,7 +25,9 @@ wsl rm -Rf %BuildFolderFromLinux%/%ProjectName%/*
 REM Copy all necessary code files into the WSL build folder.
 robocopy.exe ..\..\. %BuildFolderFromWindows%\%ProjectName% *.cs *.csproj
 robocopy.exe ..\..\ClangSharpAttributes %BuildFolderFromWindows%\%ProjectName%\ClangSharpAttributes *.cs *.csproj
-robocopy.exe ..\..\libjpeg-turbo %BuildFolderFromWindows%\%ProjectName%\libjpeg-turbo *.cs *.csproj
+robocopy.exe ..\..\libjpeg-turbo %BuildFolderFromWindows%\%ProjectName%\libjpeg-turbo *.cs
+robocopy.exe ..\..\QoirLib %BuildFolderFromWindows%\%ProjectName%\QoirLib *.cs
+robocopy.exe ..\..\FpngeLib %BuildFolderFromWindows%\%ProjectName%\FpngeLib *.cs
 
 REM Run the build.
 wsl dotnet publish %BuildFolderFromLinux%/%ProjectName% -c Release -o %BuildFolderFromLinux%/%ProjectName%/publish -r linux-x64 /p:NativeLib=Shared /p:SelfContained=true
