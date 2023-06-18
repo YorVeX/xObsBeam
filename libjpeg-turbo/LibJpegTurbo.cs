@@ -133,108 +133,108 @@ namespace LibJpegTurbo
     [NativeTypeName("const int[6]")]
     public static readonly int[] tjMCUWidth = new int[6]
     {
-            8,
-            16,
-            16,
-            8,
-            8,
-            32,
+      8,
+      16,
+      16,
+      8,
+      8,
+      32,
     };
 
     [NativeTypeName("const int[6]")]
     public static readonly int[] tjMCUHeight = new int[6]
     {
-            8,
-            8,
-            16,
-            8,
-            16,
-            8,
+      8,
+      8,
+      16,
+      8,
+      16,
+      8,
     };
 
     [NativeTypeName("const int[12]")]
     public static readonly int[] tjRedOffset = new int[12]
     {
-            0,
-            2,
-            0,
-            2,
-            3,
-            1,
-            -1,
-            0,
-            2,
-            3,
-            1,
-            -1,
+      0,
+      2,
+      0,
+      2,
+      3,
+      1,
+      -1,
+      0,
+      2,
+      3,
+      1,
+      -1,
     };
 
     [NativeTypeName("const int[12]")]
     public static readonly int[] tjGreenOffset = new int[12]
     {
-            1,
-            1,
-            1,
-            1,
-            2,
-            2,
-            -1,
-            1,
-            1,
-            2,
-            2,
-            -1,
+      1,
+      1,
+      1,
+      1,
+      2,
+      2,
+      -1,
+      1,
+      1,
+      2,
+      2,
+      -1,
     };
 
     [NativeTypeName("const int[12]")]
     public static readonly int[] tjBlueOffset = new int[12]
     {
-            2,
-            0,
-            2,
-            0,
-            1,
-            3,
-            -1,
-            2,
-            0,
-            1,
-            3,
-            -1,
+      2,
+      0,
+      2,
+      0,
+      1,
+      3,
+      -1,
+      2,
+      0,
+      1,
+      3,
+      -1,
     };
 
     [NativeTypeName("const int[12]")]
     public static readonly int[] tjAlphaOffset = new int[12]
     {
-            -1,
-            -1,
-            -1,
-            -1,
-            -1,
-            -1,
-            -1,
-            3,
-            3,
-            0,
-            0,
-            -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      -1,
+      3,
+      3,
+      0,
+      0,
+      -1,
     };
 
     [NativeTypeName("const int[12]")]
     public static readonly int[] tjPixelSize = new int[12]
     {
-            3,
-            3,
-            4,
-            4,
-            4,
-            4,
-            1,
-            4,
-            4,
-            4,
-            4,
-            4,
+      3,
+      3,
+      4,
+      4,
+      4,
+      4,
+      1,
+      4,
+      4,
+      4,
+      4,
+      4,
     };
 
     [NativeTypeName("const tjregion")]

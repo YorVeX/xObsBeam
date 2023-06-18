@@ -3,27 +3,17 @@
 # You might also need to run this:
 # winget install LLVM.LLVM
 
-$turboJpegVersion = "2.1.91" # Version 3 Beta 2
-$filePath = "LibJpegTurbo.cs"
-$sourceFolder = "libjpeg-turbo-$turboJpegVersion"
 
-if (Test-Path -Path $sourceFolder) {
-	Write-Host "Deleting folder: $sourceFolder"
-	Remove-Item -Path $sourceFolder -Recurse -Force
-}
-
-git clone -b $turboJpegVersion https://github.com/libjpeg-turbo/libjpeg-turbo $sourceFolder
+$filePath = "Fpnge.cs"
 
 ClangSharpPInvokeGenerator `
 	-c single-file preview-codegen generate-macro-bindings unix-types <# configuration for the generator, need unix-types even on Windows so that "unsigned long" becomes nuint and not uint #> `
-	--remap tjregion=TJRegion  <# rename classes breaking naming convention and align with the Java API #>  `
-	--remap tjtransform=TJTransform  <# rename classes breaking naming convention and align with the Java API #>  `
-	--remap tjscalingfactor=TJScalingFactor  <# rename classes breaking naming convention and align with the Java API #>  `
-	--with-using TJRegion=ClangSharp <# central namespace for the generic attributes that all ClangSharp generated classes need #>  `
-	--file .\$sourceFolder\turbojpeg.h <# file we want to generate bindings for #>  `
-    -n LibJpegTurbo <# namespace of the bindings #> `
-    --methodClassName TurboJpeg <# class name where to put methods #> `
-    --libraryPath turbojpeg <# name of the DLL #> `
+	--exclude FPNGEFillOptions <# don't need this for using the library #>  `
+	--with-using FPNGECicpColorspace=ClangSharp <# central namespace for the generic attributes that all ClangSharp generated classes need #>  `
+	--file fpnge.h <# file we want to generate bindings for #>  `
+    -n FpngeLib <# namespace of the bindings #> `
+    --methodClassName Fpnge <# class name where to put methods #> `
+    --libraryPath FpngeLib <# name of the DLL #> `
     -o .\$filePath <# output #>
 
 

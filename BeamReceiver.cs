@@ -12,6 +12,8 @@ using System.Runtime.InteropServices;
 using LibJpegTurbo;
 using QoirLib;
 using K4os.Compression.LZ4;
+using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Png;
 
 namespace xObsBeam;
 
@@ -366,6 +368,14 @@ public class BeamReceiver
     byte[] receivedFrameData = Array.Empty<byte>();
     byte[] lz4DecompressBuffer = Array.Empty<byte>();
 
+    var decoderOptions = new DecoderOptions
+    {
+      SkipMetadata = true,
+      MaxFrames = 1
+    };
+
+    int decodeErrorCount = 1;
+
     DateTime frameReceivedTime;
     ulong lastVideoTimestamp = 0;
     ulong senderVideoTimestamp;
@@ -507,7 +517,22 @@ public class BeamReceiver
               // need to decompress QOI only
               else if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
                 Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
-              // need to decompress QOIR only
+              // need to decompress PNG only
+              else if (videoHeader.Compression == Beam.CompressionTypes.Png)
+              {
+                try
+                {
+                  using var memoryStream = new MemoryStream(receivedFrameData);
+                  using var decodedImage = await PngDecoder.Instance.DecodeAsync<Rgba32>(decoderOptions, memoryStream, cancellationToken);
+                  decodedImage.CopyPixelDataTo(rawDataBuffer);
+                }
+                catch (InvalidImageContentException ex)
+                {
+                  string fileName = "DecodeError" + decodeErrorCount++ + ".png";
+                  Module.Log($"PNG decompression failed with {ex.GetType().Name}: {ex.Message}\nData saved to {fileName} for review.", ObsLogLevel.Error);
+                  _ = File.WriteAllBytesAsync(fileName, receivedFrameData, cancellationToken);
+                }
+              }
               else if (videoHeader.Compression == Beam.CompressionTypes.Qoir)
                 QoirDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
               // need to decompress JPEG lossless only

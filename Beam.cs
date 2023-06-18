@@ -18,6 +18,7 @@ public class Beam
     JpegLossy = 4,
     JpegLossless = 5,
     Qoir = 6,
+    Png = 7,
   }
 
   #region helper methods
