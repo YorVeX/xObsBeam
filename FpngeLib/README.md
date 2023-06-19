@@ -26,6 +26,8 @@ Since the original fpnge.cc and fpnge.h files can be used on Linux too creating 
 ## Creating the wrapper class (for developers)
 The wrapper class in Fpnge.cs was generated using ClangSharpPInvokeGenerator from [ClangSharp project](https://github.com/dotnet/ClangSharp) with the generate.ps1 script in this folder. This is a PowerShell script and therefore is for Windows only.
 
+After generating the file the declaration for FPNGEOutputAllocSize() has to be manually changed to actually call the library function instead of doing the calculation locally, simply by copying the DllImport line and accessors from the FPNGEEncode method. This is necessary because 1) this function is used by xObsBeam to test whether this library is available and 2) it increases the chance that the wrapper stays compatible for future versions of the library, in the case where the function signatures stay the same but the code behind it including the allocation size calculation changes.
+
 ### Prerequisites
 In order to run the script and recreate the wrapper class the following needs to be fulfilled:
 - Windows

@@ -41,11 +41,9 @@ namespace FpngeLib
     [return: NativeTypeName("size_t")]
     public static extern nuint FPNGEEncode([NativeTypeName("size_t")] nuint bytes_per_channel, [NativeTypeName("size_t")] nuint num_channels, [NativeTypeName("const void *")] void* data, [NativeTypeName("size_t")] nuint width, [NativeTypeName("size_t")] nuint row_stride, [NativeTypeName("size_t")] nuint height, void* output, [NativeTypeName("const struct FPNGEOptions *")] FPNGEOptions* options);
 
+    [DllImport("FpngeLib", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     [return: NativeTypeName("size_t")]
-    public static nuint FPNGEOutputAllocSize([NativeTypeName("size_t")] nuint bytes_per_channel, [NativeTypeName("size_t")] nuint num_channels, [NativeTypeName("size_t")] nuint width, [NativeTypeName("size_t")] nuint height)
-    {
-      return 1024 + (2 * bytes_per_channel * width * num_channels + 1) * height;
-    }
+    public static extern nuint FPNGEOutputAllocSize([NativeTypeName("size_t")] nuint bytes_per_channel, [NativeTypeName("size_t")] nuint num_channels, [NativeTypeName("size_t")] nuint width, [NativeTypeName("size_t")] nuint height);
 
     [NativeTypeName("#define FPNGE_COMPRESS_LEVEL_DEFAULT 4")]
     public const int FPNGE_COMPRESS_LEVEL_DEFAULT = 4;
