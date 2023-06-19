@@ -61,8 +61,6 @@ public class BeamSender
   int _qoirCompressionQuality = 90;
   private double _compressionThreshold = 1;
   bool _lz4Compression;
-  bool _lz4CompressionSyncQoiSkips = true;
-  LZ4Level _lz4CompressionLevel = LZ4Level.L00_FAST;
   bool _compressionThreadingSync = true;
   unsafe qoir_encode_options_struct* _qoirEncodeOptions = null;
   unsafe FPNGEOptions* _fpngeOptions = null;
@@ -89,9 +87,7 @@ public class BeamSender
     _pngCompression = SettingsDialog.PngCompression && EncoderSupport.FpngeLib;
     _qoiCompression = SettingsDialog.QoiCompression;
     _lz4Compression = SettingsDialog.Lz4Compression;
-    _lz4CompressionLevel = SettingsDialog.Lz4CompressionLevel;
     _compressionThreadingSync = SettingsDialog.CompressionMainThread;
-    _lz4CompressionSyncQoiSkips = SettingsDialog.Lz4CompressionSyncQoiSkips;
 
     var format = info->format;
     if (conversionVideoFormat != video_format.VIDEO_FORMAT_NONE)
@@ -219,6 +215,9 @@ public class BeamSender
       if (_lz4VideoDataPoolMaxSize > 2147483591) // maximum byte array size
         _lz4VideoDataPoolMaxSize = 2147483591;
       _lz4VideoDataPool = ArrayPool<byte>.Create(_lz4VideoDataPoolMaxSize, MaxFrameQueueSize);
+
+      if (!_qoiCompression) // sync skips with QOI if QOI is enabled, otherwise use LZ4 specific level setting
+        _compressionThreshold = SettingsDialog.Lz4CompressionLevel / 10.0;
     }
 
     var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoDataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
@@ -538,12 +537,12 @@ public class BeamSender
           if (videoHeader.Compression == Beam.CompressionTypes.Qoi) // if QOI was applied before, compress the QOI data
           {
             fixed (byte* sourceData = encodedDataQoi, targetData = encodedDataLz4)
-              encodedDataLength = LZ4Codec.Encode(sourceData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, _lz4CompressionLevel);
+              encodedDataLength = LZ4Codec.Encode(sourceData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
           }
           else // if QOI was not applied before, compress the raw data
           {
             fixed (byte* targetData = encodedDataLz4)
-              encodedDataLength = LZ4Codec.Encode(rawData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, _lz4CompressionLevel);
+              encodedDataLength = LZ4Codec.Encode(rawData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
           }
 
           if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
@@ -652,8 +651,7 @@ public class BeamSender
 
     // prepare LZ4 compression buffer
     byte[]? encodedDataLz4 = null;
-    bool compressLz4Frame = (!_lz4CompressionSyncQoiSkips || (_lz4CompressionSyncQoiSkips && compressThisFrame));
-    if (_lz4Compression && compressLz4Frame)
+    if (_lz4Compression && compressThisFrame)
       encodedDataLz4 = _lz4VideoDataPool!.Rent(_lz4VideoDataPoolMaxSize);
 
     if (_compressionThreadingSync)
