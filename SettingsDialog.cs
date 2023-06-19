@@ -405,6 +405,7 @@ public static class SettingsDialog
       // PNG compression options group
       var compressionPngGroup = ObsProperties.obs_properties_create();
       var compressionPngGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionPngId, (sbyte*)propertyCompressionPngCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionPngGroup);
+      ObsProperties.obs_property_set_visible(compressionPngGroupProperty, Convert.ToByte(EncoderSupport.FpngeLib));
       ObsProperties.obs_property_set_long_description(compressionPngGroupProperty, (sbyte*)propertyCompressionPngText);
       ObsProperties.obs_property_set_modified_callback(compressionPngGroupProperty, &CompressionSettingChangedEventHandler);
       // PNG compression level (skip frames)
