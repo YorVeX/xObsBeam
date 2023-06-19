@@ -11,6 +11,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using LibJpegTurbo;
 using QoirLib;
+using DensityApi;
 using K4os.Compression.LZ4;
 using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Png;
@@ -312,6 +313,17 @@ public class BeamReceiver
     }
   }
 
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  private unsafe void DensityDecompress(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, int rawDataSize)
+  {
+    fixed (byte* sourceBuf = receivedFrameData, dstBuf = rawDataBuffer)
+    {
+      var densityResult = Density.density_decompress(sourceBuf, (ulong)dataSize, dstBuf, (ulong)rawDataSize);
+      if (densityResult.state != DENSITY_STATE.DENSITY_STATE_OK)
+        Module.Log("Density decompression failed with error " + densityResult.state, ObsLogLevel.Error);
+    }
+  }
+
   private static unsafe uint GetRawVideoDataSize(Beam.VideoHeader videoHeader)
   {
     uint rawVideoDataSize = 0;
@@ -533,8 +545,12 @@ public class BeamReceiver
                   _ = File.WriteAllBytesAsync(fileName, receivedFrameData, cancellationToken);
                 }
               }
+              // need to decompress QOIR only
               else if (videoHeader.Compression == Beam.CompressionTypes.Qoir)
                 QoirDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
+              // need to decompress Density only
+              else if (videoHeader.Compression == Beam.CompressionTypes.Density)
+                DensityDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
               // need to decompress JPEG lossless only
               else if (videoHeader.Compression == Beam.CompressionTypes.JpegLossless)
                 TurboJpegDecompressToBgra(receivedFrameData, maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
