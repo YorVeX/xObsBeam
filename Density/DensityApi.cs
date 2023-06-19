@@ -4,7 +4,7 @@
 using ClangSharp;
 using System.Runtime.InteropServices;
 
-namespace Density
+namespace DensityApi
 {
   public enum DENSITY_ALGORITHM
   {

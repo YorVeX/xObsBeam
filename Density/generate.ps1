@@ -4,13 +4,13 @@
 # winget install LLVM.LLVM
 
 
-$filePath = "Density.cs"
+$filePath = "DensityApi.cs"
 
 ClangSharpPInvokeGenerator `
 	-c single-file preview-codegen generate-macro-bindings unix-types <# configuration for the generator, need unix-types even on Windows so that "unsigned long" becomes nuint and not uint #> `
 	--with-using density_version_major=ClangSharp <# central namespace for the generic attributes that all ClangSharp generated classes need #>  `
 	--file density_api.h <# file we want to generate bindings for #>  `
-    -n Density <# namespace of the bindings #> `
+    -n DensityApi <# namespace of the bindings #> `
     --methodClassName Density <# class name where to put methods #> `
     --libraryPath density <# name of the DLL #> `
     -o .\$filePath <# output #>
