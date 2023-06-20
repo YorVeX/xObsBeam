@@ -77,7 +77,7 @@ public static class EncoderSupport
   {
     get
     {
-      var encoder = Encoders.Fpnge;
+      var encoder = Encoders.Density;
       if (!_checkResults.ContainsKey(encoder))
       {
         string densityVersionString = "";
