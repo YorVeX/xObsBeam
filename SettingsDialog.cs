@@ -177,6 +177,15 @@ public static class SettingsDialog
     }
   }
 
+  public static unsafe int DensityCompressionStrength
+  {
+    get
+    {
+      fixed (byte* propertyCompressionDensityStrengthId = "compression_density_strength"u8)
+        return (int)ObsData.obs_data_get_int(_settings, (sbyte*)propertyCompressionDensityStrengthId);
+    }
+  }
+
   public static unsafe bool CompressionMainThread
   {
     get
@@ -339,6 +348,9 @@ public static class SettingsDialog
       propertyCompressionDensityText = Module.ObsText("CompressionDensityText"),
       propertyCompressionDensityLevelId = "compression_density_level"u8,
       propertyCompressionDensityLevelCaption = Module.ObsText("CompressionDensityLevelCaption"),
+      propertyCompressionDensityStrengthId = "compression_density_strength"u8,
+      propertyCompressionDensityStrengthCaption = Module.ObsText("CompressionDensityStrengthCaption"),
+      propertyCompressionDensityStrengthText = Module.ObsText("CompressionDensityStrengthText"),
       propertyCompressionMainThreadId = "compression_main_thread"u8,
       propertyCompressionMainThreadCaption = Module.ObsText("CompressionMainThreadCaption"),
       propertyCompressionMainThreadText = Module.ObsText("CompressionMainThreadText"),
@@ -442,6 +454,10 @@ public static class SettingsDialog
       var compressionDensityLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionDensityGroup, (sbyte*)propertyCompressionDensityLevelId, (sbyte*)propertyCompressionDensityLevelCaption, 1, 10, 1);
       ObsProperties.obs_property_set_long_description(compressionDensityLevelProperty, (sbyte*)propertyCompressionLevelText);
       ObsProperties.obs_property_set_modified_callback(compressionDensityLevelProperty, &CompressionSettingChangedEventHandler);
+      // Density compression strength
+      var compressionDensityStrengthProperty = ObsProperties.obs_properties_add_int_slider(compressionDensityGroup, (sbyte*)propertyCompressionDensityStrengthId, (sbyte*)propertyCompressionDensityStrengthCaption, 1, 3, 1);
+      ObsProperties.obs_property_set_long_description(compressionDensityStrengthProperty, (sbyte*)propertyCompressionDensityStrengthText);
+      ObsProperties.obs_property_set_modified_callback(compressionDensityStrengthProperty, &CompressionSettingChangedEventHandler);
 
       // warning message shown when video color format conversion is necessary
       var compressionFormatWarningProperty = ObsProperties.obs_properties_add_text(compressionGroup, (sbyte*)propertyCompressionFormatWarningId, (sbyte*)propertyCompressionFormatWarningText, obs_text_type.OBS_TEXT_INFO);
@@ -506,6 +522,7 @@ public static class SettingsDialog
       propertyIdentifierDefaultText = "BeamSender"u8,
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
       propertyCompressionDensityLevelId = "compression_density_level"u8,
+      propertyCompressionDensityStrengthId = "compression_density_strength"u8,
       propertyCompressionPngLevelId = "compression_png_level"u8,
       propertyCompressionQoirQualityId = "compression_qoir_quality"u8,
       propertyCompressionQoirLevelId = "compression_qoir_level"u8,
@@ -531,6 +548,7 @@ public static class SettingsDialog
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionJpegLevelId, 10);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionLz4LevelId, 10);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionDensityLevelId, 10);
+      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionDensityStrengthId, 2);
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionMainThreadId, Convert.ToByte(true));
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(true));
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(false));

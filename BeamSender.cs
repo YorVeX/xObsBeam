@@ -65,6 +65,7 @@ public class BeamSender
   private double _compressionThreshold = 1;
   bool _lz4Compression;
   bool _densityCompression;
+  DENSITY_ALGORITHM _densityAlgorithm;
   bool _compressionThreadingSync = true;
   unsafe qoir_encode_options_struct* _qoirEncodeOptions = null;
   unsafe FPNGEOptions* _fpngeOptions = null;
@@ -92,6 +93,7 @@ public class BeamSender
     _qoiCompression = SettingsDialog.QoiCompression;
     _lz4Compression = SettingsDialog.Lz4Compression;
     _densityCompression = SettingsDialog.DensityCompression;
+    _densityAlgorithm = (DENSITY_ALGORITHM)SettingsDialog.DensityCompressionStrength;
     _compressionThreadingSync = SettingsDialog.CompressionMainThread;
 
     var format = info->format;
@@ -500,11 +502,11 @@ public class BeamSender
             Module.Log("PNG compression did not decrease the size of the data, skipping frame " + timestamp, ObsLogLevel.Debug);
         }
       }
-      else if (encodedDataDensity != null) // apply DENSITY compression if enabled
+      else if (encodedDataDensity != null) // apply Density compression if enabled
       {
         fixed (byte* densityBuf = encodedDataDensity)
         {
-          var densityResult = Density.density_compress(rawData, (ulong)videoHeader.DataSize, densityBuf, (ulong)_densityVideoDataPoolMaxSize, DENSITY_ALGORITHM.DENSITY_ALGORITHM_CHAMELEON);
+          var densityResult = Density.density_compress(rawData, (ulong)videoHeader.DataSize, densityBuf, (ulong)_densityVideoDataPoolMaxSize, _densityAlgorithm);
           if (densityResult.state != DENSITY_STATE.DENSITY_STATE_OK)
           {
             Module.Log("Density compression failed with error " + densityResult.state, ObsLogLevel.Error);
