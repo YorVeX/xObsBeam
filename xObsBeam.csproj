@@ -10,7 +10,7 @@
     <StripSymbols>true</StripSymbols>
     <PublishAot>true</PublishAot>
     <Authors>https://github.com/YorVeX</Authors>
-    <AssemblyVersion>0.7.4.0</AssemblyVersion>
+    <AssemblyVersion>0.7.5.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>
