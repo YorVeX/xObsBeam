@@ -28,6 +28,7 @@ robocopy.exe ..\..\ClangSharpAttributes %BuildFolderFromWindows%\%ProjectName%\C
 robocopy.exe ..\..\libjpeg-turbo %BuildFolderFromWindows%\%ProjectName%\libjpeg-turbo *.cs
 robocopy.exe ..\..\QoirLib %BuildFolderFromWindows%\%ProjectName%\QoirLib *.cs
 robocopy.exe ..\..\FpngeLib %BuildFolderFromWindows%\%ProjectName%\FpngeLib *.cs
+robocopy.exe ..\..\Density %BuildFolderFromWindows%\%ProjectName%\Density *.cs
 
 REM Run the build.
 wsl dotnet publish %BuildFolderFromLinux%/%ProjectName% -c Release -o %BuildFolderFromLinux%/%ProjectName%/publish -r linux-x64 /p:NativeLib=Shared /p:SelfContained=true

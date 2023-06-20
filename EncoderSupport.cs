@@ -9,6 +9,7 @@ using ObsInterop;
 using LibJpegTurbo;
 using QoirLib;
 using FpngeLib;
+using DensityApi;
 
 namespace xObsBeam;
 
@@ -18,6 +19,7 @@ enum Encoders
   LibJpegTurboV3,
   Qoir,
   Fpnge,
+  Density,
 }
 
 public static class EncoderSupport
@@ -66,6 +68,30 @@ public static class EncoderSupport
           Module.Log($"{encoder} encoder availability check failed with {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Debug);
         }
         Module.Log($"{encoder} encoder is " + (_checkResults[encoder] ? "available." : "not available."), ObsLogLevel.Info);
+      }
+      return _checkResults[encoder];
+    }
+  }
+
+  public static unsafe bool DensityApi
+  {
+    get
+    {
+      var encoder = Encoders.Fpnge;
+      if (!_checkResults.ContainsKey(encoder))
+      {
+        string densityVersionString = "";
+        try
+        {
+          densityVersionString = " " + Density.density_version_major() + "." + Density.density_version_minor() + "." + Density.density_version_revision();
+          _checkResults.Add(encoder, true);
+        }
+        catch (Exception ex)
+        {
+          _checkResults.Add(encoder, false);
+          Module.Log($"{encoder} encoder availability check failed with {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Debug);
+        }
+        Module.Log($"{encoder}{densityVersionString} encoder is " + (_checkResults[encoder] ? "available." : "not available."), ObsLogLevel.Info);
       }
       return _checkResults[encoder];
     }
