@@ -410,7 +410,7 @@ public class BeamSender
     {
       int encodedDataLength = 0;
 
-      if (encodedDataJpeg != null) // apply JPEG compression if enabled
+      if (videoHeader.Compression is Beam.CompressionTypes.JpegLossy or Beam.CompressionTypes.JpegLossless) // apply JPEG compression if enabled
       {
         fixed (byte* jpegBuf = encodedDataJpeg)
         {
@@ -481,28 +481,13 @@ public class BeamSender
             return;
           }
         }
-
-        if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
-        {
-          videoHeader.Compression = (_jpegCompressionLossless ? Beam.CompressionTypes.JpegLossless : Beam.CompressionTypes.JpegLossy);
-          videoHeader.DataSize = encodedDataLength;
-        }
       }
-      else if (encodedDataPng != null) // apply PNG compression if enabled
+      else if (videoHeader.Compression is Beam.CompressionTypes.Png) // apply PNG compression if enabled
       {
         fixed (byte* pngBuf = encodedDataPng)
-        {
           encodedDataLength = (int)Fpnge.FPNGEEncode(1, 4, rawData, videoHeader.Width, videoHeader.Linesize[0], videoHeader.Height, pngBuf, _fpngeOptions);
-          if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
-          {
-            videoHeader.Compression = Beam.CompressionTypes.Png;
-            videoHeader.DataSize = encodedDataLength;
-          }
-          else
-            Module.Log("PNG compression did not decrease the size of the data, skipping frame " + timestamp, ObsLogLevel.Debug);
-        }
       }
-      else if (encodedDataDensity != null) // apply Density compression if enabled
+      else if (videoHeader.Compression is Beam.CompressionTypes.Density) // apply Density compression if enabled
       {
         fixed (byte* densityBuf = encodedDataDensity)
         {
@@ -513,82 +498,68 @@ public class BeamSender
             return;
           }
           encodedDataLength = (int)densityResult.bytesWritten;
-          if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
-          {
-            videoHeader.Compression = Beam.CompressionTypes.Density;
-            videoHeader.DataSize = encodedDataLength;
-          }
-          else
-            Module.Log("Density compression did not decrease the size of the data, skipping frame " + timestamp, ObsLogLevel.Debug);
         }
+      }
+      else if (videoHeader.Compression is Beam.CompressionTypes.Qoir) // apply QOIR compression if enabled
+      {
+        var qoirPixelBuffer = EncoderSupport.MAllocPooledPinned<qoir_pixel_buffer_struct>();
+        qoirPixelBuffer->pixcfg.width_in_pixels = videoHeader.Width;
+        qoirPixelBuffer->pixcfg.height_in_pixels = videoHeader.Height;
+        qoirPixelBuffer->pixcfg.pixfmt = Qoir.QOIR_PIXEL_FORMAT__BGRA_NONPREMUL;
+        qoirPixelBuffer->data = rawData;
+        qoirPixelBuffer->stride_in_bytes = videoHeader.Linesize[0];
+        var qoirEncodeResult = Qoir.qoir_encode(qoirPixelBuffer, _qoirEncodeOptions);
+        EncoderSupport.FreePooledPinned(qoirPixelBuffer);
+        if (qoirEncodeResult.status_message != null)
+        {
+          Module.Log("QOIR compression failed with error: " + Marshal.PtrToStringUTF8((IntPtr)qoirEncodeResult.status_message), ObsLogLevel.Error);
+          return;
+        }
+        if (qoirEncodeResult.dst_len == 0)
+        {
+          Module.Log("QOIR compression failed.", ObsLogLevel.Error);
+          return;
+        }
+        encodedDataLength = (int)qoirEncodeResult.dst_len;
+        new ReadOnlySpan<byte>(qoirEncodeResult.dst_ptr, encodedDataLength).CopyTo(encodedDataQoi);
+        EncoderSupport.FreePooledPinned(qoirEncodeResult.dst_ptr);
       }
       else
       {
-        if (encodedDataQoi != null) // apply QOI(R) compression if enabled
+        if (videoHeader.Compression is Beam.CompressionTypes.Qoi or Beam.CompressionTypes.QoiLz4) // apply QOI compression if enabled
         {
-          if (_qoiCompression)
-          {
-            encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedDataQoi); // encode the frame with QOI
-            if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
-            {
-              videoHeader.Compression = Beam.CompressionTypes.Qoi;
-              videoHeader.DataSize = encodedDataLength;
-            }
-          }
-          else if (_qoirCompression)
-          {
-            var qoirPixelBuffer = EncoderSupport.MAllocPooledPinned<qoir_pixel_buffer_struct>();
-            qoirPixelBuffer->pixcfg.width_in_pixels = videoHeader.Width;
-            qoirPixelBuffer->pixcfg.height_in_pixels = videoHeader.Height;
-            qoirPixelBuffer->pixcfg.pixfmt = Qoir.QOIR_PIXEL_FORMAT__BGRA_NONPREMUL;
-            qoirPixelBuffer->data = rawData;
-            qoirPixelBuffer->stride_in_bytes = videoHeader.Linesize[0];
-            var qoirEncodeResult = Qoir.qoir_encode(qoirPixelBuffer, _qoirEncodeOptions);
-            EncoderSupport.FreePooledPinned(qoirPixelBuffer);
-            if (qoirEncodeResult.status_message != null)
-            {
-              Module.Log("QOIR compression failed with error: " + Marshal.PtrToStringUTF8((IntPtr)qoirEncodeResult.status_message), ObsLogLevel.Error);
-              return;
-            }
-            if (qoirEncodeResult.dst_len == 0)
-            {
-              Module.Log("QOIR compression failed.", ObsLogLevel.Error);
-              return;
-            }
-            encodedDataLength = (int)qoirEncodeResult.dst_len;
-
-            if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
-            {
-              new ReadOnlySpan<byte>(qoirEncodeResult.dst_ptr, encodedDataLength).CopyTo(encodedDataQoi);
-              videoHeader.Compression = Beam.CompressionTypes.Qoir;
-              videoHeader.DataSize = encodedDataLength;
-            }
-            EncoderSupport.FreePooledPinned(qoirEncodeResult.dst_ptr);
-          }
+          encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedDataQoi!); // encode the frame with QOI
+          if (encodedDataLength >= videoHeader.DataSize) // did compression not decrease the size of the data?
+            videoHeader.Compression = (videoHeader.Compression is Beam.CompressionTypes.QoiLz4) ? Beam.CompressionTypes.Lz4 : Beam.CompressionTypes.None;
         }
 
         // apply LZ4 compression if enabled
-        if (encodedDataLz4 != null)
+        if (videoHeader.Compression is Beam.CompressionTypes.Lz4 or Beam.CompressionTypes.QoiLz4) // apply QOI compression if enabled
         {
-          if (videoHeader.Compression == Beam.CompressionTypes.Qoi) // if QOI was applied before, compress the QOI data
+          if (videoHeader.Compression is Beam.CompressionTypes.QoiLz4) // if QOI was applied before, compress the QOI data
           {
+            int lz4EncodedDataLength;
             fixed (byte* sourceData = encodedDataQoi, targetData = encodedDataLz4)
-              encodedDataLength = LZ4Codec.Encode(sourceData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
+              lz4EncodedDataLength = LZ4Codec.Encode(sourceData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
+            if (lz4EncodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
+              encodedDataLength = lz4EncodedDataLength;
+            else
+              videoHeader.Compression = Beam.CompressionTypes.Qoi; // only keep the QOI compression
           }
           else // if QOI was not applied before, compress the raw data
           {
             fixed (byte* targetData = encodedDataLz4)
               encodedDataLength = LZ4Codec.Encode(rawData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
           }
-
-          if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
-          {
-            videoHeader.Compression = (videoHeader.Compression == Beam.CompressionTypes.Qoi) ? Beam.CompressionTypes.QoiLz4 : Beam.CompressionTypes.Lz4;
-            if (videoHeader.Compression == Beam.CompressionTypes.QoiLz4) // if QOI was applied before, compress the QOI data
-              videoHeader.QoiDataSize = videoHeader.DataSize; // remember the size of the QOI data
-            videoHeader.DataSize = encodedDataLength;
-          }
         }
+      }
+
+      if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
+        videoHeader.DataSize = encodedDataLength;
+      else
+      {
+        Module.Log(videoHeader.Compression + " compression did not decrease the size of the data, skipping frame " + timestamp, ObsLogLevel.Debug);
+        videoHeader.Compression = Beam.CompressionTypes.None; // send raw instead
       }
 
       switch (videoHeader.Compression)
@@ -663,30 +634,47 @@ public class BeamSender
     // determine whether this frame needs to be compressed
     bool compressThisFrame = ((_compressionThreshold == 1) || (((double)_videoFramesCompressed / _videoFramesProcessed) < _compressionThreshold));
 
+    var videoHeader = _videoHeader;
+
     // prepare JPEG compression buffer
     byte[]? encodedDataJpeg = null;
     if (_jpegCompression && compressThisFrame)
+    {
+      videoHeader.Compression = (_jpegCompressionLossless ? Beam.CompressionTypes.JpegLossless : Beam.CompressionTypes.JpegLossy);
       encodedDataJpeg = _videoDataPool!.Rent(_videoDataPoolMaxSize);
+    }
 
     // prepare QOI(R) compression buffer
     byte[]? encodedDataQoi = null;
     if ((_qoiCompression || _qoirCompression) && compressThisFrame)
+    {
+      videoHeader.Compression = (_qoirCompression ? Beam.CompressionTypes.Qoir : Beam.CompressionTypes.Qoi);
       encodedDataQoi = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
+    }
 
     // prepare PNG compression buffer
     byte[]? encodedDataPng = null;
     if (_pngCompression && compressThisFrame)
+    {
+      videoHeader.Compression = Beam.CompressionTypes.Png;
       encodedDataPng = _pngVideoDataPool!.Rent(_pngVideoDataPoolMaxSize);
+    }
 
     // prepare Density compression buffer
     byte[]? encodedDataDensity = null;
     if (_densityCompression && compressThisFrame)
+    {
+      videoHeader.Compression = Beam.CompressionTypes.Density;
       encodedDataDensity = _densityVideoDataPool!.Rent(_densityVideoDataPoolMaxSize);
+    }
 
     // prepare LZ4 compression buffer
     byte[]? encodedDataLz4 = null;
     if (_lz4Compression && compressThisFrame)
+    {
+      videoHeader.Compression = (_qoiCompression ? Beam.CompressionTypes.QoiLz4 : Beam.CompressionTypes.Lz4);
       encodedDataLz4 = _lz4VideoDataPool!.Rent(_lz4VideoDataPoolMaxSize);
+    }
 
     // frame skipping logic
     if (_compressionThreshold < 1) // is frame skipping enabled?
@@ -708,11 +696,11 @@ public class BeamSender
         byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize);
         EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneSizes);
         fixed (byte* videoData = managedDataCopy)
-          SendCompressed(timestamp, _videoHeader, videoData, encodedDataJpeg, encodedDataQoi, encodedDataPng, encodedDataLz4, encodedDataDensity);
+          SendCompressed(timestamp, videoHeader, videoData, encodedDataJpeg, encodedDataQoi, encodedDataPng, encodedDataLz4, encodedDataDensity);
         _videoDataPool!.Return(managedDataCopy);
       }
       else
-        SendCompressed(timestamp, _videoHeader, data, encodedDataJpeg, encodedDataQoi, encodedDataPng, encodedDataLz4, encodedDataDensity); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
+        SendCompressed(timestamp, videoHeader, data, encodedDataJpeg, encodedDataQoi, encodedDataPng, encodedDataLz4, encodedDataDensity); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
     }
     else
     {
@@ -724,7 +712,7 @@ public class BeamSender
       else
         new ReadOnlySpan<byte>(data, _videoDataSize).CopyTo(managedDataCopy); // just copy to managed as-is for formats that are not packed
 
-      var beamVideoData = new Beam.BeamVideoData(_videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
+      var beamVideoData = new Beam.BeamVideoData(videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
       Task.Factory.StartNew(state =>
       {
         var capturedBeamVideoData = (Beam.BeamVideoData)state!; // capture into thread-local context
