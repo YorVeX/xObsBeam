@@ -30,16 +30,8 @@ public class BeamSender
   CancellationTokenSource _listenCancellationSource = new();
   ArrayPool<byte>? _videoDataPool;
   int _videoDataPoolMaxSize;
-  ArrayPool<byte>? _qoiVideoDataPool;
-  int _qoiVideoDataPoolMaxSize;
-  ArrayPool<byte>? _pngVideoDataPool;
-  int _pngVideoDataPoolMaxSize;
   private int _videoFramesProcessed;
   private int _videoFramesCompressed;
-  ArrayPool<byte>? _lz4VideoDataPool;
-  int _lz4VideoDataPoolMaxSize;
-  ArrayPool<byte>? _densityVideoDataPool;
-  int _densityVideoDataPoolMaxSize;
   Beam.VideoHeader _videoHeader;
   Beam.AudioHeader _audioHeader;
   int _videoDataSize;
@@ -49,22 +41,15 @@ public class BeamSender
   int _audioBytesPerSample;
 
   // cached compression settings
-  bool _jpegCompression;
-  bool _jpegCompressionLossless;
   int _jpegCompressionQuality = 90;
   TJSAMP _jpegSubsampling = TJSAMP.TJSAMP_444;
   TJPF _jpegPixelFormat = TJPF.TJPF_RGB;
   TJCS _jpegColorspace = TJCS.TJCS_RGB;
   bool _jpegYuv;
   bool _libJpegTurboV3;
-  bool _pngCompression;
-  bool _qoiCompression;
-  bool _qoirCompression;
   bool _qoirCompressionLossless;
   int _qoirCompressionQuality = 90;
   private double _compressionThreshold = 1;
-  bool _lz4Compression;
-  bool _densityCompression;
   DENSITY_ALGORITHM _densityAlgorithm;
   bool _compressionThreadingSync = true;
   unsafe qoir_encode_options_struct* _qoirEncodeOptions = null;
@@ -79,22 +64,19 @@ public class BeamSender
     _compressionThreshold = 1;
 
     // allow potential previous compression buffers to be garbage collected
-    _qoiVideoDataPool = null;
-    _lz4VideoDataPool = null;
+    _videoDataPool = null;
 
-    // cache settings values
-    _qoirCompression = SettingsDialog.QoirCompression && EncoderSupport.QoirLib;
-    _qoirCompressionLossless = _qoirCompression && SettingsDialog.QoirCompressionLossless;
-    _qoirCompressionQuality = SettingsDialog.QoirCompressionQuality;
-    _jpegCompression = SettingsDialog.JpegCompression && EncoderSupport.LibJpegTurbo;
-    _jpegCompressionLossless = _jpegCompression && SettingsDialog.JpegCompressionLossless && EncoderSupport.LibJpegTurboLossless;
-    _jpegCompressionQuality = SettingsDialog.JpegCompressionQuality;
-    _pngCompression = SettingsDialog.PngCompression && EncoderSupport.FpngeLib;
-    _qoiCompression = SettingsDialog.QoiCompression;
-    _lz4Compression = SettingsDialog.Lz4Compression;
-    _densityCompression = SettingsDialog.DensityCompression;
-    _densityAlgorithm = (DENSITY_ALGORITHM)SettingsDialog.DensityCompressionStrength;
-    _compressionThreadingSync = SettingsDialog.CompressionMainThread;
+    // free previous options objects if they exist
+    if (_fpngeOptions != null)
+    {
+      EncoderSupport.FreePooledPinned(_fpngeOptions);
+      _fpngeOptions = null;
+    }
+    if (_qoirEncodeOptions != null)
+    {
+      EncoderSupport.FreePooledPinned(_qoirEncodeOptions);
+      _qoirEncodeOptions = null;
+    }
 
     var format = info->format;
     if (conversionVideoFormat != video_format.VIDEO_FORMAT_NONE)
@@ -138,63 +120,21 @@ public class BeamSender
       Format = format,
       Range = info->range,
       Colorspace = info->colorspace,
+      Compression = Beam.CompressionTypes.None,
     };
     new ReadOnlySpan<uint>(linesize, Beam.VideoHeader.MAX_AV_PLANES).CopyTo(new Span<uint>(videoHeader.Linesize, Beam.VideoHeader.MAX_AV_PLANES));
     _videoHeader = videoHeader;
 
-    // prepare generic video data pool that can be used for operations that need buffers with the raw video data size for the current format (e.g. raw managed copy or JPEG deinterleaving)
-    _videoDataPoolMaxSize = _videoDataSize;
-    if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
-      _videoDataPoolMaxSize = 2147483591;
-    _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
-
-    if (_qoiCompression)
+    // cache compression settings
+    if (SettingsDialog.QoirCompression && EncoderSupport.QoirLib)
     {
-      _qoiVideoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength); // QOI's theoretical max size for BGRA is 5x the size of the original image
-      if (_qoiVideoDataPoolMaxSize > 2147483591) // maximum byte array size
-        _qoiVideoDataPoolMaxSize = 2147483591;
-      _qoiVideoDataPool = ArrayPool<byte>.Create(_qoiVideoDataPoolMaxSize, MaxFrameQueueSize);
-      _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
-    }
-
-    if (_densityCompression)
-    {
-      _densityVideoDataPoolMaxSize = (int)Density.density_compress_safe_size((ulong)videoHeader.DataSize);
-      if (_densityVideoDataPoolMaxSize > 2147483591) // maximum byte array size
-        _densityVideoDataPoolMaxSize = 2147483591;
-      _densityVideoDataPool = ArrayPool<byte>.Create(_densityVideoDataPoolMaxSize, MaxFrameQueueSize);
-      _compressionThreshold = SettingsDialog.DensityCompressionLevel / 10.0;
-    }
-
-    if (_fpngeOptions != null)
-    {
-      EncoderSupport.FreePooledPinned(_fpngeOptions);
-      _fpngeOptions = null;
-    }
-    if (_pngCompression)
-    {
-      _pngVideoDataPoolMaxSize = (int)Fpnge.FPNGEOutputAllocSize(1, 4, info->width, info->height);
-      if (_pngVideoDataPoolMaxSize > 2147483591) // maximum byte array size
-        _pngVideoDataPoolMaxSize = 2147483591;
-      _pngVideoDataPool = ArrayPool<byte>.Create(_pngVideoDataPoolMaxSize, MaxFrameQueueSize);
-
-      _fpngeOptions = EncoderSupport.MAllocPooledPinned<FPNGEOptions>();
-      new Span<byte>(_fpngeOptions, sizeof(FPNGEOptions)).Clear();
-      _fpngeOptions->cicp_colorspace = (sbyte)FPNGECicpColorspace.FPNGE_CICP_NONE; //TODO: implement support for 16 bit HDR with FPNGECicpColorspace.FPNGE_CICP_PQ, in that case the bytes_per_channel param of FPNGEEncode and FPNGEOutputAllocSize calls need to be set to 2
-      _fpngeOptions->predictor = (sbyte)FPNGEOptionsPredictor.FPNGE_PREDICTOR_FIXED_AVG; //TODO: try other settings and look at the CPU vs. bandwidth trade-off - the default FPNGE_PREDICTOR_BEST has good compression but also the highest CPU usage and sometimes produces frames that IrfanView can display but ImageSharp fails to decode with "Invalid PNG data" message
-    }
-
-    if (_qoirEncodeOptions != null)
-    {
-      EncoderSupport.FreePooledPinned(_qoirEncodeOptions);
-      _qoirEncodeOptions = null;
-    }
-    if (_qoirCompression)
-    {
-      _qoiVideoDataPoolMaxSize = (int)((info->width * info->height * 4)); // this buffer will only be used if compression actually reduced the frame size
-      if (_qoiVideoDataPoolMaxSize > 2147483591) // maximum byte array size
-        _qoiVideoDataPoolMaxSize = 2147483591;
-      _qoiVideoDataPool = ArrayPool<byte>.Create(_qoiVideoDataPoolMaxSize, MaxFrameQueueSize);
+      _videoHeader.Compression = Beam.CompressionTypes.Qoir;
+      _qoirCompressionLossless = SettingsDialog.QoirCompressionLossless;
+      _qoirCompressionQuality = SettingsDialog.QoirCompressionQuality;
+      _videoDataPoolMaxSize = (int)((info->width * info->height * 4)); // this buffer will only be used if compression actually reduced the frame size
+      if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
+        _videoDataPoolMaxSize = 2147483591;
+      _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
 
       _qoirEncodeOptions = EncoderSupport.MAllocPooledPinned<qoir_encode_options_struct>();
       new Span<byte>(_qoirEncodeOptions, sizeof(qoir_encode_options_struct)).Clear();
@@ -203,16 +143,26 @@ public class BeamSender
         _qoirEncodeOptions->lossiness = 0;
       else
         _qoirEncodeOptions->lossiness = 8 - (uint)SettingsDialog.QoirCompressionQuality;
-      _qoirEncodeOptions->contextual_malloc_func = &EncoderSupport.QoirMAlloc; // important to use our own memory allocator, so that we can also free the memory later
+      _qoirEncodeOptions->contextual_malloc_func = &EncoderSupport.QoirMAlloc; // important to use our own memory allocator, so that we can also free the memory later, also it's pooled memory
       _qoirEncodeOptions->contextual_free_func = &EncoderSupport.QoirFree;
       _compressionThreshold = SettingsDialog.QoirCompressionLevel / 10.0;
     }
-
-    if (_jpegCompression)
+    else if (SettingsDialog.JpegCompression && EncoderSupport.LibJpegTurbo)
     {
-      _libJpegTurboV3 = EncoderSupport.LibJpegTurboV3;
-      if (_jpegCompressionLossless)
+      if (SettingsDialog.JpegCompressionLossless && EncoderSupport.LibJpegTurboLossless)
+      {
+        _videoHeader.Compression = Beam.CompressionTypes.JpegLossless;
         _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
+      }
+      else
+        _videoHeader.Compression = Beam.CompressionTypes.JpegLossy;
+      _jpegCompressionQuality = SettingsDialog.JpegCompressionQuality;
+      _videoDataPoolMaxSize = _videoDataSize;
+      if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
+        _videoDataPoolMaxSize = 2147483591;
+      _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
+
+      _libJpegTurboV3 = EncoderSupport.LibJpegTurboV3;
       _jpegPixelFormat = EncoderSupport.ObsToJpegPixelFormat(format);
       _jpegSubsampling = EncoderSupport.ObsToJpegSubsampling(format);
       _jpegColorspace = EncoderSupport.ObsToJpegColorSpace(format);
@@ -224,25 +174,56 @@ public class BeamSender
           _jpegYuvPlaneSizes = _videoPlaneSizes; // no deinterleaving needed, fallback to the original plane sizes
       }
     }
-
-    if (_lz4Compression)
+    else if (SettingsDialog.PngCompression && EncoderSupport.FpngeLib)
     {
-      _lz4VideoDataPoolMaxSize = LZ4Codec.MaximumOutputSize(_videoDataSize);
-      if (_lz4VideoDataPoolMaxSize > 2147483591) // maximum byte array size
-        _lz4VideoDataPoolMaxSize = 2147483591;
-      _lz4VideoDataPool = ArrayPool<byte>.Create(_lz4VideoDataPoolMaxSize, MaxFrameQueueSize);
+      _videoHeader.Compression = Beam.CompressionTypes.Png;
+      _videoDataPoolMaxSize = (int)Fpnge.FPNGEOutputAllocSize(1, 4, info->width, info->height);
+      if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
+        _videoDataPoolMaxSize = 2147483591;
+      _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
 
-      if (!_qoiCompression) // sync skips with QOI if QOI is enabled, otherwise use LZ4 specific level setting
-        _compressionThreshold = SettingsDialog.Lz4CompressionLevel / 10.0;
+      _fpngeOptions = EncoderSupport.MAllocPooledPinned<FPNGEOptions>();
+      new Span<byte>(_fpngeOptions, sizeof(FPNGEOptions)).Clear();
+      _fpngeOptions->cicp_colorspace = (sbyte)FPNGECicpColorspace.FPNGE_CICP_NONE; //TODO: implement support for 16 bit HDR with FPNGECicpColorspace.FPNGE_CICP_PQ, in that case the bytes_per_channel param of FPNGEEncode and FPNGEOutputAllocSize calls need to be set to 2
+      _fpngeOptions->predictor = (sbyte)FPNGEOptionsPredictor.FPNGE_PREDICTOR_FIXED_AVG; //TODO: try other settings and look at the CPU vs. bandwidth trade-off - the default FPNGE_PREDICTOR_BEST has good compression but also the highest CPU usage and sometimes produces frames that IrfanView can display but ImageSharp fails to decode with "Invalid PNG data" message
+      _compressionThreshold = SettingsDialog.PngCompressionLevel / 10.0;
     }
+    else if (SettingsDialog.DensityCompression && EncoderSupport.DensityApi)
+    {
+      _videoHeader.Compression = Beam.CompressionTypes.Density;
+      _densityAlgorithm = (DENSITY_ALGORITHM)SettingsDialog.DensityCompressionStrength;
+      _videoDataPoolMaxSize = (int)Density.density_compress_safe_size((ulong)videoHeader.DataSize);
+      if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
+        _videoDataPoolMaxSize = 2147483591;
+      _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
+      _compressionThreshold = SettingsDialog.DensityCompressionLevel / 10.0;
+    }
+    else if (SettingsDialog.QoiCompression)
+    {
+      _videoHeader.Compression = Beam.CompressionTypes.Qoi;
+      _videoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength); // QOI's theoretical max size for BGRA is 5x the size of the original image
+      if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
+        _videoDataPoolMaxSize = 2147483591;
+      _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
+      _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
+    }
+    else if (SettingsDialog.Lz4Compression)
+    {
+      _videoHeader.Compression = Beam.CompressionTypes.Lz4;
+      _videoDataPoolMaxSize = LZ4Codec.MaximumOutputSize(_videoDataSize);
+      if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
+        _videoDataPoolMaxSize = 2147483591;
+      _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
+      _compressionThreshold = SettingsDialog.Lz4CompressionLevel / 10.0;
+    }
+    _compressionThreadingSync = SettingsDialog.CompressionMainThread;
 
     var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoDataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
-    if (!_qoiCompression && !_lz4Compression && !_jpegCompression)
+    if (_videoHeader.Compression == Beam.CompressionTypes.None)
       Module.Log($"Video output feed initialized, theoretical uncompressed net bandwidth demand is {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
     else
     {
-      string lz4WithLevelString = $"LZ4 ({SettingsDialog.Lz4CompressionLevel})";
-      Module.Log($"Video output feed initialized with {(_jpegCompression ? "JPEG" : (_qoiCompression ? (_lz4Compression ? "QOI + " + lz4WithLevelString : "QOI") : lz4WithLevelString))} compression. Sync to render thread: {_compressionThreadingSync}. Theoretical uncompressed net bandwidth demand would be {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
+      Module.Log($"Video output feed initialized with {_videoHeader.Compression} compression. Sync to render thread: {_compressionThreadingSync}. Theoretical uncompressed net bandwidth demand would be {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
     }
 
     return true;
@@ -404,7 +385,7 @@ public class BeamSender
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private unsafe void SendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedDataJpeg, byte[]? encodedDataQoi, byte[]? encodedDataPng, byte[]? encodedDataLz4, byte[]? encodedDataDensity)
+  private unsafe void SendCompressed(ulong timestamp, Beam.VideoHeader videoHeader, byte* rawData, byte[]? encodedData)
   {
     try
     {
@@ -412,7 +393,7 @@ public class BeamSender
 
       if (videoHeader.Compression is Beam.CompressionTypes.JpegLossy or Beam.CompressionTypes.JpegLossless) // apply JPEG compression if enabled
       {
-        fixed (byte* jpegBuf = encodedDataJpeg)
+        fixed (byte* jpegBuf = encodedData)
         {
           // nuint jpegDataLength = (nuint)(videoHeader.Width * TurboJpeg.tjPixelSize[(int)TJPF.TJPF_BGRA] * videoHeader.Height);
           nuint jpegDataLength = (nuint)videoHeader.DataSize;
@@ -425,7 +406,7 @@ public class BeamSender
             _ = TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_NOREALLOC, 1);
             _ = TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_COLORSPACE, (int)_jpegColorspace);
             _ = TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_SUBSAMP, (int)_jpegSubsampling);
-            _ = _jpegCompressionLossless
+            _ = (videoHeader.Compression is Beam.CompressionTypes.JpegLossless)
               ? TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_LOSSLESS, 1)
               : TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_QUALITY, _jpegCompressionQuality);
           }
@@ -484,14 +465,14 @@ public class BeamSender
       }
       else if (videoHeader.Compression is Beam.CompressionTypes.Png) // apply PNG compression if enabled
       {
-        fixed (byte* pngBuf = encodedDataPng)
+        fixed (byte* pngBuf = encodedData)
           encodedDataLength = (int)Fpnge.FPNGEEncode(1, 4, rawData, videoHeader.Width, videoHeader.Linesize[0], videoHeader.Height, pngBuf, _fpngeOptions);
       }
       else if (videoHeader.Compression is Beam.CompressionTypes.Density) // apply Density compression if enabled
       {
-        fixed (byte* densityBuf = encodedDataDensity)
+        fixed (byte* densityBuf = encodedData)
         {
-          var densityResult = Density.density_compress(rawData, (ulong)videoHeader.DataSize, densityBuf, (ulong)_densityVideoDataPoolMaxSize, _densityAlgorithm);
+          var densityResult = Density.density_compress(rawData, (ulong)videoHeader.DataSize, densityBuf, (ulong)_videoDataPoolMaxSize, _densityAlgorithm);
           if (densityResult.state != DENSITY_STATE.DENSITY_STATE_OK)
           {
             Module.Log("Density compression failed with error " + densityResult.state, ObsLogLevel.Error);
@@ -521,37 +502,15 @@ public class BeamSender
           return;
         }
         encodedDataLength = (int)qoirEncodeResult.dst_len;
-        new ReadOnlySpan<byte>(qoirEncodeResult.dst_ptr, encodedDataLength).CopyTo(encodedDataQoi);
+        new ReadOnlySpan<byte>(qoirEncodeResult.dst_ptr, encodedDataLength).CopyTo(encodedData);
         EncoderSupport.FreePooledPinned(qoirEncodeResult.dst_ptr);
       }
-      else
+      else if (videoHeader.Compression is Beam.CompressionTypes.Qoi) // apply QOI compression if enabled
+        encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedData!); // encode the frame with QOI
+      else if (videoHeader.Compression is Beam.CompressionTypes.Lz4)
       {
-        if (videoHeader.Compression is Beam.CompressionTypes.Qoi or Beam.CompressionTypes.QoiLz4) // apply QOI compression if enabled
-        {
-          encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedDataQoi!); // encode the frame with QOI
-          if (encodedDataLength >= videoHeader.DataSize) // did compression not decrease the size of the data?
-            videoHeader.Compression = (videoHeader.Compression is Beam.CompressionTypes.QoiLz4) ? Beam.CompressionTypes.Lz4 : Beam.CompressionTypes.None;
-        }
-
-        // apply LZ4 compression if enabled
-        if (videoHeader.Compression is Beam.CompressionTypes.Lz4 or Beam.CompressionTypes.QoiLz4) // apply QOI compression if enabled
-        {
-          if (videoHeader.Compression is Beam.CompressionTypes.QoiLz4) // if QOI was applied before, compress the QOI data
-          {
-            int lz4EncodedDataLength;
-            fixed (byte* sourceData = encodedDataQoi, targetData = encodedDataLz4)
-              lz4EncodedDataLength = LZ4Codec.Encode(sourceData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
-            if (lz4EncodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
-              encodedDataLength = lz4EncodedDataLength;
-            else
-              videoHeader.Compression = Beam.CompressionTypes.Qoi; // only keep the QOI compression
-          }
-          else // if QOI was not applied before, compress the raw data
-          {
-            fixed (byte* targetData = encodedDataLz4)
-              encodedDataLength = LZ4Codec.Encode(rawData, videoHeader.DataSize, targetData, _lz4VideoDataPoolMaxSize, LZ4Level.L00_FAST);
-          }
-        }
+        fixed (byte* targetData = encodedData)
+          encodedDataLength = LZ4Codec.Encode(rawData, videoHeader.DataSize, targetData, _videoDataPoolMaxSize, LZ4Level.L00_FAST);
       }
 
       if (encodedDataLength < videoHeader.DataSize) // did compression decrease the size of the data?
@@ -562,35 +521,15 @@ public class BeamSender
         videoHeader.Compression = Beam.CompressionTypes.None; // send raw instead
       }
 
-      switch (videoHeader.Compression)
+      if (videoHeader.Compression != Beam.CompressionTypes.None)
       {
-        case Beam.CompressionTypes.JpegLossy:
-        case Beam.CompressionTypes.JpegLossless:
-          foreach (var client in _clients.Values)
-            client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataJpeg!);
-          break;
-        case Beam.CompressionTypes.Qoi:
-        case Beam.CompressionTypes.Qoir:
-          foreach (var client in _clients.Values)
-            client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataQoi!);
-          break;
-        case Beam.CompressionTypes.Png:
-          foreach (var client in _clients.Values)
-            client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataPng!);
-          break;
-        case Beam.CompressionTypes.Lz4:
-        case Beam.CompressionTypes.QoiLz4:
-          foreach (var client in _clients.Values)
-            client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataLz4!);
-          break;
-        case Beam.CompressionTypes.Density:
-          foreach (var client in _clients.Values)
-            client.EnqueueVideoFrame(timestamp, videoHeader, encodedDataDensity!);
-          break;
-        default:
-          foreach (var client in _clients.Values)
-            client.EnqueueVideoFrame(timestamp, videoHeader, rawData);
-          break;
+        foreach (var client in _clients.Values)
+          client.EnqueueVideoFrame(timestamp, videoHeader, encodedData!);
+      }
+      else
+      {
+        foreach (var client in _clients.Values)
+          client.EnqueueVideoFrame(timestamp, videoHeader, rawData);
       }
     }
     catch (Exception ex)
@@ -601,16 +540,8 @@ public class BeamSender
     finally
     {
       // return the rented encoding data buffers to the pool, each client has created a copy of that data for its own use
-      if (encodedDataJpeg != null)
-        _videoDataPool?.Return(encodedDataJpeg);
-      if (encodedDataQoi != null)
-        _qoiVideoDataPool?.Return(encodedDataQoi);
-      if (encodedDataPng != null)
-        _pngVideoDataPool?.Return(encodedDataPng);
-      if (encodedDataLz4 != null)
-        _lz4VideoDataPool?.Return(encodedDataLz4);
-      if (encodedDataDensity != null)
-        _densityVideoDataPool?.Return(encodedDataDensity);
+      if (encodedData != null)
+        _videoDataPool?.Return(encodedData);
     }
   }
 
@@ -624,58 +555,14 @@ public class BeamSender
       client.EnqueueVideoTimestamp(timestamp);
 
     // no compression of any kind, we also stay sync so just enqueue the raw data right away from the original unmanaged memory
-    if (!_qoiCompression && !_lz4Compression && !_jpegCompression && !_qoirCompression && !_pngCompression && !_densityCompression)
+    if ((_videoHeader.Compression == Beam.CompressionTypes.None))
     {
       foreach (var client in _clients.Values)
         client.EnqueueVideoFrame(timestamp, _videoHeader, data);
       return;
     }
 
-    // determine whether this frame needs to be compressed
     bool compressThisFrame = ((_compressionThreshold == 1) || (((double)_videoFramesCompressed / _videoFramesProcessed) < _compressionThreshold));
-
-    var videoHeader = _videoHeader;
-
-    // prepare JPEG compression buffer
-    byte[]? encodedDataJpeg = null;
-    if (_jpegCompression && compressThisFrame)
-    {
-      videoHeader.Compression = (_jpegCompressionLossless ? Beam.CompressionTypes.JpegLossless : Beam.CompressionTypes.JpegLossy);
-      encodedDataJpeg = _videoDataPool!.Rent(_videoDataPoolMaxSize);
-    }
-
-    // prepare QOI(R) compression buffer
-    byte[]? encodedDataQoi = null;
-    if ((_qoiCompression || _qoirCompression) && compressThisFrame)
-    {
-      videoHeader.Compression = (_qoirCompression ? Beam.CompressionTypes.Qoir : Beam.CompressionTypes.Qoi);
-      encodedDataQoi = _qoiVideoDataPool!.Rent(_qoiVideoDataPoolMaxSize);
-    }
-
-    // prepare PNG compression buffer
-    byte[]? encodedDataPng = null;
-    if (_pngCompression && compressThisFrame)
-    {
-      videoHeader.Compression = Beam.CompressionTypes.Png;
-      encodedDataPng = _pngVideoDataPool!.Rent(_pngVideoDataPoolMaxSize);
-    }
-
-    // prepare Density compression buffer
-    byte[]? encodedDataDensity = null;
-    if (_densityCompression && compressThisFrame)
-    {
-      videoHeader.Compression = Beam.CompressionTypes.Density;
-      encodedDataDensity = _densityVideoDataPool!.Rent(_densityVideoDataPoolMaxSize);
-    }
-
-    // prepare LZ4 compression buffer
-    byte[]? encodedDataLz4 = null;
-    if (_lz4Compression && compressThisFrame)
-    {
-      videoHeader.Compression = (_qoiCompression ? Beam.CompressionTypes.QoiLz4 : Beam.CompressionTypes.Lz4);
-      encodedDataLz4 = _lz4VideoDataPool!.Rent(_lz4VideoDataPoolMaxSize);
-    }
-
     // frame skipping logic
     if (_compressionThreshold < 1) // is frame skipping enabled?
     {
@@ -688,36 +575,49 @@ public class BeamSender
         _videoFramesCompressed = 0;
       }
     }
+    if (!compressThisFrame)
+    {
+      var videoHeader = _videoHeader;
+      videoHeader.Compression = Beam.CompressionTypes.None;
+      foreach (var client in _clients.Values)
+        client.EnqueueVideoFrame(timestamp, videoHeader, data);
+      return;
+    }
+
+    // --- continue here if compression is enabled ---
+
+    // prepare compression buffer
+    byte[]? encodedData = _videoDataPool!.Rent(_videoDataPoolMaxSize);
 
     if (_compressionThreadingSync)
     {
-      if (_jpegCompression && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
+      if ((_videoHeader.Compression is Beam.CompressionTypes.JpegLossy) && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
       {
         byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize);
         EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneSizes);
         fixed (byte* videoData = managedDataCopy)
-          SendCompressed(timestamp, videoHeader, videoData, encodedDataJpeg, encodedDataQoi, encodedDataPng, encodedDataLz4, encodedDataDensity);
+          SendCompressed(timestamp, _videoHeader, videoData, encodedData);
         _videoDataPool!.Return(managedDataCopy);
       }
       else
-        SendCompressed(timestamp, videoHeader, data, encodedDataJpeg, encodedDataQoi, encodedDataPng, encodedDataLz4, encodedDataDensity); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
+        SendCompressed(timestamp, _videoHeader, data, encodedData); // in sync with this OBS render thread, hence the unmanaged data array and header instance stays valid and can directly be used
     }
     else
     {
       byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize); // need a managed memory copy for async handover
 
       // to save an additional frame copy operation the JPEG deinterleaving is done in sync mode as part of the copy to managed memory that is needed anyway for the async handover
-      if (_jpegCompression && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
+      if ((_videoHeader.Compression is Beam.CompressionTypes.JpegLossy) && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
         EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneSizes);
       else
         new ReadOnlySpan<byte>(data, _videoDataSize).CopyTo(managedDataCopy); // just copy to managed as-is for formats that are not packed
 
-      var beamVideoData = new Beam.BeamVideoData(videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
+      var beamVideoData = new Beam.BeamVideoData(_videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
       Task.Factory.StartNew(state =>
       {
         var capturedBeamVideoData = (Beam.BeamVideoData)state!; // capture into thread-local context
         fixed (byte* videoData = capturedBeamVideoData.Data)
-          SendCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, encodedDataJpeg, encodedDataQoi, encodedDataPng, encodedDataLz4, encodedDataDensity);
+          SendCompressed(capturedBeamVideoData.Timestamp, capturedBeamVideoData.Header, videoData, encodedData);
         _videoDataPool!.Return(capturedBeamVideoData.Data);
       }, beamVideoData);
     }

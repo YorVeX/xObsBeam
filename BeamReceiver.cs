@@ -319,6 +319,7 @@ public class BeamReceiver
     fixed (byte* sourceBuf = receivedFrameData, dstBuf = rawDataBuffer)
     {
       var densityResult = Density.density_decompress(sourceBuf, (ulong)dataSize, dstBuf, (ulong)rawDataSize);
+      //BUG: find out why sometimes DENSITY_STATE.DENSITY_STATE_ERROR_OUTPUT_BUFFER_TOO_SMALL occurs
       if (densityResult.state != DENSITY_STATE.DENSITY_STATE_OK)
         Module.Log("Density decompression failed with error " + densityResult.state, ObsLogLevel.Error);
     }
@@ -378,7 +379,6 @@ public class BeamReceiver
 
     int maxVideoDataSize = 0;
     byte[] receivedFrameData = Array.Empty<byte>();
-    byte[] lz4DecompressBuffer = Array.Empty<byte>();
 
     var decoderOptions = new DecoderOptions
     {
@@ -497,7 +497,6 @@ public class BeamReceiver
 
               maxVideoDataSize = (int)(videoHeader.Width * videoHeader.Height * 4);
               receivedFrameData = new byte[rawVideoDataSize];
-              lz4DecompressBuffer = new byte[maxVideoDataSize];
               RawDataBufferPool = ArrayPool<byte>.Create(maxVideoDataSize, 2);
             }
 
@@ -508,55 +507,43 @@ public class BeamReceiver
             {
               readResult.Buffer.Slice(0, videoHeader.DataSize).CopyTo(receivedFrameData);
 
-              // need to decompress both LZ4 and QOI
-              if (videoHeader.Compression == Beam.CompressionTypes.QoiLz4)
+              switch (videoHeader.Compression)
               {
-                // decompress LZ4 first
-                int decompressedSize = LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, lz4DecompressBuffer, 0, videoHeader.QoiDataSize);
-                if (decompressedSize != videoHeader.QoiDataSize)
-                  Module.Log($"LZ4 decompression failed, expected {videoHeader.QoiDataSize} bytes (QOI), got {decompressedSize} bytes.", ObsLogLevel.Error);
-
-                // decompress QOI second
-                Qoi.Decode(lz4DecompressBuffer, videoHeader.QoiDataSize, rawDataBuffer, maxVideoDataSize);
+                case Beam.CompressionTypes.Lz4:
+                  int decompressedSizeLz4 = LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, rawDataBuffer, 0, maxVideoDataSize);
+                  if (decompressedSizeLz4 != rawVideoDataSize)
+                    Module.Log($"LZ4 decompression failed, expected {rawVideoDataSize} bytes, got {decompressedSizeLz4} bytes.", ObsLogLevel.Error);
+                  break;
+                case Beam.CompressionTypes.Qoi:
+                  Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
+                  break;
+                case Beam.CompressionTypes.Qoir:
+                  QoirDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
+                  break;
+                case Beam.CompressionTypes.Density:
+                  DensityDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
+                  break;
+                case Beam.CompressionTypes.JpegLossy:
+                  TurboJpegDecompressToYuv(receivedFrameData, maxVideoDataSize, rawDataBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
+                  break;
+                case Beam.CompressionTypes.JpegLossless:
+                  TurboJpegDecompressToBgra(receivedFrameData, maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
+                  break;
+                case Beam.CompressionTypes.Png:
+                  try
+                  {
+                    using var memoryStream = new MemoryStream(receivedFrameData);
+                    using var decodedImage = await PngDecoder.Instance.DecodeAsync<Rgba32>(decoderOptions, memoryStream, cancellationToken);
+                    decodedImage.CopyPixelDataTo(rawDataBuffer);
+                  }
+                  catch (InvalidImageContentException ex)
+                  {
+                    string fileName = "DecodeError" + decodeErrorCount++ + ".png";
+                    Module.Log($"PNG decompression failed with {ex.GetType().Name}: {ex.Message}\nData saved to {fileName} for review.", ObsLogLevel.Error);
+                    _ = File.WriteAllBytesAsync(fileName, receivedFrameData, cancellationToken);
+                  }
+                  break;
               }
-              // need to decompress LZ4 only
-              else if (videoHeader.Compression == Beam.CompressionTypes.Lz4)
-              {
-                int decompressedSize = LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, rawDataBuffer, 0, maxVideoDataSize);
-                if (decompressedSize != rawVideoDataSize)
-                  Module.Log($"LZ4 decompression failed, expected {rawVideoDataSize} bytes, got {decompressedSize} bytes.", ObsLogLevel.Error);
-              }
-              // need to decompress QOI only
-              else if (videoHeader.Compression == Beam.CompressionTypes.Qoi)
-                Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
-              // need to decompress PNG only
-              else if (videoHeader.Compression == Beam.CompressionTypes.Png)
-              {
-                try
-                {
-                  using var memoryStream = new MemoryStream(receivedFrameData);
-                  using var decodedImage = await PngDecoder.Instance.DecodeAsync<Rgba32>(decoderOptions, memoryStream, cancellationToken);
-                  decodedImage.CopyPixelDataTo(rawDataBuffer);
-                }
-                catch (InvalidImageContentException ex)
-                {
-                  string fileName = "DecodeError" + decodeErrorCount++ + ".png";
-                  Module.Log($"PNG decompression failed with {ex.GetType().Name}: {ex.Message}\nData saved to {fileName} for review.", ObsLogLevel.Error);
-                  _ = File.WriteAllBytesAsync(fileName, receivedFrameData, cancellationToken);
-                }
-              }
-              // need to decompress QOIR only
-              else if (videoHeader.Compression == Beam.CompressionTypes.Qoir)
-                QoirDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
-              // need to decompress Density only
-              else if (videoHeader.Compression == Beam.CompressionTypes.Density)
-                DensityDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
-              // need to decompress JPEG lossless only
-              else if (videoHeader.Compression == Beam.CompressionTypes.JpegLossless)
-                TurboJpegDecompressToBgra(receivedFrameData, maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
-              // need to decompress JPEG lossy only
-              else if (videoHeader.Compression == Beam.CompressionTypes.JpegLossy)
-                TurboJpegDecompressToYuv(receivedFrameData, maxVideoDataSize, rawDataBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
             }
 
             // process the frame

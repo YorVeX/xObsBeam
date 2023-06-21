@@ -14,12 +14,11 @@ public class Beam
     None = 0,
     Qoi = 1,
     Lz4 = 2,
-    QoiLz4 = 3,
-    JpegLossy = 4,
-    JpegLossless = 5,
-    Qoir = 6,
-    Png = 7,
-    Density = 8,
+    JpegLossy = 3,
+    JpegLossless = 4,
+    Qoir = 5,
+    Png = 6,
+    Density = 7,
   }
 
   #region helper methods

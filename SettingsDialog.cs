@@ -726,7 +726,6 @@ public static class SettingsDialog
       // react to setting changes, avoid mixing incompatible settings
       if (jpegCompressionEnabled && !JpegCompression)
       {
-        // if JPEG was just enabled disable other lossless formats instead (mixing this doesn't make sense)
         JpegCompression = jpegCompressionEnabled;
         QoiCompression = false;
         PngCompression = false;
@@ -741,21 +740,20 @@ public static class SettingsDialog
       }
       else if (qoiCompressionEnabled && !QoiCompression)
       {
-        // if QOI was just enabled disable JPEG and other lossless formats instead (mixing this doesn't make sense)
-        Lz4Compression = lz4CompressionEnabled;
         QoiCompression = qoiCompressionEnabled;
         JpegCompression = false;
+        Lz4Compression = false;
         PngCompression = false;
         QoirCompression = false;
         DensityCompression = false;
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionPngId, Convert.ToByte(PngCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(Lz4Compression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(DensityCompression));
       }
       else if (pngCompressionEnabled && !PngCompression)
       {
-        // if PNG was just enabled disable JPEG and other lossless formats instead (mixing this doesn't make sense)
         PngCompression = pngCompressionEnabled;
         QoiCompression = false;
         Lz4Compression = false;
@@ -770,7 +768,6 @@ public static class SettingsDialog
       }
       else if (qoirCompressionEnabled && !QoirCompression)
       {
-        // if QOIR was just enabled disable JPEG and other lossless formats instead (mixing this doesn't make sense)
         QoirCompression = qoirCompressionEnabled;
         PngCompression = false;
         QoiCompression = false;
@@ -785,21 +782,20 @@ public static class SettingsDialog
       }
       else if (lz4CompressionEnabled && !Lz4Compression)
       {
-        // if LZ4 was just enabled disable JPEG and other lossless formats instead (mixing this doesn't make sense)
-        QoiCompression = qoiCompressionEnabled;
         Lz4Compression = lz4CompressionEnabled;
+        QoiCompression = false;
         JpegCompression = false;
         PngCompression = false;
         QoirCompression = false;
         DensityCompression = false;
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionPngId, Convert.ToByte(PngCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(DensityCompression));
       }
       else if (densityCompressionEnabled && !DensityCompression)
       {
-        // if Density was just enabled disable JPEG and other lossless formats instead (mixing this doesn't make sense)
         DensityCompression = densityCompressionEnabled;
         QoiCompression = false;
         Lz4Compression = false;
@@ -836,9 +832,6 @@ public static class SettingsDialog
       var qoirLossless = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoirLosslessId));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionQoirQualityId), Convert.ToByte(!qoirLossless));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionQoirLevelId), Convert.ToByte(qoirLossless));
-
-      // LZ4: enable quality level setting only if QOI with frame skipping isn't enabled, otherwise frame skipping will be synced to the QOI level
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4LevelId), Convert.ToByte(!qoiCompressionEnabled || (qoiLevel == 10)));
 
       // derive video format requirements from the settings
       if (QoiCompression || QoirCompression || (JpegCompression && JpegCompressionLossless))
