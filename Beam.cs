@@ -176,7 +176,6 @@ public class Beam
       Timestamp = timestamp,
       Compression = CompressionTypes.None,
       Fps = 30,
-      QoiDataSize = 0,
       DataSize = videoDataSize,
     };
     new ReadOnlySpan<uint>(linesize, VideoHeader.MAX_AV_PLANES).CopyTo(new Span<uint>(header.Linesize, VideoHeader.MAX_AV_PLANES));
@@ -274,7 +273,6 @@ public class Beam
     public Type Type = Type.Video;
     public CompressionTypes Compression;
     public int DataSize;
-    public int QoiDataSize;
     public uint Width;
     public uint Height;
     public fixed uint Linesize[MAX_AV_PLANES];
@@ -314,8 +312,6 @@ public class Beam
       Compression = (CompressionTypes)tempInt;
       // read int video DataSize from the next 4 bytes in header
       reader.TryReadLittleEndian(out DataSize);
-      // read int video QoiDataSize from the next 4 bytes in header
-      reader.TryReadLittleEndian(out QoiDataSize);
       // read uint width from the next 4 bytes in header
       reader.TryReadLittleEndian(out tempInt);
       Width = (uint)tempInt;
@@ -345,7 +341,7 @@ public class Beam
       Timestamp = (ulong)timestamp;
 
       // log the values that have been read
-      // Module.Log($"Video Type: {Type}, Compression: {Compression}, DataSize: {DataSize}, QoiDataSize: {QoiDataSize}, Width: {Width}, Height: {Height}, FPS: {Fps}, Format: {Format}, Range: {Range}, Colorspace: {Colorspace}, Timestamp: {Timestamp}", ObsLogLevel.Debug);
+      // Module.Log($"Video Type: {Type}, Compression: {Compression}, DataSize: {DataSize}, Width: {Width}, Height: {Height}, FPS: {Fps}, Format: {Format}, Range: {Range}, Colorspace: {Colorspace}, Timestamp: {Timestamp}", ObsLogLevel.Debug);
 
       return reader.Position;
     }
@@ -356,7 +352,6 @@ public class Beam
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), (uint)Type); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Compression); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), DataSize); headerBytes += 4;
-      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), QoiDataSize); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Width); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Height); headerBytes += 4;
       for (int i = 0; i < MAX_AV_PLANES; i++)
