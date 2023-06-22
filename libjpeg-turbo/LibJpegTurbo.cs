@@ -1,4 +1,4 @@
-﻿﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
+﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using ClangSharp;
