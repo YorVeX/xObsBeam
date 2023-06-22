@@ -319,7 +319,6 @@ public class BeamReceiver
     fixed (byte* sourceBuf = receivedFrameData, dstBuf = rawDataBuffer)
     {
       var densityResult = Density.density_decompress(sourceBuf, (ulong)dataSize, dstBuf, (ulong)rawDataSize);
-      //BUG: find out why sometimes DENSITY_STATE.DENSITY_STATE_ERROR_OUTPUT_BUFFER_TOO_SMALL occurs
       if (densityResult.state != DENSITY_STATE.DENSITY_STATE_OK)
         Module.Log("Density decompression failed with error " + densityResult.state, ObsLogLevel.Error);
     }
@@ -492,6 +491,8 @@ public class BeamReceiver
                 }
                 EncoderSupport.GetJpegPlaneSizes(videoHeader.Format, (int)videoHeader.Width, (int)videoHeader.Height, out videoPlaneSizes, out _);
               }
+              else if (videoHeader.Compression == Beam.CompressionTypes.Density)
+                rawVideoDataSize = (uint)Density.density_decompress_safe_size(GetRawVideoDataSize(videoHeader));
               else
                 rawVideoDataSize = GetRawVideoDataSize(videoHeader);
 
