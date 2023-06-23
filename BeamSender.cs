@@ -84,11 +84,8 @@ public class BeamSender
 
     // get the plane sizes for the current frame format and size
     _videoPlaneSizes = Beam.GetPlaneSizes(format, info->height, linesize);
-    if (_videoPlaneSizes.Length == 0) // unsupported format
-    {
-      Module.Log($"Error: Unsupported video format {format}.", ObsLogLevel.Error);
+    if (_videoPlaneSizes.Length == 0) // unsupported format, will also be logged by the GetPlaneSizes() function
       return false;
-    }
 
     for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++)
       Module.Log("SetVideoParameters(): linesize[" + i + "] = " + linesize[i], ObsLogLevel.Debug);
