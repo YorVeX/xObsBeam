@@ -376,7 +376,6 @@ public class BeamReceiver
     uint fps = 30;
     uint logCycle = 0;
 
-    int maxVideoDataSize = 0;
     byte[] receivedFrameData = Array.Empty<byte>();
 
     var decoderOptions = new DecoderOptions
@@ -495,13 +494,14 @@ public class BeamReceiver
                 rawVideoDataSize = (uint)Density.density_decompress_safe_size(GetRawVideoDataSize(videoHeader));
               else
                 rawVideoDataSize = GetRawVideoDataSize(videoHeader);
+              if (rawVideoDataSize == 0) // unsupported format
+                break;
 
-              maxVideoDataSize = (int)(videoHeader.Width * videoHeader.Height * 4);
               receivedFrameData = new byte[rawVideoDataSize];
-              RawDataBufferPool = ArrayPool<byte>.Create(maxVideoDataSize, 2);
+              RawDataBufferPool = ArrayPool<byte>.Create((int)rawVideoDataSize, 2);
             }
 
-            var rawDataBuffer = RawDataBufferPool.Rent(maxVideoDataSize);
+            var rawDataBuffer = RawDataBufferPool.Rent((int)rawVideoDataSize);
             if (videoHeader.Compression == Beam.CompressionTypes.None)
               readResult.Buffer.Slice(0, videoHeader.DataSize).CopyTo(rawDataBuffer);
             else
@@ -511,12 +511,12 @@ public class BeamReceiver
               switch (videoHeader.Compression)
               {
                 case Beam.CompressionTypes.Lz4:
-                  int decompressedSizeLz4 = LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, rawDataBuffer, 0, maxVideoDataSize);
+                  int decompressedSizeLz4 = LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, rawDataBuffer, 0, (int)rawVideoDataSize);
                   if (decompressedSizeLz4 != rawVideoDataSize)
                     Module.Log($"LZ4 decompression failed, expected {rawVideoDataSize} bytes, got {decompressedSizeLz4} bytes.", ObsLogLevel.Error);
                   break;
                 case Beam.CompressionTypes.Qoi:
-                  Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, maxVideoDataSize);
+                  Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
                   break;
                 case Beam.CompressionTypes.Qoir:
                   QoirDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
@@ -525,10 +525,10 @@ public class BeamReceiver
                   DensityDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
                   break;
                 case Beam.CompressionTypes.JpegLossy:
-                  TurboJpegDecompressToYuv(receivedFrameData, maxVideoDataSize, rawDataBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
+                  TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
                   break;
                 case Beam.CompressionTypes.JpegLossless:
-                  TurboJpegDecompressToBgra(receivedFrameData, maxVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
+                  TurboJpegDecompressToBgra(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
                   break;
                 case Beam.CompressionTypes.Png:
                   try
