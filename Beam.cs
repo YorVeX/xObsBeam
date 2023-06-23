@@ -90,6 +90,12 @@ public class Beam
         planeSizes[0] = (linesize[0] * height);
         planeSizes[1] = (linesize[1] * halfHeight);
         return planeSizes;
+      case video_format.VIDEO_FORMAT_P216:
+      case video_format.VIDEO_FORMAT_P416:
+        planeSizes = new uint[2];
+        planeSizes[0] = (linesize[0] * height);
+        planeSizes[1] = (linesize[1] * height);
+        return planeSizes;
       case video_format.VIDEO_FORMAT_I444:
       case video_format.VIDEO_FORMAT_I422:
       case video_format.VIDEO_FORMAT_I210:
@@ -109,7 +115,7 @@ public class Beam
       case video_format.VIDEO_FORMAT_Y800:
       case video_format.VIDEO_FORMAT_BGR3:
       case video_format.VIDEO_FORMAT_AYUV:
-        // case video_format.VIDEO_FORMAT_V210: // OBS 29.1.X+
+      case video_format.VIDEO_FORMAT_V210:
         planeSizes = new uint[1];
         planeSizes[0] = (linesize[0] * height);
         return planeSizes;

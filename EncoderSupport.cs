@@ -166,10 +166,9 @@ public static class EncoderSupport
       case video_format.VIDEO_FORMAT_AYUV:
       case video_format.VIDEO_FORMAT_I010:
       case video_format.VIDEO_FORMAT_P010:
-        // OBS 29.1.X+
-        // case video_format.VIDEO_FORMAT_P216:
-        // case video_format.VIDEO_FORMAT_P416:
-        // case video_format.VIDEO_FORMAT_V210:
+      case video_format.VIDEO_FORMAT_P216:
+      case video_format.VIDEO_FORMAT_P416:
+      case video_format.VIDEO_FORMAT_V210:
         return true;
       case video_format.VIDEO_FORMAT_NONE:
       case video_format.VIDEO_FORMAT_RGBA:
@@ -196,10 +195,9 @@ public static class EncoderSupport
       case video_format.VIDEO_FORMAT_YUY2:
       case video_format.VIDEO_FORMAT_UYVY:
       case video_format.VIDEO_FORMAT_AYUV:
-        // OBS 29.1.X+
-        // case video_format.VIDEO_FORMAT_P216:
-        // case video_format.VIDEO_FORMAT_P416:
-        // case video_format.VIDEO_FORMAT_V210:
+      case video_format.VIDEO_FORMAT_P216:
+      case video_format.VIDEO_FORMAT_P416:
+      case video_format.VIDEO_FORMAT_V210:
         return true;
       default:
         return false;
@@ -224,15 +222,15 @@ public static class EncoderSupport
       case video_format.VIDEO_FORMAT_YUY2:
       case video_format.VIDEO_FORMAT_UYVY:
       case video_format.VIDEO_FORMAT_I210:
-        // case video_format.VIDEO_FORMAT_P216: // OBS 29.1.X+
-        // case video_format.VIDEO_FORMAT_V210: // OBS 29.1.X+
+      case video_format.VIDEO_FORMAT_P216:
+      case video_format.VIDEO_FORMAT_V210:
         return TJSAMP.TJSAMP_422;
       case video_format.VIDEO_FORMAT_I412:
       case video_format.VIDEO_FORMAT_I444:
       case video_format.VIDEO_FORMAT_AYUV:
       case video_format.VIDEO_FORMAT_YUVA:
       case video_format.VIDEO_FORMAT_YA2L:
-        // case video_format.VIDEO_FORMAT_P416: // OBS 29.1.X+
+      case video_format.VIDEO_FORMAT_P416:
         return TJSAMP.TJSAMP_444;
       case video_format.VIDEO_FORMAT_NONE:
       case video_format.VIDEO_FORMAT_RGBA:
