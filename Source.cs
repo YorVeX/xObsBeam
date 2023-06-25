@@ -240,6 +240,8 @@ public class Source
       propertyConnectionTypeSocketId = "connection_type_socket"u8,
       propertyConnectionTypeSocketCaption = Module.ObsText("ConnectionTypeSocketCaption"),
       propertyConnectionTypeSocketText = Module.ObsText("ConnectionTypeSocketText"),
+      propertyDiscoveredPeersListId = "discovered_peers_list"u8,
+      propertyDiscoveredPeersListCaption = Module.ObsText("DiscoveredPeersListCaption"),
       propertyNetworkInterfaceListId = "network_interface_list"u8,
       propertyNetworkInterfaceListCaption = Module.ObsText("NetworkInterfaceListCaption"),
       propertyNetworkInterfaceListText = Module.ObsText("NetworkInterfaceListText")
@@ -265,6 +267,30 @@ public class Source
       var connectionTypeSocketProperty = ObsProperties.obs_properties_add_bool(connectionTypePropertyGroup, (sbyte*)propertyConnectionTypeSocketId, (sbyte*)propertyConnectionTypeSocketCaption);
       ObsProperties.obs_property_set_long_description(connectionTypeSocketProperty, (sbyte*)propertyConnectionTypeSocketText);
       ObsProperties.obs_property_set_modified_callback(connectionTypeSocketProperty, &ConnectionTypeSocketChangedEventHandler);
+
+      // discovered peers list
+      var discoveredPeersList = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyDiscoveredPeersListId, (sbyte*)propertyDiscoveredPeersListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
+      ObsProperties.obs_property_set_modified_callback(discoveredPeersList, &DiscoveredPeersListChangedEventHandler);
+      //TODO: do the list filling asynchronously if possible
+      var discoveredPeers = PeerDiscovery.Discover().Result;
+      if (discoveredPeers.Count == 0)
+      {
+        fixed (byte* noPeersListItem = "No peers found"u8)
+          ObsProperties.obs_property_list_add_string(discoveredPeersList, (sbyte*)noPeersListItem, (sbyte*)noPeersListItem);
+      }
+      else
+      {
+        foreach (var peer in discoveredPeers)
+        {
+          fixed (byte*
+            peerListItemName = Encoding.UTF8.GetBytes($"{peer.Identifier} [{peer.Type}] / {peer.IP}:{peer.Port}"),
+            peerListItemAddress = Encoding.UTF8.GetBytes($"{peer.IP}:{peer.Port}")
+          )
+          {
+            ObsProperties.obs_property_list_add_string(discoveredPeersList, (sbyte*)peerListItemName, (sbyte*)peerListItemAddress);
+          }
+        }
+      }
 
       // network interface selection
       var networkInterfacesList = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyNetworkInterfaceListId, (sbyte*)propertyNetworkInterfaceListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
@@ -391,6 +417,26 @@ public class Source
       ConnectionTypeChanged(connectionTypePipe, properties);
       return Convert.ToByte(true);
     }
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte DiscoveredPeersListChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte*
+      propertyDiscoveredPeersListId = "discovered_peers_list"u8,
+      propertyTargetHostId = "host"u8,
+      propertyTargetPortId = "port"u8
+    )
+    {
+      string discoveredPeersListSelection = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyDiscoveredPeersListId))!;
+      if (string.IsNullOrEmpty(discoveredPeersListSelection))
+        return Convert.ToByte(false);
+      var discoveredPeersListSelectionSplit = discoveredPeersListSelection.Split(':', StringSplitOptions.None);
+      fixed (byte* propertyTargetHostText = Encoding.UTF8.GetBytes(discoveredPeersListSelectionSplit[0]))
+        ObsData.obs_data_set_string(settings, (sbyte*)propertyTargetHostId, (sbyte*)propertyTargetHostText);
+      ObsData.obs_data_set_int(settings, (sbyte*)propertyTargetPortId, Convert.ToInt32(discoveredPeersListSelectionSplit[1]));
+    }
+    return Convert.ToByte(true);
   }
 
   private static unsafe void ConnectionTypeChanged(bool connectionTypePipe, obs_properties* properties)

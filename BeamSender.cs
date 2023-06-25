@@ -54,6 +54,7 @@ public class BeamSender
   bool _compressionThreadingSync = true;
   unsafe qoir_encode_options_struct* _qoirEncodeOptions = null;
   unsafe FPNGEOptions* _fpngeOptions = null;
+  readonly PeerDiscovery _discoveryServer = new();
 
   public unsafe bool SetVideoParameters(video_output_info* info, video_format conversionVideoFormat, uint* linesize, video_data._data_e__FixedBuffer data)
   {
@@ -252,6 +253,7 @@ public class BeamSender
 
     _listener = new TcpListener(localAddr, port);
     _listener.Start();
+    _discoveryServer.StartServer(localAddr, port, "Output", identifier);
 
     Module.Log($"Listening on {localAddr}:{port}.", ObsLogLevel.Info);
 
@@ -372,6 +374,7 @@ public class BeamSender
         client.Disconnect(); // this will block for up to 1000 ms per client to try and get a clean disconnect
       _videoDataSize = 0;
       _audioDataSize = 0;
+      _discoveryServer.StopServer();
 
       Module.Log($"Stopped BeamSender.", ObsLogLevel.Debug);
     }
