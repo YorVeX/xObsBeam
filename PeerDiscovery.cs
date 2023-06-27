@@ -10,10 +10,23 @@ namespace xObsBeam;
 
 public class PeerDiscovery
 {
+  public enum ServiceTypes
+  {
+    Output,
+    Filter,
+  }
+
+  public enum ConnectionTypes
+  {
+    Pipe,
+    Socket,
+  }
+
   public struct Peer
   {
     public string Identifier;
-    public string Type;
+    public ServiceTypes ServiceType;
+    public ConnectionTypes ConnectionType;
     public string IP;
     public int Port;
   }
@@ -29,7 +42,7 @@ public class PeerDiscovery
   bool _udpIsListening;
   IPAddress _serviceAddress = IPAddress.Any;
 
-  public void StartServer(IPAddress serviceAddress, int servicePort, string serviceType, string serviceIdentifier)
+  public void StartServer(IPAddress serviceAddress, int servicePort, ServiceTypes serviceType, ConnectionTypes connectionType, string serviceIdentifier)
   {
     _serviceAddress = serviceAddress;
     Module.Log("Peer Discovery server: Starting...", ObsLogLevel.Debug);
@@ -37,7 +50,8 @@ public class PeerDiscovery
       StopServer();
     _serverPeer.IP = _serviceAddress.ToString();
     _serverPeer.Port = servicePort;
-    _serverPeer.Type = serviceType;
+    _serverPeer.ServiceType = serviceType;
+    _serverPeer.ConnectionType = connectionType;
     _serverPeer.Identifier = serviceIdentifier;
 
     _udpServer = new UdpClient();
@@ -45,7 +59,7 @@ public class PeerDiscovery
     _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
     _udpIsListening = true;
     _udpServer.BeginReceive(ServerReceiveCallback, null);
-    Module.Log("Peer Discovery server: Entered receive loop.", ObsLogLevel.Debug);
+    Module.Log("Peer Discovery server: Started and entered receive loop.", ObsLogLevel.Debug);
   }
 
   public void StopServer()
@@ -55,11 +69,11 @@ public class PeerDiscovery
     _udpIsListening = false;
     _udpServer.Close();
     _udpServer.Dispose();
+    Module.Log("Peer Discovery server: Stopped.", ObsLogLevel.Debug);
   }
 
   private void ServerReceiveCallback(IAsyncResult ar)
   {
-    Module.Log("Peer Discovery server: ServerReceiveCallback", ObsLogLevel.Debug);
     try
     {
       if (!_udpIsListening)
@@ -79,7 +93,7 @@ public class PeerDiscovery
           if ((_serviceAddress != IPAddress.Any) && (_serviceAddress.ToString() != networkInterface.Address.ToString()))
             continue;
 
-          string responseMessage = MulticastPrefix + StringSeparator + "Service" + StringSeparator + networkInterface.Address.ToString() + StringSeparator + _serverPeer.Port + StringSeparator + _serverPeer.Type.Replace(StringSeparator, StringSeparatorReplacement) + StringSeparator + _serverPeer.Identifier.Replace(StringSeparator, StringSeparatorReplacement);
+          string responseMessage = MulticastPrefix + StringSeparator + "Service" + StringSeparator + networkInterface.Address.ToString() + StringSeparator + _serverPeer.Port + StringSeparator + _serverPeer.ServiceType + StringSeparator + _serverPeer.ConnectionType + StringSeparator + _serverPeer.Identifier.Replace(StringSeparator, StringSeparatorReplacement);
           var responseBytes = Encoding.UTF8.GetBytes(responseMessage);
           _udpServer.Send(responseBytes, responseBytes.Length, senderEndPoint);
         }
@@ -128,17 +142,22 @@ public class PeerDiscovery
           try
           {
             var peerStrings = responseString.Split(StringSeparator, StringSplitOptions.TrimEntries);
-            if ((peerStrings.Length != 6) || (peerStrings[0] != MulticastPrefix) || (peerStrings[1] != "Service"))
+            if ((peerStrings.Length != 7) || (peerStrings[0] != MulticastPrefix) || (peerStrings[1] != "Service"))
+              continue;
+            if (!Enum.TryParse(peerStrings[4], out ServiceTypes serviceType))
+              continue;
+            if (!Enum.TryParse(peerStrings[5], out ConnectionTypes connectionType))
               continue;
             var peer = new Peer
             {
               IP = peerStrings[2],
               Port = Convert.ToInt32(peerStrings[3]),
-              Type = peerStrings[4],
-              Identifier = peerStrings[5]
+              ServiceType = serviceType,
+              ConnectionType = connectionType,
+              Identifier = peerStrings[6]
             };
             peers.Add(peer);
-            Module.Log($"Peer Discovery client: found {peer.Type} peer \"{peer.Identifier}\" at {peer.IP}:{peer.Port}.", ObsLogLevel.Debug);
+            Module.Log($"Peer Discovery client: found {peer.ServiceType} peer \"{peer.Identifier}\" at {peer.IP}:{peer.Port}.", ObsLogLevel.Debug);
           }
           catch (Exception ex)
           {

@@ -253,7 +253,7 @@ public class BeamSender
 
     _listener = new TcpListener(localAddr, port);
     _listener.Start();
-    _discoveryServer.StartServer(localAddr, port, "Output", identifier);
+    _discoveryServer.StartServer(localAddr, port, PeerDiscovery.ServiceTypes.Output, PeerDiscovery.ConnectionTypes.Socket, identifier);
 
     Module.Log($"Listening on {localAddr}:{port}.", ObsLogLevel.Info);
 

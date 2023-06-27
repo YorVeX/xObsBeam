@@ -271,8 +271,9 @@ public class Source
       // discovered peers list
       var discoveredPeersList = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyDiscoveredPeersListId, (sbyte*)propertyDiscoveredPeersListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
       ObsProperties.obs_property_set_modified_callback(discoveredPeersList, &DiscoveredPeersListChangedEventHandler);
-      //TODO: do the list filling asynchronously if possible
+      //TODO: PeerDiscovery: do the list filling asynchronously if possible
       var discoveredPeers = PeerDiscovery.Discover().Result;
+      //TODO: PeerDiscovery: fill 2 separate lists for pipes and sockets and make only one visible depending on the selected connection type
       if (discoveredPeers.Count == 0)
       {
         fixed (byte* noPeersListItem = "No peers found"u8)
@@ -283,7 +284,7 @@ public class Source
         foreach (var peer in discoveredPeers)
         {
           fixed (byte*
-            peerListItemName = Encoding.UTF8.GetBytes($"{peer.Identifier} [{peer.Type}] / {peer.IP}:{peer.Port}"),
+            peerListItemName = Encoding.UTF8.GetBytes($"{peer.Identifier} [{peer.ServiceType}] / {peer.IP}:{peer.Port}"),
             peerListItemAddress = Encoding.UTF8.GetBytes($"{peer.IP}:{peer.Port}")
           )
           {
