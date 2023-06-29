@@ -109,7 +109,10 @@ public class Source
       propertyTargetHostId = "host"u8,
       propertyTargetPipeNameId = "pipe_name"u8,
       propertyTargetPortId = "port"u8,
-      propertyConnectionTypePipeId = "connection_type_pipe"u8
+      propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyManualConnectionSettingsId = "manual_connection_settings"u8,
+      propertyPeerDiscoveryAvailablePipeFeedsId = "available_pipe_feeds_list"u8,
+      propertyPeerDiscoveryAvailableSocketFeedsId = "available_socket_feeds_list"u8
     )
     {
       BeamReceiver.FrameBufferTimeMs = (int)ObsData.obs_data_get_int(settings, (sbyte*)propertyFrameBufferTimeId);
@@ -126,24 +129,135 @@ public class Source
       context->Audio->frames = 0;
       Obs.obs_source_output_audio(context->Source, context->Audio);
 
+      var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
       var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
       if (connectionTypePipe)
       {
-        string targetPipeName = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyTargetPipeNameId))!;
+        string targetPipeName = "";
+        if (useManualConnectionSettings)
+          targetPipeName = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyTargetPipeNameId))!;
+        else
+        {
+          string availableFeedsListSelection = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailablePipeFeedsId))!;
+          if (string.IsNullOrEmpty(availableFeedsListSelection) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
+          {
+            Module.Log("No feed selected to connect to.", ObsLogLevel.Error);
+            return;
+          }
+          targetPipeName = availableFeedsListSelection;
+        }
         if (string.IsNullOrEmpty(targetPipeName))
           targetPipeName = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_default_string(settings, (sbyte*)propertyTargetPipeNameId))!;
         BeamReceiver.Connect(targetPipeName);
       }
       else
       {
-        string targetHost = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyTargetHostId))!;
-        if (string.IsNullOrEmpty(targetHost) || targetHost == ".")
+        string targetHost = "";
+        int targetPort = 0;
+        if (useManualConnectionSettings)
+        {
+          targetHost = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyTargetHostId))!;
+          targetPort = (int)ObsData.obs_data_get_int(settings, (sbyte*)propertyTargetPortId);
+        }
+        else
+        {
+          string availableFeedsListSelection = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailableSocketFeedsId))!;
+          if (string.IsNullOrEmpty(availableFeedsListSelection) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
+          {
+            Module.Log("No feed selected to connect to.", ObsLogLevel.Error);
+            return;
+          }
+          var availableFeedsListSelectionIdentiferSplit = availableFeedsListSelection.Split(PeerDiscovery.StringSeparator, StringSplitOptions.TrimEntries);
+          if (availableFeedsListSelectionIdentiferSplit.Length == 3)
+          {
+            var availableFeedsListSelectionHostPortSplit = availableFeedsListSelectionIdentiferSplit[2].Split(':', StringSplitOptions.TrimEntries);
+            if (availableFeedsListSelectionHostPortSplit.Length == 2)
+            {
+              // do a fresh discovery based on the Beam identifier and the network interface ID, so that it also works when the IP address or port have changed
+              var discoveredPeers = PeerDiscovery.Discover(availableFeedsListSelectionIdentiferSplit[0], availableFeedsListSelectionIdentiferSplit[1]).Result;
+              if (discoveredPeers.Count > 0)
+              {
+                targetHost = discoveredPeers[0].IP;
+                targetPort = discoveredPeers[0].Port;
+              }
+              else // if discovery failed, use the last known address information
+              {
+                targetHost = availableFeedsListSelectionHostPortSplit[0];
+                targetPort = Convert.ToInt32(availableFeedsListSelectionHostPortSplit[1]);
+              }
+            }
+          }
+        }
+        if (string.IsNullOrEmpty(targetHost))
           targetHost = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_default_string(settings, (sbyte*)propertyTargetHostId))!;
-        int targetPort = (int)ObsData.obs_data_get_int(settings, (sbyte*)propertyTargetPortId);
+        if (targetPort == 0)
+          targetPort = (int)ObsData.obs_data_get_default_int(settings, (sbyte*)propertyTargetPortId);
         BeamReceiver.Connect(NetworkInterfaceAddress, targetHost, targetPort);
       }
     }
   }
+
+  private static unsafe void DiscoverFeeds(obs_properties* properties, obs_property* peerDiscoveryAvailablePipeFeedsList, obs_property* peerDiscoveryAvailableSocketFeedsList)
+  {
+    var discoveredPeers = PeerDiscovery.Discover().Result;
+    bool foundPipePeers = false;
+    bool foundSocketPeers = false;
+    bool foundConflicts = false;
+    var pipePeerIdentifiers = new List<string>();
+    var socketPeerIdentifiers = new List<string>();
+    //TODO: Peer Discovery: preserve the currrent selection in these fields and restore them after the lists were populated, use a separate hidden settings field if necessary
+    // also handle the case where an IP address or port has changed but the correct interface is still detected from its InterfaceId, in that case update the selected setting accordingliny
+    ObsProperties.obs_property_list_clear(peerDiscoveryAvailablePipeFeedsList);
+    ObsProperties.obs_property_list_clear(peerDiscoveryAvailableSocketFeedsList);
+    foreach (var peer in discoveredPeers)
+    {
+      fixed (byte*
+        peerListPipeItemName = Encoding.UTF8.GetBytes($"{peer.Identifier} [{peer.ServiceType}]"),
+        peerListPipeItemValue = Encoding.UTF8.GetBytes(peer.Identifier),
+        peerListSocketItemName = Encoding.UTF8.GetBytes($"{peer.Identifier} [{peer.ServiceType}] / {peer.IP}:{peer.Port}"),
+        peerListSocketItemValue = Encoding.UTF8.GetBytes($"{peer.Identifier}{PeerDiscovery.StringSeparator}{peer.InterfaceId}{PeerDiscovery.StringSeparator}{peer.IP}:{peer.Port}")
+      )
+      {
+        if (peer.ConnectionType == PeerDiscovery.ConnectionTypes.Pipe)
+        {
+          foundPipePeers = true;
+          ObsProperties.obs_property_list_add_string(peerDiscoveryAvailablePipeFeedsList, (sbyte*)peerListPipeItemName, (sbyte*)peerListPipeItemValue);
+          if (pipePeerIdentifiers.Contains(peer.Identifier))
+            foundConflicts = true;
+          else
+            socketPeerIdentifiers.Add(peer.Identifier);
+        }
+        else if (peer.ConnectionType == PeerDiscovery.ConnectionTypes.Socket)
+        {
+          foundSocketPeers = true;
+          ObsProperties.obs_property_list_add_string(peerDiscoveryAvailableSocketFeedsList, (sbyte*)peerListSocketItemName, (sbyte*)peerListSocketItemValue);
+          if (socketPeerIdentifiers.Contains(peer.Identifier))
+            foundConflicts = true;
+          else
+            pipePeerIdentifiers.Add(peer.Identifier);
+        }
+      }
+    }
+    fixed (byte*
+      noFeedsListItem = Module.ObsText("PeerDiscoveryNoFeedsFoundText"),
+      noFeedSelectedListItem = Module.ObsText("PeerDiscoveryNoFeedSelectedText"),
+      propertyPeerDiscoveryIdentifierConflictWarningid = "identifier_conflict_warning"u8
+    )
+    {
+      var peerDiscoveryIdentifierConflictWarningProperty = ObsProperties.obs_properties_get(properties, (sbyte*)propertyPeerDiscoveryIdentifierConflictWarningid);
+      ObsProperties.obs_property_set_visible(peerDiscoveryIdentifierConflictWarningProperty, Convert.ToByte(foundConflicts));
+
+      if (foundPipePeers)
+        ObsProperties.obs_property_list_insert_string(peerDiscoveryAvailablePipeFeedsList, 0, (sbyte*)noFeedSelectedListItem, (sbyte*)noFeedSelectedListItem);
+      else
+        ObsProperties.obs_property_list_add_string(peerDiscoveryAvailablePipeFeedsList, (sbyte*)noFeedsListItem, (sbyte*)noFeedsListItem);
+      if (foundSocketPeers)
+        ObsProperties.obs_property_list_insert_string(peerDiscoveryAvailableSocketFeedsList, 0, (sbyte*)noFeedSelectedListItem, (sbyte*)noFeedSelectedListItem);
+      else
+        ObsProperties.obs_property_list_add_string(peerDiscoveryAvailableSocketFeedsList, (sbyte*)noFeedsListItem, (sbyte*)noFeedsListItem);
+    }
+  }
+
   #endregion Helper methods
 
   #region Source API methods
@@ -240,8 +354,15 @@ public class Source
       propertyConnectionTypeSocketId = "connection_type_socket"u8,
       propertyConnectionTypeSocketCaption = Module.ObsText("ConnectionTypeSocketCaption"),
       propertyConnectionTypeSocketText = Module.ObsText("ConnectionTypeSocketText"),
-      propertyDiscoveredPeersListId = "discovered_peers_list"u8,
-      propertyDiscoveredPeersListCaption = Module.ObsText("DiscoveredPeersListCaption"),
+      propertyPeerDiscoveryAvailablePipeFeedsId = "available_pipe_feeds_list"u8,
+      propertyPeerDiscoveryAvailableSocketFeedsId = "available_socket_feeds_list"u8,
+      propertyPeerDiscoveryAvailableFeedsCaption = Module.ObsText("PeerDiscoveryAvailableFeedsCaption"),
+      propertyPeerDiscoveryAvailableFeedsText = Module.ObsText("PeerDiscoveryAvailableFeedsText"),
+      propertyPeerDiscoveryIdentifierConflictWarningid = "identifier_conflict_warning"u8,
+      propertyPeerDiscoveryIdentifierConflictWarningText = Module.ObsText("PeerDiscoveryIdentifierConflictWarningText"),
+      propertyManualConnectionSettingsId = "manual_connection_settings"u8,
+      propertyManualConnectionSettingsText = Module.ObsText("ManualConnectionSettingsText"),
+      propertyManualConnectionSettingsCaption = Module.ObsText("ManualConnectionSettingsCaption"),
       propertyNetworkInterfaceListId = "network_interface_list"u8,
       propertyNetworkInterfaceListCaption = Module.ObsText("NetworkInterfaceListCaption"),
       propertyNetworkInterfaceListText = Module.ObsText("NetworkInterfaceListText")
@@ -268,30 +389,19 @@ public class Source
       ObsProperties.obs_property_set_long_description(connectionTypeSocketProperty, (sbyte*)propertyConnectionTypeSocketText);
       ObsProperties.obs_property_set_modified_callback(connectionTypeSocketProperty, &ConnectionTypeSocketChangedEventHandler);
 
-      // discovered peers list
-      var discoveredPeersList = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyDiscoveredPeersListId, (sbyte*)propertyDiscoveredPeersListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
-      ObsProperties.obs_property_set_modified_callback(discoveredPeersList, &DiscoveredPeersListChangedEventHandler);
+      // discovered peer feeds lists
+      var peerDiscoveryAvailablePipeFeedsList = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyPeerDiscoveryAvailablePipeFeedsId, (sbyte*)propertyPeerDiscoveryAvailableFeedsCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
+      var peerDiscoveryAvailableSocketFeedsList = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyPeerDiscoveryAvailableSocketFeedsId, (sbyte*)propertyPeerDiscoveryAvailableFeedsCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
+      ObsProperties.obs_property_set_long_description(peerDiscoveryAvailablePipeFeedsList, (sbyte*)propertyPeerDiscoveryAvailableFeedsText);
+      ObsProperties.obs_property_set_long_description(peerDiscoveryAvailableSocketFeedsList, (sbyte*)propertyPeerDiscoveryAvailableFeedsText);
+      ObsProperties.obs_property_set_modified_callback(peerDiscoveryAvailablePipeFeedsList, &PeerDiscoveryAvailablePipeFeedsListChangedEventHandler);
+      ObsProperties.obs_property_set_modified_callback(peerDiscoveryAvailableSocketFeedsList, &PeerDiscoveryAvailableSocketFeedsListChangedEventHandler);
       //TODO: PeerDiscovery: do the list filling asynchronously if possible
-      var discoveredPeers = PeerDiscovery.Discover().Result;
-      //TODO: PeerDiscovery: fill 2 separate lists for pipes and sockets and make only one visible depending on the selected connection type
-      if (discoveredPeers.Count == 0)
-      {
-        fixed (byte* noPeersListItem = "No peers found"u8)
-          ObsProperties.obs_property_list_add_string(discoveredPeersList, (sbyte*)noPeersListItem, (sbyte*)noPeersListItem);
-      }
-      else
-      {
-        foreach (var peer in discoveredPeers)
-        {
-          fixed (byte*
-            peerListItemName = Encoding.UTF8.GetBytes($"{peer.Identifier} [{peer.ServiceType}] / {peer.IP}:{peer.Port}"),
-            peerListItemAddress = Encoding.UTF8.GetBytes($"{peer.IP}:{peer.Port}")
-          )
-          {
-            ObsProperties.obs_property_list_add_string(discoveredPeersList, (sbyte*)peerListItemName, (sbyte*)peerListItemAddress);
-          }
-        }
-      }
+      DiscoverFeeds(properties, peerDiscoveryAvailablePipeFeedsList, peerDiscoveryAvailableSocketFeedsList);
+
+      // warning message shown when there is a conflict with peer identifier names
+      var peerDiscoveryIdentifierConflictWarning = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyPeerDiscoveryIdentifierConflictWarningid, (sbyte*)propertyPeerDiscoveryIdentifierConflictWarningText, obs_text_type.OBS_TEXT_INFO);
+      ObsProperties.obs_property_text_set_info_type(peerDiscoveryIdentifierConflictWarning, obs_text_info_type.OBS_TEXT_INFO_WARNING);
 
       // network interface selection
       var networkInterfacesList = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyNetworkInterfaceListId, (sbyte*)propertyNetworkInterfaceListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
@@ -313,6 +423,11 @@ public class Source
           }
         }
       }
+
+      // manual connection settings checkbox
+      var manualConnectionSettingsProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyManualConnectionSettingsId, (sbyte*)propertyManualConnectionSettingsCaption);
+      ObsProperties.obs_property_set_long_description(manualConnectionSettingsProperty, (sbyte*)propertyManualConnectionSettingsText);
+      ObsProperties.obs_property_set_modified_callback(manualConnectionSettingsProperty, &ManualConnectionSettingsChangedEventHandler);
 
       // target socket/pipe server address
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyTargetHostId, (sbyte*)propertyTargetHostCaption, obs_text_type.OBS_TEXT_DEFAULT), (sbyte*)propertyTargetHostText);
@@ -398,12 +513,14 @@ public class Source
   {
     fixed (byte*
       propertyConnectionTypePipeId = "connection_type_pipe"u8,
-      propertyConnectionTypeSocketId = "connection_type_socket"u8
+      propertyConnectionTypeSocketId = "connection_type_socket"u8,
+      propertyManualConnectionSettingsId = "manual_connection_settings"u8
     )
     {
       var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
       ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(!connectionTypePipe));
-      ConnectionTypeChanged(connectionTypePipe, properties);
+      var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
+      ConnectionTypeChanged(connectionTypePipe, useManualConnectionSettings, properties);
       return Convert.ToByte(true);
     }
   }
@@ -411,48 +528,109 @@ public class Source
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte ConnectionTypeSocketChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
-    fixed (byte* propertyConnectionTypePipeId = "connection_type_pipe"u8, propertyConnectionTypeSocketId = "connection_type_socket"u8)
+    fixed (byte*
+      propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyConnectionTypeSocketId = "connection_type_socket"u8,
+      propertyManualConnectionSettingsId = "manual_connection_settings"u8
+    )
     {
       var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
       ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(connectionTypePipe));
-      ConnectionTypeChanged(connectionTypePipe, properties);
+      var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
+      ConnectionTypeChanged(connectionTypePipe, useManualConnectionSettings, properties);
       return Convert.ToByte(true);
     }
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-  public static unsafe byte DiscoveredPeersListChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  public static unsafe byte PeerDiscoveryAvailablePipeFeedsListChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
-      propertyDiscoveredPeersListId = "discovered_peers_list"u8,
-      propertyTargetHostId = "host"u8,
-      propertyTargetPortId = "port"u8
+      propertyManualConnectionSettingsId = "manual_connection_settings"u8,
+      propertyPeerDiscoveryAvailableFeedsId = "available_pipe_feeds_list"u8,
+      propertyTargetPipeNameId = "pipe_name"u8
     )
     {
-      string discoveredPeersListSelection = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyDiscoveredPeersListId))!;
-      if (string.IsNullOrEmpty(discoveredPeersListSelection))
+      // if not in manual mode only this list is relevant, don't overwrite the data in the manual fields
+      var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
+      if (!useManualConnectionSettings)
         return Convert.ToByte(false);
-      var discoveredPeersListSelectionSplit = discoveredPeersListSelection.Split(':', StringSplitOptions.None);
-      fixed (byte* propertyTargetHostText = Encoding.UTF8.GetBytes(discoveredPeersListSelectionSplit[0]))
-        ObsData.obs_data_set_string(settings, (sbyte*)propertyTargetHostId, (sbyte*)propertyTargetHostText);
-      ObsData.obs_data_set_int(settings, (sbyte*)propertyTargetPortId, Convert.ToInt32(discoveredPeersListSelectionSplit[1]));
+
+      // if in manual mode this list is a helper to fill the manual fields
+      string availableFeedsListSelection = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailableFeedsId))!;
+      if (string.IsNullOrEmpty(availableFeedsListSelection) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
+        return Convert.ToByte(false);
+      fixed (byte* propertyTargetPipeName = Encoding.UTF8.GetBytes(availableFeedsListSelection))
+        ObsData.obs_data_set_string(settings, (sbyte*)propertyTargetPipeNameId, (sbyte*)propertyTargetPipeName);
     }
     return Convert.ToByte(true);
   }
 
-  private static unsafe void ConnectionTypeChanged(bool connectionTypePipe, obs_properties* properties)
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte PeerDiscoveryAvailableSocketFeedsListChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte*
+      propertyManualConnectionSettingsId = "manual_connection_settings"u8,
+      propertyPeerDiscoveryAvailableFeedsId = "available_socket_feeds_list"u8,
+      propertyTargetHostId = "host"u8,
+      propertyTargetPortId = "port"u8
+    )
+    {
+      // if not in manual mode only this list is relevant, don't overwrite the data in the manual fields
+      var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
+      if (useManualConnectionSettings)
+        return Convert.ToByte(false);
+
+      // if in manual mode this list is a helper to fill the manual fields
+      string availableFeedsListSelection = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailableFeedsId))!;
+      if (string.IsNullOrEmpty(availableFeedsListSelection) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
+        return Convert.ToByte(false);
+      var availableFeedsListSelectionIdentiferSplit = availableFeedsListSelection.Split(PeerDiscovery.StringSeparator, StringSplitOptions.TrimEntries);
+      if (availableFeedsListSelectionIdentiferSplit.Length != 3)
+        return Convert.ToByte(false);
+      var availableFeedsListSelectionHostPortSplit = availableFeedsListSelectionIdentiferSplit[2].Split(':', StringSplitOptions.TrimEntries);
+      if (availableFeedsListSelectionHostPortSplit.Length != 2)
+        return Convert.ToByte(false);
+      fixed (byte* propertyTargetHostText = Encoding.UTF8.GetBytes(availableFeedsListSelectionHostPortSplit[0]))
+        ObsData.obs_data_set_string(settings, (sbyte*)propertyTargetHostId, (sbyte*)propertyTargetHostText);
+      ObsData.obs_data_set_int(settings, (sbyte*)propertyTargetPortId, Convert.ToInt32(availableFeedsListSelectionHostPortSplit[1]));
+    }
+    return Convert.ToByte(true);
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte ManualConnectionSettingsChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte*
+      propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyManualConnectionSettingsId = "manual_connection_settings"u8,
+      propertyDiscoveredPeersListId = "discovered_peers_list"u8
+    )
+    {
+      var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
+      var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
+      ConnectionTypeChanged(connectionTypePipe, useManualConnectionSettings, properties);
+    }
+    return Convert.ToByte(true);
+  }
+
+  private static unsafe void ConnectionTypeChanged(bool connectionTypePipe, bool useManualConnectionSettings, obs_properties* properties)
   {
     fixed (byte*
       propertyTargetHostId = "host"u8,
       propertyTargetPipeNameId = "pipe_name"u8,
       propertyTargetPortId = "port"u8,
-      propertyNetworkInterfaceListId = "network_interface_list"u8
+      propertyNetworkInterfaceListId = "network_interface_list"u8,
+      propertyPeerDiscoveryAvailablePipeFeedsId = "available_pipe_feeds_list"u8,
+      propertyPeerDiscoveryAvailableSocketFeedsId = "available_socket_feeds_list"u8
     )
     {
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetHostId), Convert.ToByte(!connectionTypePipe));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetPipeNameId), Convert.ToByte(connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetHostId), Convert.ToByte(!connectionTypePipe && useManualConnectionSettings));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetPipeNameId), Convert.ToByte(connectionTypePipe && useManualConnectionSettings));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetPortId), Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetPortId), Convert.ToByte(!connectionTypePipe && useManualConnectionSettings));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyPeerDiscoveryAvailablePipeFeedsId), Convert.ToByte(connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyPeerDiscoveryAvailableSocketFeedsId), Convert.ToByte(!connectionTypePipe));
       Module.Log("Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
     }
   }

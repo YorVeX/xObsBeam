@@ -24,6 +24,7 @@ public class PeerDiscovery
 
   public struct Peer
   {
+    public string InterfaceId;
     public string Identifier;
     public ServiceTypes ServiceType;
     public ConnectionTypes ConnectionType;
@@ -34,15 +35,15 @@ public class PeerDiscovery
   const string MulticastPrefix = "BeamDiscovery";
   const string MulticastGroupAddress = "224.0.0.79";
   const int MulticastPort = 13639;
-  const string StringSeparator = "｜";
-  const string StringSeparatorReplacement = "|";
+  public const string StringSeparator = "｜";
+  public const string StringSeparatorReplacement = "|";
 
   UdpClient _udpServer = new();
   Peer _serverPeer;
   bool _udpIsListening;
   IPAddress _serviceAddress = IPAddress.Any;
 
-  public void StartServer(IPAddress serviceAddress, int servicePort, ServiceTypes serviceType, ConnectionTypes connectionType, string serviceIdentifier)
+  public void StartServer(IPAddress serviceAddress, int servicePort, ServiceTypes serviceType, string serviceIdentifier)
   {
     _serviceAddress = serviceAddress;
     Module.Log("Peer Discovery server: Starting...", ObsLogLevel.Debug);
@@ -51,7 +52,27 @@ public class PeerDiscovery
     _serverPeer.IP = _serviceAddress.ToString();
     _serverPeer.Port = servicePort;
     _serverPeer.ServiceType = serviceType;
-    _serverPeer.ConnectionType = connectionType;
+    _serverPeer.ConnectionType = ConnectionTypes.Socket;
+    _serverPeer.Identifier = serviceIdentifier;
+
+    _udpServer = new UdpClient();
+    _udpServer.Client.Bind(new IPEndPoint(IPAddress.Any, MulticastPort));
+    _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
+    _udpIsListening = true;
+    _udpServer.BeginReceive(ServerReceiveCallback, null);
+    Module.Log("Peer Discovery server: Started and entered receive loop.", ObsLogLevel.Debug);
+  }
+
+  public void StartServer(ServiceTypes serviceType, string serviceIdentifier)
+  {
+    _serviceAddress = IPAddress.Loopback;
+    Module.Log("Peer Discovery server: Starting...", ObsLogLevel.Debug);
+    if (_udpIsListening)
+      StopServer();
+    _serverPeer.IP = serviceIdentifier;
+    _serverPeer.Port = 0;
+    _serverPeer.ServiceType = serviceType;
+    _serverPeer.ConnectionType = ConnectionTypes.Pipe;
     _serverPeer.Identifier = serviceIdentifier;
 
     _udpServer = new UdpClient();
@@ -88,12 +109,12 @@ public class PeerDiscovery
       if ((queryItems.Length == 2) && (queryItems[0] == MulticastPrefix) && (queryItems[1] == "Discover"))
       {
         // send a response to the original sender
-        foreach (var networkInterface in GetNetworkInterfaces())
+        foreach (var networkInterface in GetNetworkInterfacesWithIds())
         {
-          if ((_serviceAddress != IPAddress.Any) && (_serviceAddress.ToString() != networkInterface.Address.ToString()))
+          if ((_serviceAddress != IPAddress.Any) && (_serviceAddress.ToString() != networkInterface.Item1.Address.ToString()))
             continue;
 
-          string responseMessage = MulticastPrefix + StringSeparator + "Service" + StringSeparator + networkInterface.Address.ToString() + StringSeparator + _serverPeer.Port + StringSeparator + _serverPeer.ServiceType + StringSeparator + _serverPeer.ConnectionType + StringSeparator + _serverPeer.Identifier.Replace(StringSeparator, StringSeparatorReplacement);
+          string responseMessage = MulticastPrefix + StringSeparator + "Service" + StringSeparator + networkInterface.Item2 + StringSeparator + networkInterface.Item1.Address.ToString() + StringSeparator + _serverPeer.Port + StringSeparator + _serverPeer.ServiceType + StringSeparator + _serverPeer.ConnectionType + StringSeparator + _serverPeer.Identifier.Replace(StringSeparator, StringSeparatorReplacement);
           var responseBytes = Encoding.UTF8.GetBytes(responseMessage);
           _udpServer.Send(responseBytes, responseBytes.Length, senderEndPoint);
         }
@@ -115,9 +136,10 @@ public class PeerDiscovery
     }
   }
 
-  public static async Task<List<Peer>> Discover(int waitTimeMs = 500)
+  public static async Task<List<Peer>> Discover(string identifier = "", string interfaceId = "", int waitTimeMs = 500)
   {
     Module.Log("Peer Discovery client: Starting discovery...", ObsLogLevel.Debug);
+    var peers = new List<Peer>();
     using UdpClient udpClient = new();
 
     // prepare the discovery message
@@ -125,11 +147,20 @@ public class PeerDiscovery
     byte[] data = Encoding.UTF8.GetBytes(message);
 
     // broadcast the discovery message
-    udpClient.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
-    udpClient.Send(data, data.Length, MulticastGroupAddress, MulticastPort);
+    try
+    {
+      udpClient.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
+      udpClient.Send(data, data.Length, MulticastGroupAddress, MulticastPort);
+    }
+    catch (SocketException ex)
+    {
+      Module.Log($"Peer Discovery client: {ex.GetType().Name} while sending discovery request: {ex.Message}", ObsLogLevel.Error);
+      if (ex.StackTrace != null)
+        Module.Log(ex.StackTrace, ObsLogLevel.Debug);
+      return peers;
+    }
 
     // collect responses
-    var peers = new List<Peer>();
     CancellationTokenSource cancelAfterTimeout = new(waitTimeMs);
     await Task.Run(async () =>
     {
@@ -142,21 +173,32 @@ public class PeerDiscovery
           try
           {
             var peerStrings = responseString.Split(StringSeparator, StringSplitOptions.TrimEntries);
-            if ((peerStrings.Length != 7) || (peerStrings[0] != MulticastPrefix) || (peerStrings[1] != "Service"))
+            if ((peerStrings.Length != 8) || (peerStrings[0] != MulticastPrefix) || (peerStrings[1] != "Service"))
               continue;
-            if (!Enum.TryParse(peerStrings[4], out ServiceTypes serviceType))
+            if (!Enum.TryParse(peerStrings[5], out ServiceTypes serviceType))
               continue;
-            if (!Enum.TryParse(peerStrings[5], out ConnectionTypes connectionType))
+            if (!Enum.TryParse(peerStrings[6], out ConnectionTypes connectionType))
               continue;
             var peer = new Peer
             {
-              IP = peerStrings[2],
-              Port = Convert.ToInt32(peerStrings[3]),
+              InterfaceId = peerStrings[2],
+              IP = peerStrings[3],
+              Port = Convert.ToInt32(peerStrings[4]),
               ServiceType = serviceType,
               ConnectionType = connectionType,
-              Identifier = peerStrings[6]
+              Identifier = peerStrings[7]
             };
-            peers.Add(peer);
+            if (identifier != "") // searching for a specific identifier? then don't fill the list with other peers that are not interesting
+            {
+              if ((identifier == peer.Identifier) && (interfaceId == peer.InterfaceId))
+              {
+                Module.Log($"Peer Discovery client: found specific {peer.ServiceType} peer \"{peer.Identifier}\" at {peer.IP}:{peer.Port}.", ObsLogLevel.Debug);
+                peers.Add(peer); // add only this entry to the list...
+                break; // ...and stop the loop
+              }
+            }
+            else
+              peers.Add(peer);
             Module.Log($"Peer Discovery client: found {peer.ServiceType} peer \"{peer.Identifier}\" at {peer.IP}:{peer.Port}.", ObsLogLevel.Debug);
           }
           catch (Exception ex)
@@ -193,6 +235,28 @@ public class PeerDiscovery
         {
           if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
             networkInterfaces.Add(ip);
+        }
+      }
+    }
+    return networkInterfaces;
+  }
+
+  public static List<(UnicastIPAddressInformation, string)> GetNetworkInterfacesWithIds()
+  {
+    var networkInterfaces = new List<(UnicastIPAddressInformation, string)>();
+    foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
+    {
+      if (networkInterface.OperationalStatus == OperationalStatus.Up)
+      {
+        foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
+        {
+          if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
+          {
+            string identifierString = ((networkInterface.NetworkInterfaceType == NetworkInterfaceType.Loopback) ? "localhost" : networkInterface.GetPhysicalAddress().ToString());
+            string hashIdentifier = BitConverter.ToString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(identifierString))).Replace("-", "");
+            networkInterfaces.Add((ip, hashIdentifier));
+            // Module.Log("NIC: " + ip.Address + " / " + identifierString + " / " + hashIdentifier, ObsLogLevel.Debug);
+          }
         }
       }
     }

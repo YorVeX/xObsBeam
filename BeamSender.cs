@@ -253,7 +253,7 @@ public class BeamSender
 
     _listener = new TcpListener(localAddr, port);
     _listener.Start();
-    _discoveryServer.StartServer(localAddr, port, PeerDiscovery.ServiceTypes.Output, PeerDiscovery.ConnectionTypes.Socket, identifier);
+    _discoveryServer.StartServer(localAddr, port, PeerDiscovery.ServiceTypes.Output, identifier);
 
     Module.Log($"Listening on {localAddr}:{port}.", ObsLogLevel.Info);
 
@@ -311,6 +311,7 @@ public class BeamSender
     _pipeName = pipeName;
 
     var pipeStream = new NamedPipeServerStream(_pipeName, PipeDirection.InOut, 10, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+    _discoveryServer.StartServer(PeerDiscovery.ServiceTypes.Output, identifier);
 
     Module.Log($"Listening on {_pipeName}.", ObsLogLevel.Info);
 

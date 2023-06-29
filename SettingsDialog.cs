@@ -372,6 +372,7 @@ public static class SettingsDialog
 
       // identifier configuration text box
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierCaption, obs_text_type.OBS_TEXT_DEFAULT), (sbyte*)propertyIdentifierText);
+      //TODO: Peer Discovery: send a discovery broadcast to check whether this interface name is already in use somewhere, show a warning message if it is
 
       // compression group
       var compressionGroup = ObsProperties.obs_properties_create();
