@@ -205,6 +205,7 @@ public class Source
     var discoveredPeers = PeerDiscovery.Discover().Result;
     bool foundPipePeers = false;
     bool foundSocketPeers = false;
+    bool foundExactPreviousSocketPeer = false;
     bool foundConflicts = false;
     var pipePeerItemValues = new List<string>();
     var socketPeerItemValues = new List<string>();
@@ -220,15 +221,17 @@ public class Source
       // variables needed to restore the previous selection in the lists, even if an updated IP and/or port were detected through discovery
       var previousSocketFeedsListSelectionValue = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailableSocketFeedsId))!;
       var previousSocketFeedsListSelectionItems = previousSocketFeedsListSelectionValue.Split(PeerDiscovery.StringSeparator, StringSplitOptions.TrimEntries);
-      var previousPeerSocketItemUniqueIdentifier = (previousSocketFeedsListSelectionItems.Length >= 2 ? previousSocketFeedsListSelectionItems[0] + PeerDiscovery.StringSeparator + previousSocketFeedsListSelectionItems[1] : "");
+      var previousPeerSocketItemUniqueIdentifier = (previousSocketFeedsListSelectionItems.Length >= 3 ? previousSocketFeedsListSelectionItems[0] + PeerDiscovery.StringSeparator + previousSocketFeedsListSelectionItems[1] : "");
       var newSocketFeedsListSelectionValue = "";
+      var previousSocketFeedsListIpAndPort = previousSocketFeedsListSelectionItems[3].Split(':', StringSplitOptions.TrimEntries);
+      var previousSocketFeedsListSelectionName = (previousSocketFeedsListIpAndPort.Length == 2 ? $"{previousSocketFeedsListSelectionItems[0]} [{previousSocketFeedsListSelectionItems[2]}] / {previousSocketFeedsListIpAndPort[0]}:{previousSocketFeedsListIpAndPort[1]}" : "");
 
       ObsProperties.obs_property_list_clear(peerDiscoveryAvailablePipeFeedsList);
       ObsProperties.obs_property_list_clear(peerDiscoveryAvailableSocketFeedsList);
       foreach (var peer in discoveredPeers)
       {
         var peerSocketItemName = $"{peer.Identifier} [{peer.ServiceType}] / {peer.IP}:{peer.Port}";
-        var peerSocketItemValue = $"{peer.Identifier}{PeerDiscovery.StringSeparator}{peer.InterfaceId}{PeerDiscovery.StringSeparator}{peer.IP}:{peer.Port}";
+        var peerSocketItemValue = $"{peer.Identifier}{PeerDiscovery.StringSeparator}{peer.InterfaceId}{PeerDiscovery.StringSeparator}{peer.ServiceType}{PeerDiscovery.StringSeparator}{peer.IP}:{peer.Port}";
         fixed (byte*
           peerListPipeItemName = Encoding.UTF8.GetBytes($"{peer.Identifier} [{peer.ServiceType}]"),
           peerListPipeItemValue = Encoding.UTF8.GetBytes(peer.Identifier),
@@ -250,6 +253,8 @@ public class Source
           }
           else if (peer.ConnectionType == PeerDiscovery.ConnectionTypes.Socket)
           {
+            if (previousSocketFeedsListSelectionValue == peerSocketItemValue)
+              foundExactPreviousSocketPeer = true;
             string peerSocketItemUniqueIdentifier = $"{peer.Identifier}{PeerDiscovery.StringSeparator}{peer.InterfaceId}";
             if (previousPeerSocketItemUniqueIdentifier == peerSocketItemUniqueIdentifier) // this matches even when IP and/or port have changed, so we can restore the previous selection, but with updated IP/port
               newSocketFeedsListSelectionValue = peerSocketItemValue;
@@ -282,6 +287,15 @@ public class Source
           ObsProperties.obs_property_list_insert_string(peerDiscoveryAvailableSocketFeedsList, 0, (sbyte*)noFeedSelectedListItem, (sbyte*)noFeedSelectedListItem);
         else
           ObsProperties.obs_property_list_add_string(peerDiscoveryAvailableSocketFeedsList, (sbyte*)noFeedsListItem, (sbyte*)noFeedsListItem);
+
+        // was a peer previously configured that wasn't discovered anymore this time?
+        if (!foundExactPreviousSocketPeer && (previousSocketFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) && (previousSocketFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
+        {
+          // then make this transparent by adding this as a disabled list item
+          fixed (byte* previousSocketFeedsListSelectionValueBytes = Encoding.UTF8.GetBytes(previousSocketFeedsListSelectionValue), previousSocketFeedsListSelectionNameBytes = Encoding.UTF8.GetBytes(previousSocketFeedsListSelectionName))
+            ObsProperties.obs_property_list_insert_string(peerDiscoveryAvailableSocketFeedsList, 1, (sbyte*)previousSocketFeedsListSelectionNameBytes, (sbyte*)previousSocketFeedsListSelectionValueBytes);
+          ObsProperties.obs_property_list_item_disable(peerDiscoveryAvailableSocketFeedsList, 1, Convert.ToByte(true));
+        }
 
         // did we find a selection that matches the previous one, but with changed IP and/or port?
         if (foundSocketPeers && (newSocketFeedsListSelectionValue != "") && (newSocketFeedsListSelectionValue != previousSocketFeedsListSelectionValue))
