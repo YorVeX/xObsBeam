@@ -449,6 +449,7 @@ public static class SettingsDialog
       // Density compression options group
       var compressionDensityGroup = ObsProperties.obs_properties_create();
       var compressionDensityGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionDensityId, (sbyte*)propertyCompressionDensityCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionDensityGroup);
+      ObsProperties.obs_property_set_visible(compressionDensityGroupProperty, Convert.ToByte(EncoderSupport.DensityApi));
       ObsProperties.obs_property_set_long_description(compressionDensityGroupProperty, (sbyte*)propertyCompressionDensityText);
       ObsProperties.obs_property_set_modified_callback(compressionDensityGroupProperty, &CompressionSettingChangedEventHandler);
       // Density compression level (skip frames)
