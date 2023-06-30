@@ -45,6 +45,8 @@ public class PeerDiscovery
 
   public void StartServer(IPAddress serviceAddress, int servicePort, ServiceTypes serviceType, string serviceIdentifier)
   {
+    //BUG: something in this new class triggers the sender (server) to cause this after discovery: Unobserved task exception: A Task's exception(s) were not observed either by Waiting on the Task or accessing its Exception property. As a result, the unobserved exception was rethrown by the finalizer thread. (The I/O operation has been aborted because of either a thread exit or an application request.)
+
     _serviceAddress = serviceAddress;
     Module.Log("Peer Discovery server: Starting...", ObsLogLevel.Debug);
     if (_udpIsListening)
