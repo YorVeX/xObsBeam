@@ -167,24 +167,27 @@ public class Source
             Module.Log("No feed selected to connect to.", ObsLogLevel.Error);
             return;
           }
-          var availableFeedsListSelectionIdentiferSplit = availableFeedsListSelection.Split(PeerDiscovery.StringSeparator, StringSplitOptions.TrimEntries);
-          if (availableFeedsListSelectionIdentiferSplit.Length == 4)
+          PeerDiscovery.Peer selectedPeer;
+          try
           {
-            var availableFeedsListSelectionHostPortSplit = availableFeedsListSelectionIdentiferSplit[3].Split(':', StringSplitOptions.TrimEntries);
-            if (availableFeedsListSelectionHostPortSplit.Length == 2)
+            selectedPeer = PeerDiscovery.Peer.FromListItemValue(availableFeedsListSelection);
+          }
+          catch
+          {
+            selectedPeer = default;
+          }
+          if (selectedPeer.Identifier != "")
+          {
+            var discoveredPeers = PeerDiscovery.Discover(selectedPeer.Identifier!, selectedPeer.InterfaceId!).Result;
+            if (discoveredPeers.Count > 0)
             {
-              // do a fresh discovery based on the Beam identifier and the network interface ID, so that it also works when the IP address or port have changed
-              var discoveredPeers = PeerDiscovery.Discover(availableFeedsListSelectionIdentiferSplit[0], availableFeedsListSelectionIdentiferSplit[1]).Result;
-              if (discoveredPeers.Count > 0)
-              {
-                targetHost = discoveredPeers[0].IP;
-                targetPort = discoveredPeers[0].Port;
-              }
-              else // if discovery failed, use the last known address information
-              {
-                targetHost = availableFeedsListSelectionHostPortSplit[0];
-                targetPort = Convert.ToInt32(availableFeedsListSelectionHostPortSplit[1]);
-              }
+              targetHost = discoveredPeers[0].IP;
+              targetPort = discoveredPeers[0].Port;
+            }
+            else // if discovery failed, use the last known address information
+            {
+              targetHost = selectedPeer.IP!;
+              targetPort = selectedPeer.Port;
             }
           }
         }
@@ -220,18 +223,25 @@ public class Source
 
       // variables needed to restore the previous selection in the lists, even if an updated IP and/or port were detected through discovery
       var previousSocketFeedsListSelectionValue = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailableSocketFeedsId))!;
-      var previousSocketFeedsListSelectionItems = previousSocketFeedsListSelectionValue.Split(PeerDiscovery.StringSeparator, StringSplitOptions.TrimEntries);
-      var previousPeerSocketItemUniqueIdentifier = (previousSocketFeedsListSelectionItems.Length >= 4 ? previousSocketFeedsListSelectionItems[0] + PeerDiscovery.StringSeparator + previousSocketFeedsListSelectionItems[1] : "");
+      PeerDiscovery.Peer previousPeer;
+      try
+      {
+        previousPeer = PeerDiscovery.Peer.FromListItemValue(previousSocketFeedsListSelectionValue);
+      }
+      catch
+      {
+        previousPeer = default;
+      }
+      var previousPeerSocketItemUniqueIdentifier = previousPeer.UniqueIdentifier;
+      var previousSocketFeedsListSelectionName = previousPeer.ListItemName;
       var newSocketFeedsListSelectionValue = "";
-      var previousSocketFeedsListIpAndPort = previousSocketFeedsListSelectionItems[3].Split(':', StringSplitOptions.TrimEntries);
-      var previousSocketFeedsListSelectionName = (previousSocketFeedsListIpAndPort.Length == 2 ? $"{previousSocketFeedsListSelectionItems[0]} [{previousSocketFeedsListSelectionItems[2]}] / {previousSocketFeedsListIpAndPort[0]}:{previousSocketFeedsListIpAndPort[1]}" : "");
 
       ObsProperties.obs_property_list_clear(peerDiscoveryAvailablePipeFeedsList);
       ObsProperties.obs_property_list_clear(peerDiscoveryAvailableSocketFeedsList);
       foreach (var peer in discoveredPeers)
       {
-        var peerSocketItemName = $"{peer.Identifier} [{peer.ServiceType}] / {peer.IP}:{peer.Port}";
-        var peerSocketItemValue = $"{peer.Identifier}{PeerDiscovery.StringSeparator}{peer.InterfaceId}{PeerDiscovery.StringSeparator}{peer.ServiceType}{PeerDiscovery.StringSeparator}{peer.IP}:{peer.Port}";
+        var peerSocketItemName = peer.ListItemName;
+        var peerSocketItemValue = peer.ListItemValue;
         fixed (byte*
           peerListPipeItemName = Encoding.UTF8.GetBytes($"{peer.Identifier} [{peer.ServiceType}]"),
           peerListPipeItemValue = Encoding.UTF8.GetBytes(peer.Identifier),
@@ -255,7 +265,7 @@ public class Source
           {
             if (previousSocketFeedsListSelectionValue == peerSocketItemValue)
               foundExactPreviousSocketPeer = true;
-            string peerSocketItemUniqueIdentifier = $"{peer.Identifier}{PeerDiscovery.StringSeparator}{peer.InterfaceId}";
+            string peerSocketItemUniqueIdentifier = peer.UniqueIdentifier;
             if (previousPeerSocketItemUniqueIdentifier == peerSocketItemUniqueIdentifier) // this matches even when IP and/or port have changed, so we can restore the previous selection, but with updated IP/port
               newSocketFeedsListSelectionValue = peerSocketItemValue;
             foundSocketPeers = true;
@@ -643,20 +653,20 @@ public class Source
         return Convert.ToByte(false);
 
       // if in manual mode this list is a helper to fill the manual fields
-      string availableFeedsListSelection = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailableFeedsId))!;
-      if (string.IsNullOrEmpty(availableFeedsListSelection) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
+      PeerDiscovery.Peer selectedPeer;
+      try
+      {
+        selectedPeer = PeerDiscovery.Peer.FromListItemValue(Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailableFeedsId))!);
+      }
+      catch
+      {
         return Convert.ToByte(false);
-      var availableFeedsListSelectionIdentiferSplit = availableFeedsListSelection.Split(PeerDiscovery.StringSeparator, StringSplitOptions.TrimEntries);
-      if (availableFeedsListSelectionIdentiferSplit.Length < 4)
-        return Convert.ToByte(false);
-      var availableFeedsListSelectionHostPortSplit = availableFeedsListSelectionIdentiferSplit[3].Split(':', StringSplitOptions.TrimEntries);
-      if (availableFeedsListSelectionHostPortSplit.Length < 2)
-        return Convert.ToByte(false);
-      fixed (byte* propertyTargetHostText = Encoding.UTF8.GetBytes(availableFeedsListSelectionHostPortSplit[0]))
+      }
+      fixed (byte* propertyTargetHostText = Encoding.UTF8.GetBytes(selectedPeer.IP))
         ObsData.obs_data_set_string(settings, (sbyte*)propertyTargetHostId, (sbyte*)propertyTargetHostText);
-      ObsData.obs_data_set_int(settings, (sbyte*)propertyTargetPortId, Convert.ToInt32(availableFeedsListSelectionHostPortSplit[1]));
+      ObsData.obs_data_set_int(settings, (sbyte*)propertyTargetPortId, selectedPeer.Port);
+      return Convert.ToByte(true);
     }
-    return Convert.ToByte(true);
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]

@@ -30,6 +30,32 @@ public class PeerDiscovery
     public ConnectionTypes ConnectionType;
     public string IP;
     public int Port;
+
+    public (string, string) ToListItem()
+    {
+      return ($"{Identifier} [{ServiceType}] / {IP}:{Port}", $"{Identifier}{StringSeparator}{InterfaceId}{StringSeparator}{ServiceType}{StringSeparator}{IP}:{Port}");
+    }
+
+    public string UniqueIdentifier => (!string.IsNullOrEmpty(Identifier) ? $"{Identifier}{StringSeparator}{InterfaceId}" : "");
+
+    public string ListItemName => (!string.IsNullOrEmpty(Identifier) ? $"{Identifier} [{ServiceType}] / {IP}:{Port}" : "");
+
+    public string ListItemValue => (!string.IsNullOrEmpty(Identifier) ? $"{Identifier}{StringSeparator}{InterfaceId}{StringSeparator}{ServiceType}{StringSeparator}{IP}:{Port}" : "");
+
+    public static Peer FromListItemValue(string listItem)
+    {
+      var peer = new Peer();
+      var items = listItem.Split(StringSeparator, StringSplitOptions.TrimEntries);
+      if (items.Length != 4)
+        throw new ArgumentException("Invalid list item string.");
+      peer.Identifier = items[0];
+      peer.InterfaceId = items[1];
+      peer.ServiceType = (ServiceTypes)Enum.Parse(typeof(ServiceTypes), items[2]);
+      var ipPort = items[3].Split(':');
+      peer.IP = ipPort[0];
+      peer.Port = int.Parse(ipPort[1]);
+      return peer;
+    }
   }
 
   const string MulticastPrefix = "BeamDiscovery";

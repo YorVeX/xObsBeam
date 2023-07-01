@@ -81,6 +81,7 @@ public class BeamReceiver
       var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
       try
       {
+        //FIXME: Peer Discovery: when the sender port has changed this retry mechanism is doomed to fail forever, because no new peer discovery is done
         Module.Log($"Connecting to {_targetHostname}:{_targetPort}...", ObsLogLevel.Debug);
         socket.Bind(new IPEndPoint(bindAddress, 0));
         await socket.ConnectAsync(_targetHostname, _targetPort, _cancellationSource.Token);
