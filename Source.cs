@@ -168,9 +168,9 @@ public class Source
             return;
           }
           var availableFeedsListSelectionIdentiferSplit = availableFeedsListSelection.Split(PeerDiscovery.StringSeparator, StringSplitOptions.TrimEntries);
-          if (availableFeedsListSelectionIdentiferSplit.Length == 3)
+          if (availableFeedsListSelectionIdentiferSplit.Length == 4)
           {
-            var availableFeedsListSelectionHostPortSplit = availableFeedsListSelectionIdentiferSplit[2].Split(':', StringSplitOptions.TrimEntries);
+            var availableFeedsListSelectionHostPortSplit = availableFeedsListSelectionIdentiferSplit[3].Split(':', StringSplitOptions.TrimEntries);
             if (availableFeedsListSelectionHostPortSplit.Length == 2)
             {
               // do a fresh discovery based on the Beam identifier and the network interface ID, so that it also works when the IP address or port have changed
@@ -221,7 +221,7 @@ public class Source
       // variables needed to restore the previous selection in the lists, even if an updated IP and/or port were detected through discovery
       var previousSocketFeedsListSelectionValue = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailableSocketFeedsId))!;
       var previousSocketFeedsListSelectionItems = previousSocketFeedsListSelectionValue.Split(PeerDiscovery.StringSeparator, StringSplitOptions.TrimEntries);
-      var previousPeerSocketItemUniqueIdentifier = (previousSocketFeedsListSelectionItems.Length >= 3 ? previousSocketFeedsListSelectionItems[0] + PeerDiscovery.StringSeparator + previousSocketFeedsListSelectionItems[1] : "");
+      var previousPeerSocketItemUniqueIdentifier = (previousSocketFeedsListSelectionItems.Length >= 4 ? previousSocketFeedsListSelectionItems[0] + PeerDiscovery.StringSeparator + previousSocketFeedsListSelectionItems[1] : "");
       var newSocketFeedsListSelectionValue = "";
       var previousSocketFeedsListIpAndPort = previousSocketFeedsListSelectionItems[3].Split(':', StringSplitOptions.TrimEntries);
       var previousSocketFeedsListSelectionName = (previousSocketFeedsListIpAndPort.Length == 2 ? $"{previousSocketFeedsListSelectionItems[0]} [{previousSocketFeedsListSelectionItems[2]}] / {previousSocketFeedsListIpAndPort[0]}:{previousSocketFeedsListIpAndPort[1]}" : "");
@@ -647,10 +647,10 @@ public class Source
       if (string.IsNullOrEmpty(availableFeedsListSelection) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
         return Convert.ToByte(false);
       var availableFeedsListSelectionIdentiferSplit = availableFeedsListSelection.Split(PeerDiscovery.StringSeparator, StringSplitOptions.TrimEntries);
-      if (availableFeedsListSelectionIdentiferSplit.Length != 4)
+      if (availableFeedsListSelectionIdentiferSplit.Length < 4)
         return Convert.ToByte(false);
       var availableFeedsListSelectionHostPortSplit = availableFeedsListSelectionIdentiferSplit[3].Split(':', StringSplitOptions.TrimEntries);
-      if (availableFeedsListSelectionHostPortSplit.Length != 2)
+      if (availableFeedsListSelectionHostPortSplit.Length < 2)
         return Convert.ToByte(false);
       fixed (byte* propertyTargetHostText = Encoding.UTF8.GetBytes(availableFeedsListSelectionHostPortSplit[0]))
         ObsData.obs_data_set_string(settings, (sbyte*)propertyTargetHostId, (sbyte*)propertyTargetHostText);
