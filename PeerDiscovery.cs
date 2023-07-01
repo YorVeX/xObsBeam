@@ -138,7 +138,7 @@ public class PeerDiscovery
     }
   }
 
-  public static async Task<List<Peer>> Discover(string identifier = "", string interfaceId = "", int waitTimeMs = 500)
+  public static async Task<List<Peer>> Discover(string identifier = "", string interfaceId = "", int waitTimeMs = 200)
   {
     Module.Log("Peer Discovery client: Starting discovery...", ObsLogLevel.Debug);
     var peers = new List<Peer>();

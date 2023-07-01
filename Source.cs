@@ -197,7 +197,7 @@ public class Source
     }
   }
 
-  private unsafe void DiscoverFeeds(obs_properties* properties, obs_property* peerDiscoveryAvailablePipeFeedsList, obs_property* peerDiscoveryAvailableSocketFeedsList)
+  private unsafe void DiscoverFeeds(obs_property* peerDiscoveryAvailablePipeFeedsList, obs_property* peerDiscoveryAvailableSocketFeedsList, obs_property* peerDiscoveryIdentifierConflictWarningProperty)
   {
     var context = (Context*)ContextPointer;
     var settings = context->Settings;
@@ -276,7 +276,6 @@ public class Source
         propertyPeerDiscoveryIdentifierConflictWarningid = "identifier_conflict_warning"u8
       )
       {
-        var peerDiscoveryIdentifierConflictWarningProperty = ObsProperties.obs_properties_get(properties, (sbyte*)propertyPeerDiscoveryIdentifierConflictWarningid);
         ObsProperties.obs_property_set_visible(peerDiscoveryIdentifierConflictWarningProperty, Convert.ToByte(foundConflicts));
 
         if (foundPipePeers)
@@ -460,8 +459,8 @@ public class Source
       var peerDiscoveryIdentifierConflictWarning = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyPeerDiscoveryIdentifierConflictWarningid, (sbyte*)propertyPeerDiscoveryIdentifierConflictWarningText, obs_text_type.OBS_TEXT_INFO);
       ObsProperties.obs_property_text_set_info_type(peerDiscoveryIdentifierConflictWarning, obs_text_info_type.OBS_TEXT_INFO_WARNING);
 
-      //TODO: PeerDiscovery: do the list filling asynchronously if possible
-      GetSource(data).DiscoverFeeds(properties, peerDiscoveryAvailablePipeFeedsList, peerDiscoveryAvailableSocketFeedsList);
+      // start peer discovery in the background while continuing to add properties elements
+      var discoveryTask = Task.Run(() => GetSource(data).DiscoverFeeds(peerDiscoveryAvailablePipeFeedsList, peerDiscoveryAvailableSocketFeedsList, peerDiscoveryIdentifierConflictWarning));
 
       // network interface selection
       var networkInterfacesList = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyNetworkInterfaceListId, (sbyte*)propertyNetworkInterfaceListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
@@ -497,6 +496,8 @@ public class Source
 
       // target socket port
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_int(properties, (sbyte*)propertyTargetPortId, (sbyte*)propertyTargetPortCaption, 1024, 65535, 1), (sbyte*)propertyTargetPortText);
+
+      discoveryTask.Wait();
     }
     return properties;
   }

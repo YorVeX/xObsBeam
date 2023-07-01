@@ -243,7 +243,6 @@ public class BeamSender
 
   public bool CanStart => ((_videoDataSize > 0) && (_audioDataSize > 0));
 
-#pragma warning disable IDE0060 //TODO: PeerDiscovery: identifier parameter will be used when PeerDiscovery is implemented, then remove this pragma
   public async void Start(string identifier, IPAddress localAddr, int port = DefaultPort)
   {
     if (_videoDataSize == 0)
@@ -363,7 +362,6 @@ public class BeamSender
     pipeStream.Dispose();
     Module.Log($"Listener stopped.", ObsLogLevel.Info);
   }
-#pragma warning restore IDE0060 //TODO: PeerDiscovery: identifier parameter will be used when PeerDiscovery is implemented, then remove this pragma
 
   public void Stop()
   {
