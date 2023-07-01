@@ -36,11 +36,11 @@ public class PeerDiscovery
       return ($"{Identifier} [{ServiceType}] / {IP}:{Port}", $"{Identifier}{StringSeparator}{InterfaceId}{StringSeparator}{ServiceType}{StringSeparator}{IP}:{Port}");
     }
 
-    public string UniqueIdentifier => (!string.IsNullOrEmpty(Identifier) ? $"{Identifier}{StringSeparator}{InterfaceId}" : "");
+    public string UniqueIdentifier => (!IsEmpty ? $"{Identifier}{StringSeparator}{InterfaceId}" : "");
 
-    public string ListItemName => (!string.IsNullOrEmpty(Identifier) ? $"{Identifier} [{ServiceType}] / {IP}:{Port}" : "");
+    public string ListItemName => (!IsEmpty ? $"{Identifier} [{ServiceType}] / {IP}:{Port}" : "");
 
-    public string ListItemValue => (!string.IsNullOrEmpty(Identifier) ? $"{Identifier}{StringSeparator}{InterfaceId}{StringSeparator}{ServiceType}{StringSeparator}{IP}:{Port}" : "");
+    public string ListItemValue => (!IsEmpty ? $"{Identifier}{StringSeparator}{InterfaceId}{StringSeparator}{ServiceType}{StringSeparator}{IP}:{Port}" : "");
 
     public static Peer FromListItemValue(string listItem)
     {
@@ -56,6 +56,8 @@ public class PeerDiscovery
       peer.Port = int.Parse(ipPort[1]);
       return peer;
     }
+
+    public bool IsEmpty => string.IsNullOrEmpty(Identifier);
   }
 
   const string MulticastPrefix = "BeamDiscovery";
@@ -157,7 +159,7 @@ public class PeerDiscovery
     }
   }
 
-  public static async Task<List<Peer>> Discover(string identifier = "", string interfaceId = "", int waitTimeMs = 200)
+  public static async Task<List<Peer>> Discover(Peer currentPeer = default, int waitTimeMs = 200)
   {
     Module.Log("Peer Discovery client: Starting discovery...", ObsLogLevel.Debug);
     var peers = new List<Peer>();
@@ -200,7 +202,7 @@ public class PeerDiscovery
               continue;
             if (!Enum.TryParse(peerStrings[6], out ConnectionTypes connectionType))
               continue;
-            var peer = new Peer
+            var discoveredPeer = new Peer
             {
               InterfaceId = peerStrings[2],
               IP = peerStrings[3],
@@ -209,18 +211,18 @@ public class PeerDiscovery
               ConnectionType = connectionType,
               Identifier = peerStrings[7]
             };
-            if (identifier != "") // searching for a specific identifier? then don't fill the list with other peers that are not interesting
+            if (!currentPeer.IsEmpty) // searching for a specific identifier? then don't fill the list with other peers that are not interesting
             {
-              if ((identifier == peer.Identifier) && (interfaceId == peer.InterfaceId))
+              if ((currentPeer.Identifier == discoveredPeer.Identifier) && (currentPeer.InterfaceId == discoveredPeer.InterfaceId))
               {
-                Module.Log($"Peer Discovery client: found specific {peer.ServiceType} peer \"{peer.Identifier}\" at {peer.IP}:{peer.Port}.", ObsLogLevel.Debug);
-                peers.Add(peer); // add only this entry to the list...
+                Module.Log($"Peer Discovery client: found specific {discoveredPeer.ServiceType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
+                peers.Add(discoveredPeer); // add only this entry to the list...
                 break; // ...and stop the loop
               }
             }
             else
-              peers.Add(peer);
-            Module.Log($"Peer Discovery client: found {peer.ServiceType} peer \"{peer.Identifier}\" at {peer.IP}:{peer.Port}.", ObsLogLevel.Debug);
+              peers.Add(discoveredPeer);
+            Module.Log($"Peer Discovery client: found {discoveredPeer.ServiceType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
           }
           catch (Exception ex)
           {

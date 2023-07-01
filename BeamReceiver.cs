@@ -57,12 +57,12 @@ public class BeamReceiver
 
   public int FrameBufferTimeMs { get; set; }
 
-  public void Connect(IPAddress bindAddress, string hostname, int port)
+  public void Connect(IPAddress bindAddress, string hostname, int port, PeerDiscovery.Peer currentPeer = default)
   {
-    Task.Run(() => ConnectAsync(bindAddress, hostname, port));
+    Task.Run(() => ConnectAsync(bindAddress, hostname, port, currentPeer));
   }
 
-  public async Task ConnectAsync(IPAddress bindAddress, string hostname, int port)
+  public async Task ConnectAsync(IPAddress bindAddress, string hostname, int port, PeerDiscovery.Peer currentPeer = default)
   {
     if (_isConnecting || IsConnected)
       return;
@@ -78,10 +78,21 @@ public class BeamReceiver
         _cancellationSource.Dispose();
         _cancellationSource = new CancellationTokenSource();
       }
+
+      // do peer discovery if discovery information is available
+      if (!currentPeer.IsEmpty)
+      {
+        var discoveredPeers = PeerDiscovery.Discover(currentPeer).Result;
+        if (discoveredPeers.Count > 0)
+        {
+          _targetHostname = discoveredPeers[0].IP;
+          _targetPort = discoveredPeers[0].Port;
+        }
+      }
+
       var socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
       try
       {
-        //FIXME: Peer Discovery: when the sender port has changed this retry mechanism is doomed to fail forever, because no new peer discovery is done
         Module.Log($"Connecting to {_targetHostname}:{_targetPort}...", ObsLogLevel.Debug);
         socket.Bind(new IPEndPoint(bindAddress, 0));
         await socket.ConnectAsync(_targetHostname, _targetPort, _cancellationSource.Token);

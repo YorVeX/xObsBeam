@@ -158,6 +158,11 @@ public class Source
         {
           targetHost = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyTargetHostId))!;
           targetPort = (int)ObsData.obs_data_get_int(settings, (sbyte*)propertyTargetPortId);
+          if (string.IsNullOrEmpty(targetHost))
+            targetHost = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_default_string(settings, (sbyte*)propertyTargetHostId))!;
+          if (targetPort == 0)
+            targetPort = (int)ObsData.obs_data_get_default_int(settings, (sbyte*)propertyTargetPortId);
+          BeamReceiver.Connect(NetworkInterfaceAddress, targetHost, targetPort);
         }
         else
         {
@@ -167,35 +172,20 @@ public class Source
             Module.Log("No feed selected to connect to.", ObsLogLevel.Error);
             return;
           }
-          PeerDiscovery.Peer selectedPeer;
           try
           {
-            selectedPeer = PeerDiscovery.Peer.FromListItemValue(availableFeedsListSelection);
+            var selectedPeer = PeerDiscovery.Peer.FromListItemValue(availableFeedsListSelection);
+            BeamReceiver.Connect(NetworkInterfaceAddress, selectedPeer.IP, selectedPeer.Port, selectedPeer);
           }
           catch
           {
-            selectedPeer = default;
-          }
-          if (selectedPeer.Identifier != "")
-          {
-            var discoveredPeers = PeerDiscovery.Discover(selectedPeer.Identifier!, selectedPeer.InterfaceId!).Result;
-            if (discoveredPeers.Count > 0)
-            {
-              targetHost = discoveredPeers[0].IP;
-              targetPort = discoveredPeers[0].Port;
-            }
-            else // if discovery failed, use the last known address information
-            {
-              targetHost = selectedPeer.IP!;
-              targetPort = selectedPeer.Port;
-            }
+            if (string.IsNullOrEmpty(targetHost))
+              targetHost = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_default_string(settings, (sbyte*)propertyTargetHostId))!;
+            if (targetPort == 0)
+              targetPort = (int)ObsData.obs_data_get_default_int(settings, (sbyte*)propertyTargetPortId);
+            BeamReceiver.Connect(NetworkInterfaceAddress, targetHost, targetPort);
           }
         }
-        if (string.IsNullOrEmpty(targetHost))
-          targetHost = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_default_string(settings, (sbyte*)propertyTargetHostId))!;
-        if (targetPort == 0)
-          targetPort = (int)ObsData.obs_data_get_default_int(settings, (sbyte*)propertyTargetPortId);
-        BeamReceiver.Connect(NetworkInterfaceAddress, targetHost, targetPort);
       }
     }
   }
