@@ -31,11 +31,6 @@ public class PeerDiscovery
     public string IP;
     public int Port;
 
-    public (string, string) ToListItem()
-    {
-      return ($"{Identifier} [{ServiceType}] / {IP}:{Port}", $"{Identifier}{StringSeparator}{InterfaceId}{StringSeparator}{ServiceType}{StringSeparator}{IP}:{Port}");
-    }
-
     public string UniqueIdentifier => (!IsEmpty ? $"{Identifier}{StringSeparator}{InterfaceId}" : "");
 
     public string ListItemName => (!IsEmpty ? $"{Identifier} [{ServiceType}] / {IP}:{Port}" : "");
@@ -55,6 +50,27 @@ public class PeerDiscovery
       peer.IP = ipPort[0];
       peer.Port = int.Parse(ipPort[1]);
       return peer;
+    }
+
+    public string ToMulticastString(string interfaceId, string ipAddress)
+    {
+      return MulticastPrefix + StringSeparator + "Service" + StringSeparator + interfaceId + StringSeparator + ipAddress + StringSeparator + Port + StringSeparator + ServiceType + StringSeparator + ConnectionType + StringSeparator + Identifier.Replace(StringSeparator, StringSeparatorReplacement);
+    }
+
+    public static Peer FromMulticastString(string multicastString)
+    {
+      var peerStrings = multicastString.Split(StringSeparator, StringSplitOptions.TrimEntries);
+      if ((peerStrings.Length != 8) || (peerStrings[0] != MulticastPrefix) || (peerStrings[1] != "Service"))
+        throw new ArgumentException("Invalid multicast string.");
+      return new Peer
+      {
+        InterfaceId = peerStrings[2],
+        IP = peerStrings[3],
+        Port = Convert.ToInt32(peerStrings[4]),
+        ServiceType = (ServiceTypes)Enum.Parse(typeof(ServiceTypes), peerStrings[5]),
+        ConnectionType = (ConnectionTypes)Enum.Parse(typeof(ConnectionTypes), peerStrings[6]),
+        Identifier = peerStrings[7]
+      };
     }
 
     public bool IsEmpty => string.IsNullOrEmpty(Identifier);
@@ -141,8 +157,7 @@ public class PeerDiscovery
             if ((_serviceAddress != IPAddress.Any) && (_serviceAddress.ToString() != networkInterface.Item1.Address.ToString()))
               continue;
 
-            string responseMessage = MulticastPrefix + StringSeparator + "Service" + StringSeparator + networkInterface.Item2 + StringSeparator + networkInterface.Item1.Address.ToString() + StringSeparator + _serverPeer.Port + StringSeparator + _serverPeer.ServiceType + StringSeparator + _serverPeer.ConnectionType + StringSeparator + _serverPeer.Identifier.Replace(StringSeparator, StringSeparatorReplacement);
-            var responseBytes = Encoding.UTF8.GetBytes(responseMessage);
+            var responseBytes = Encoding.UTF8.GetBytes(_serverPeer.ToMulticastString(networkInterface.Item2, networkInterface.Item1.Address.ToString()));
             _udpServer.Send(responseBytes, responseBytes.Length, senderEndPoint);
           }
         }
@@ -195,22 +210,8 @@ public class PeerDiscovery
           var responseString = Encoding.UTF8.GetString(receiveResult.Buffer);
           try
           {
-            var peerStrings = responseString.Split(StringSeparator, StringSplitOptions.TrimEntries);
-            if ((peerStrings.Length != 8) || (peerStrings[0] != MulticastPrefix) || (peerStrings[1] != "Service"))
-              continue;
-            if (!Enum.TryParse(peerStrings[5], out ServiceTypes serviceType))
-              continue;
-            if (!Enum.TryParse(peerStrings[6], out ConnectionTypes connectionType))
-              continue;
-            var discoveredPeer = new Peer
-            {
-              InterfaceId = peerStrings[2],
-              IP = peerStrings[3],
-              Port = Convert.ToInt32(peerStrings[4]),
-              ServiceType = serviceType,
-              ConnectionType = connectionType,
-              Identifier = peerStrings[7]
-            };
+            Peer discoveredPeer;
+            try { discoveredPeer = Peer.FromMulticastString(responseString); } catch { continue; }
             if (!currentPeer.IsEmpty) // searching for a specific identifier? then don't fill the list with other peers that are not interesting
             {
               if ((currentPeer.Identifier == discoveredPeer.Identifier) && (currentPeer.InterfaceId == discoveredPeer.InterfaceId))
