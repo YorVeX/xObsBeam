@@ -45,8 +45,6 @@ public class PeerDiscovery
 
   public void StartServer(IPAddress serviceAddress, int servicePort, ServiceTypes serviceType, string serviceIdentifier)
   {
-    //BUG: Peer Discovery: something in this new class triggers the sender (server) to cause this after discovery: Unobserved task exception: A Task's exception(s) were not observed either by Waiting on the Task or accessing its Exception property. As a result, the unobserved exception was rethrown by the finalizer thread. (The I/O operation has been aborted because of either a thread exit or an application request.)
-
     _serviceAddress = serviceAddress;
     Module.Log("Peer Discovery server: Starting...", ObsLogLevel.Debug);
     if (_udpIsListening)
@@ -61,7 +59,7 @@ public class PeerDiscovery
     _udpServer.Client.Bind(new IPEndPoint(IPAddress.Any, MulticastPort));
     _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
     _udpIsListening = true;
-    _udpServer.BeginReceive(ServerReceiveCallback, null);
+    Task.Run(UdpServerReceiveLoop);
     Module.Log("Peer Discovery server: Started and entered receive loop.", ObsLogLevel.Debug);
   }
 
@@ -81,7 +79,7 @@ public class PeerDiscovery
     _udpServer.Client.Bind(new IPEndPoint(IPAddress.Any, MulticastPort));
     _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
     _udpIsListening = true;
-    _udpServer.BeginReceive(ServerReceiveCallback, null);
+    Task.Run(UdpServerReceiveLoop);
     Module.Log("Peer Discovery server: Started and entered receive loop.", ObsLogLevel.Debug);
   }
 
@@ -95,46 +93,41 @@ public class PeerDiscovery
     Module.Log("Peer Discovery server: Stopped.", ObsLogLevel.Debug);
   }
 
-  private void ServerReceiveCallback(IAsyncResult ar)
+  void UdpServerReceiveLoop()
   {
     try
     {
-      if (!_udpIsListening)
-        return;
-
       IPEndPoint senderEndPoint = new(IPAddress.Any, MulticastPort);
-      byte[] data = _udpServer.EndReceive(ar, ref senderEndPoint!);
-      string queryMessage = Encoding.UTF8.GetString(data);
-      var queryItems = queryMessage.Split(StringSeparator, StringSplitOptions.TrimEntries);
-      Module.Log("Peer Discovery server: Received query: " + queryMessage, ObsLogLevel.Info);
-
-      if ((queryItems.Length == 2) && (queryItems[0] == MulticastPrefix) && (queryItems[1] == "Discover"))
+      while (true)
       {
-        // send a response to the original sender
-        foreach (var networkInterface in GetNetworkInterfacesWithIds())
-        {
-          if ((_serviceAddress != IPAddress.Any) && (_serviceAddress.ToString() != networkInterface.Item1.Address.ToString()))
-            continue;
+        byte[] data = _udpServer.Receive(ref senderEndPoint);
+        string queryMessage = Encoding.UTF8.GetString(data);
+        var queryItems = queryMessage.Split(StringSeparator, StringSplitOptions.TrimEntries);
+        Module.Log("Peer Discovery server: Received query: " + queryMessage, ObsLogLevel.Info);
 
-          string responseMessage = MulticastPrefix + StringSeparator + "Service" + StringSeparator + networkInterface.Item2 + StringSeparator + networkInterface.Item1.Address.ToString() + StringSeparator + _serverPeer.Port + StringSeparator + _serverPeer.ServiceType + StringSeparator + _serverPeer.ConnectionType + StringSeparator + _serverPeer.Identifier.Replace(StringSeparator, StringSeparatorReplacement);
-          var responseBytes = Encoding.UTF8.GetBytes(responseMessage);
-          _udpServer.Send(responseBytes, responseBytes.Length, senderEndPoint);
+        if ((queryItems.Length == 2) && (queryItems[0] == MulticastPrefix) && (queryItems[1] == "Discover"))
+        {
+          // send a response to the original sender
+          foreach (var networkInterface in GetNetworkInterfacesWithIds())
+          {
+            if ((_serviceAddress != IPAddress.Any) && (_serviceAddress.ToString() != networkInterface.Item1.Address.ToString()))
+              continue;
+
+            string responseMessage = MulticastPrefix + StringSeparator + "Service" + StringSeparator + networkInterface.Item2 + StringSeparator + networkInterface.Item1.Address.ToString() + StringSeparator + _serverPeer.Port + StringSeparator + _serverPeer.ServiceType + StringSeparator + _serverPeer.ConnectionType + StringSeparator + _serverPeer.Identifier.Replace(StringSeparator, StringSeparatorReplacement);
+            var responseBytes = Encoding.UTF8.GetBytes(responseMessage);
+            _udpServer.Send(responseBytes, responseBytes.Length, senderEndPoint);
+          }
         }
       }
-
-      // continue listening for more queries
-      _udpServer.BeginReceive(ServerReceiveCallback, null);
     }
-    catch (ObjectDisposedException)
+    catch (SocketException)
     {
       // _udpServer has been closed, stop listening
       Module.Log("Peer Discovery server: Listening stopped.", ObsLogLevel.Info);
     }
     catch (Exception ex)
     {
-      Module.Log($"Peer Discovery server: {ex.GetType().Name} in receive handler: {ex.Message}", ObsLogLevel.Error);
-      if (ex.StackTrace != null)
-        Module.Log(ex.StackTrace, ObsLogLevel.Debug);
+      Module.Log($"{ex.GetType().Name} in Peer Discovery server receive loop: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
     }
   }
 
