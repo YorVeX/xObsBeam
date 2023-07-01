@@ -647,9 +647,9 @@ public class Source
       if (string.IsNullOrEmpty(availableFeedsListSelection) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
         return Convert.ToByte(false);
       var availableFeedsListSelectionIdentiferSplit = availableFeedsListSelection.Split(PeerDiscovery.StringSeparator, StringSplitOptions.TrimEntries);
-      if (availableFeedsListSelectionIdentiferSplit.Length != 3)
+      if (availableFeedsListSelectionIdentiferSplit.Length != 4)
         return Convert.ToByte(false);
-      var availableFeedsListSelectionHostPortSplit = availableFeedsListSelectionIdentiferSplit[2].Split(':', StringSplitOptions.TrimEntries);
+      var availableFeedsListSelectionHostPortSplit = availableFeedsListSelectionIdentiferSplit[3].Split(':', StringSplitOptions.TrimEntries);
       if (availableFeedsListSelectionHostPortSplit.Length != 2)
         return Convert.ToByte(false);
       fixed (byte* propertyTargetHostText = Encoding.UTF8.GetBytes(availableFeedsListSelectionHostPortSplit[0]))
