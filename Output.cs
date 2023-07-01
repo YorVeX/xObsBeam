@@ -176,7 +176,7 @@ public static class Output
       if (SettingsDialog.UsePipe)
         _beamSender.Start(SettingsDialog.Identifier, SettingsDialog.Identifier);
       else
-        _beamSender.Start(SettingsDialog.Identifier, SettingsDialog.NetworkInterfaceAddress, SettingsDialog.Port);
+        _beamSender.Start(SettingsDialog.Identifier, SettingsDialog.NetworkInterfaceAddress);
     }
   }
 

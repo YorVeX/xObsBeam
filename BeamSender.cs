@@ -243,16 +243,64 @@ public class BeamSender
 
   public bool CanStart => ((_videoDataSize > 0) && (_audioDataSize > 0));
 
-  public async void Start(string identifier, IPAddress localAddr, int port = DefaultPort)
+  public async void Start(string identifier, IPAddress localAddr)
   {
     if (_videoDataSize == 0)
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
     if (_audioDataSize == 0)
       throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
 
-    _listener = new TcpListener(localAddr, port);
-    _listener.Start();
-    _discoveryServer.StartServer(localAddr, port, PeerDiscovery.ServiceTypes.Output, identifier);
+    int failCount = 0;
+    int port = 0;
+    while (failCount < 10)
+    {
+      port = SettingsDialog.Port;
+      try
+      {
+        _listener = new TcpListener(localAddr, port);
+        _listener.Start();
+      }
+      catch (SocketException)
+      {
+        if (SettingsDialog.AutomaticPort)
+        {
+          failCount++;
+          Module.Log($"Failed to start TCP listener for {identifier} on {localAddr}:{port}, attempt {failCount} of 10.", ObsLogLevel.Debug);
+          continue;
+        }
+        else
+        {
+          Module.Log($"Failed to start TCP listener for {identifier} on {localAddr}:{port}, try configuring a different port or use a different interface.", ObsLogLevel.Error);
+          return;
+        }
+      }
+      try
+      {
+        _discoveryServer.StartServer(localAddr, port, PeerDiscovery.ServiceTypes.Output, identifier);
+        break; // if we got here without exception the port is good
+      }
+      catch (SocketException)
+      {
+        try { _listener.Stop(); } catch { } // listening on the TCP port worked if we got here, so try to stop it again to try the next port
+        _discoveryServer.StopServer();
+        if (SettingsDialog.AutomaticPort)
+        {
+          failCount++;
+          Module.Log($"Failed to start UDP listener for {identifier} on {localAddr}:{port}, attempt {failCount} of 10.", ObsLogLevel.Debug);
+          continue;
+        }
+        else
+        {
+          Module.Log($"Failed to start UDP listener for {identifier} on {localAddr}:{port}, try configuring a different port or use a different interface.", ObsLogLevel.Error);
+          return;
+        }
+      }
+    }
+    if (failCount >= 10)
+    {
+      Module.Log($"Failed to start listener for {identifier} on {localAddr}:{port}, try configuring a static port or use a different interface.", ObsLogLevel.Error);
+      return;
+    }
 
     Module.Log($"Listening on {localAddr}:{port}.", ObsLogLevel.Info);
 
