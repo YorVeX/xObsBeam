@@ -18,6 +18,7 @@ public static class SettingsDialog
   static unsafe obs_properties* _properties;
 
   static bool _initialized;
+  static readonly Random _random = new();
 
   public static unsafe void Register()
   {
@@ -248,12 +249,26 @@ public static class SettingsDialog
     }
   }
 
+  public static unsafe bool AutomaticPort
+  {
+    get
+    {
+      fixed (byte* propertyAutomaticListenPortId = "auto_listen_port"u8)
+        return Convert.ToBoolean(ObsData.obs_data_get_bool(_settings, (sbyte*)propertyAutomaticListenPortId));
+    }
+  }
+
   public static unsafe int Port
   {
     get
     {
       fixed (byte* propertyListenPortId = "listen_port"u8)
-        return (int)ObsData.obs_data_get_int(_settings, (sbyte*)propertyListenPortId);
+      {
+        if (AutomaticPort)
+          return _random.Next(BeamSender.DefaultPort, BeamSender.DefaultPort + 10000);
+        else
+          return (int)ObsData.obs_data_get_int(_settings, (sbyte*)propertyListenPortId);
+      }
     }
   }
 
@@ -448,6 +463,7 @@ public static class SettingsDialog
       // Density compression options group
       var compressionDensityGroup = ObsProperties.obs_properties_create();
       var compressionDensityGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionDensityId, (sbyte*)propertyCompressionDensityCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionDensityGroup);
+      ObsProperties.obs_property_set_visible(compressionDensityGroupProperty, Convert.ToByte(EncoderSupport.DensityApi));
       ObsProperties.obs_property_set_long_description(compressionDensityGroupProperty, (sbyte*)propertyCompressionDensityText);
       ObsProperties.obs_property_set_modified_callback(compressionDensityGroupProperty, &CompressionSettingChangedEventHandler);
       // Density compression level (skip frames)
@@ -503,8 +519,7 @@ public static class SettingsDialog
       // listen port configuration
       var automaticListenPortProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyAutomaticListenPortId, (sbyte*)propertyAutomaticListenPortCaption);
       ObsProperties.obs_property_set_long_description(automaticListenPortProperty, (sbyte*)propertyAutomaticListenPortText);
-      // ObsProperties.obs_property_set_modified_callback(automaticListenPortProperty, &AutomaticListenPortEnabledChangedEventHandler); //TODO: PeerDiscovery: activate this as soon as peer discovery is implemented
-      ObsProperties.obs_property_set_enabled(automaticListenPortProperty, Convert.ToByte(false)); //TODO: PeerDiscovery: remove this as soon as peer discovery is implemented
+      ObsProperties.obs_property_set_modified_callback(automaticListenPortProperty, &AutomaticListenPortEnabledChangedEventHandler);
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_int(properties, (sbyte*)propertyListenPortId, (sbyte*)propertyListenPortCaption, 1024, 65535, 1), (sbyte*)propertyListenPortText);
 
     }
@@ -552,7 +567,7 @@ public static class SettingsDialog
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionMainThreadId, Convert.ToByte(true));
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(true));
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(false));
-      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyAutomaticListenPortId, Convert.ToByte(false)); //TODO: PeerDiscovery: make this default to true as soon as peer discovery is implemented
+      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyAutomaticListenPortId, Convert.ToByte(true));
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyListenPortId, BeamSender.DefaultPort);
     }
   }

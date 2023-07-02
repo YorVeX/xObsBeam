@@ -54,6 +54,7 @@ public class BeamSender
   bool _compressionThreadingSync = true;
   unsafe qoir_encode_options_struct* _qoirEncodeOptions = null;
   unsafe FPNGEOptions* _fpngeOptions = null;
+  readonly PeerDiscovery _discoveryServer = new();
 
   public unsafe bool SetVideoParameters(video_output_info* info, video_format conversionVideoFormat, uint* linesize, video_data._data_e__FixedBuffer data)
   {
@@ -242,16 +243,64 @@ public class BeamSender
 
   public bool CanStart => ((_videoDataSize > 0) && (_audioDataSize > 0));
 
-#pragma warning disable IDE0060 //TODO: PeerDiscovery: identifier parameter will be used when PeerDiscovery is implemented, then remove this pragma
-  public async void Start(string identifier, IPAddress localAddr, int port = DefaultPort)
+  public async void Start(string identifier, IPAddress localAddr)
   {
     if (_videoDataSize == 0)
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
     if (_audioDataSize == 0)
       throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
 
-    _listener = new TcpListener(localAddr, port);
-    _listener.Start();
+    int failCount = 0;
+    int port = 0;
+    while (failCount < 10)
+    {
+      port = SettingsDialog.Port;
+      try
+      {
+        _listener = new TcpListener(localAddr, port);
+        _listener.Start();
+      }
+      catch (SocketException)
+      {
+        if (SettingsDialog.AutomaticPort)
+        {
+          failCount++;
+          Module.Log($"Failed to start TCP listener for {identifier} on {localAddr}:{port}, attempt {failCount} of 10.", ObsLogLevel.Debug);
+          continue;
+        }
+        else
+        {
+          Module.Log($"Failed to start TCP listener for {identifier} on {localAddr}:{port}, try configuring a different port or use a different interface.", ObsLogLevel.Error);
+          return;
+        }
+      }
+      try
+      {
+        _discoveryServer.StartServer(localAddr, port, PeerDiscovery.ServiceTypes.Output, identifier);
+        break; // if we got here without exception the port is good
+      }
+      catch (SocketException)
+      {
+        try { _listener.Stop(); } catch { } // listening on the TCP port worked if we got here, so try to stop it again to try the next port
+        _discoveryServer.StopServer();
+        if (SettingsDialog.AutomaticPort)
+        {
+          failCount++;
+          Module.Log($"Failed to start UDP listener for {identifier} on {localAddr}:{port}, attempt {failCount} of 10.", ObsLogLevel.Debug);
+          continue;
+        }
+        else
+        {
+          Module.Log($"Failed to start UDP listener for {identifier} on {localAddr}:{port}, try configuring a different port or use a different interface.", ObsLogLevel.Error);
+          return;
+        }
+      }
+    }
+    if (failCount >= 10)
+    {
+      Module.Log($"Failed to start listener for {identifier} on {localAddr}:{port}, try configuring a static port or use a different interface.", ObsLogLevel.Error);
+      return;
+    }
 
     Module.Log($"Listening on {localAddr}:{port}.", ObsLogLevel.Info);
 
@@ -309,6 +358,7 @@ public class BeamSender
     _pipeName = pipeName;
 
     var pipeStream = new NamedPipeServerStream(_pipeName, PipeDirection.InOut, 10, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+    _discoveryServer.StartServer(PeerDiscovery.ServiceTypes.Output, identifier);
 
     Module.Log($"Listening on {_pipeName}.", ObsLogLevel.Info);
 
@@ -360,7 +410,6 @@ public class BeamSender
     pipeStream.Dispose();
     Module.Log($"Listener stopped.", ObsLogLevel.Info);
   }
-#pragma warning restore IDE0060 //TODO: PeerDiscovery: identifier parameter will be used when PeerDiscovery is implemented, then remove this pragma
 
   public void Stop()
   {
@@ -372,6 +421,7 @@ public class BeamSender
         client.Disconnect(); // this will block for up to 1000 ms per client to try and get a clean disconnect
       _videoDataSize = 0;
       _audioDataSize = 0;
+      _discoveryServer.StopServer();
 
       Module.Log($"Stopped BeamSender.", ObsLogLevel.Debug);
     }

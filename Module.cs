@@ -69,7 +69,7 @@ public static class Module
 
   public static void UnobservedTaskExceptionEventHandler(object? sender, UnobservedTaskExceptionEventArgs e)
   {
-    Log($"Unobserved task exception: {e.Exception.Message}\n{e.Exception.StackTrace}", ObsLogLevel.Error);
+    Log($"Unobserved task {e.Exception.GetType().Name}: {e.Exception.Message}\n{e.Exception.StackTrace}", ObsLogLevel.Error);
   }
 
   public static byte[] ObsText(string identifier, params object[] args)

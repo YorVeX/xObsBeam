@@ -347,6 +347,11 @@ sealed class BeamSenderClient
       OnDisconnected();
       Module.Log($"<{ClientId}> Disconnected.", ObsLogLevel.Info);
     }
+    catch (Exception ex)
+    {
+      Module.Log($"<{ClientId}> {ex.GetType().Name} in send loop finalization: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
+      try { pipeWriter.Complete(ex); } catch { }
+    }
     finally
     {
       _sendLoopExited.Set();
