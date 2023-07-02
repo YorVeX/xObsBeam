@@ -292,10 +292,13 @@ public class PeerDiscovery
         {
           if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
           {
+
             string identifierString = ((networkInterface.NetworkInterfaceType == NetworkInterfaceType.Loopback) ? "localhost" : networkInterface.GetPhysicalAddress().ToString());
+            if (string.IsNullOrEmpty(identifierString))
+              identifierString = networkInterface.Name;
             string hashIdentifier = BitConverter.ToString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(identifierString))).Replace("-", "");
             networkInterfaces.Add((ip, hashIdentifier));
-            // Module.Log("NIC: " + ip.Address + " / " + identifierString + " / " + hashIdentifier, ObsLogLevel.Debug);
+            // Module.Log("NIC: \"" + networkInterface.Name + "\": " + ip.Address + " / " + identifierString + " / " + hashIdentifier, ObsLogLevel.Debug);
           }
         }
       }
