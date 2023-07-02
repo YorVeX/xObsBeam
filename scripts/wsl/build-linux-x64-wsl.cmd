@@ -47,6 +47,7 @@ copy /Y ..\..\locale\* ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plu
 
 REM Copy extra binaries to the release structure
 copy /Y ..\..\QoirLib\binaries\linux-x64-glibc-2.31\libQoirLib.so ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit\
+copy /Y ..\..\Density\binaries\linux-x64-glibc-2.31\libdensity.so ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit\
 
 REM Final cleanup in WSL
 wsl rm -Rf %BuildFolderFromLinux%/%ProjectName%/*

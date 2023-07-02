@@ -8,15 +8,9 @@ DensityApi.cs is the C# wrapper for the Density library.
 It is not a fully featured managed wrapper class, it instead is a very basic wrapper that only exposes the relevant function calls from the library that are needed for this project. Be aware of this when you want to use this in your own project.
 
 ## Using the wrapper class
-### Windows
-In order to use the wrapper class the binary Density library is needed. For Windows the necessary `density.dll` version is directly provided here for your convenience. 
+In order to use the wrapper class the binary Density library is needed. For Windows the necessary `density.dll` file and for Linux the `libdensity.so` file compiled on Ubuntu 20.04 (glibc 2.31) are directly provided in the [binaries](binaries) folder for your convenience. Simply copy them to the same folder where your xObsBeam plugin file is located, other folders within your system PATH should also work.
 
-This DLL should be placed in the same folder as the xObsBeam plugin for simplicity. Alternatively it can be placed in the `bin` folder of the OBS installation (where also obs64.exe is located), into Windows system directories where these libraries typically reside in, or into a directory that is in your PATH environment variable.
-
-If you want to build it yourself just compile the project provided here in the [msvc](density/msvc) sub folder using Visual Studio 2022 (other versions might also work).
-
-### Linux
-Please see [the original instructions](https://github.com/k0dai/density#build) on how to build the library in the [density](density) sub folder for Linux.
+If you want to build it yourself just compile the files using the Visual Studio 2022 project provided here for Windows, or run `make build/libdensity.so` on Linux. Note that the Makefile has been modified compared to the original, you need to use the Makefile provided here (the changes are documented as comments in the makefile).
 
 ## Creating the wrapper class (for developers)
 The wrapper class in DensityApi.cs was generated using ClangSharpPInvokeGenerator from [ClangSharp project](https://github.com/dotnet/ClangSharp) with the generate.ps1 script in this folder. This is a PowerShell script and therefore is for Windows only.

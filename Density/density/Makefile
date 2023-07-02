@@ -54,6 +54,11 @@ else
 	CFLAGS += -fpic
 endif
 
+# Compared to the original the link flags in the following section have been changed as follows to link
+# based on the objects and not on the static lib (otherwise the necessary function exports are missing):
+# old: CFLAGS += -march=native
+# new: CFLAGS += -mavx2
+
 ifeq ($(ARCH),)
 	ifeq ($(NATIVE),)
 		ifeq ($(TARGET_ARCH),powerpc)
@@ -61,7 +66,7 @@ ifeq ($(ARCH),)
 		else ifeq ($(TARGET_ARCH),arm64)
     			CFLAGS += -mtune=native
 		else
-			CFLAGS += -march=native
+			CFLAGS += -mavx2
 		endif
 	endif
 else
@@ -125,9 +130,14 @@ post-compile: compile
 pre-link : post-compile
 	@echo ${bold}Linking Density as a library${normal} ...
 
+# Compared to the original the link flags in the following section have been changed as follows to link
+# based on the objects and not on the static lib (otherwise the necessary function exports are missing):
+# old: $(CC) $(LFLAGS) -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(BUILD_DIRECTORY)/$(TARGET)$(STATIC_EXTENSION)
+# new: $(CC) $(LFLAGS) -fvisibility=default -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(DENSITY_OBJ)
+
 link: pre-link $(DENSITY_OBJ)
 	$(AR) crs $(BUILD_DIRECTORY)/$(TARGET)$(STATIC_EXTENSION) $(DENSITY_OBJ)
-	$(CC) $(LFLAGS) -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(BUILD_DIRECTORY)/$(TARGET)$(STATIC_EXTENSION)
+	$(CC) $(LFLAGS) -fvisibility=default -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(DENSITY_OBJ)
 
 post-link: link
 	@echo Done.
