@@ -4,11 +4,11 @@ OBS plugin to transmit lossless (raw or [QOI](https://qoiformat.org)/[LZ4](https
 ![image](https://user-images.githubusercontent.com/528974/229695123-33b165ba-019a-48ce-9197-3d203627352b.png)
 
 ## Prerequisites
-- OBS 29+ 64 bit
+- OBS 29.1.X+ 64 bit
 - Windows
   - tested only on Windows 10, but Windows 11 should also work
 - Linux
-  - not regularly tested
+  - occasionally tested, but not regularly
   - binary build created on Ubuntu 20.04 WSL environment, therefore linked against glibc 2.31
 
 ## Use cases
