@@ -116,6 +116,7 @@ public class PeerDiscovery
     _serverPeer.Identifier = serviceIdentifier;
 
     _udpServer = new UdpClient();
+    _udpServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, 1);
     _udpServer.Client.Bind(new IPEndPoint(IPAddress.Any, MulticastPort));
     _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
     _udpIsListening = true;
@@ -136,6 +137,7 @@ public class PeerDiscovery
     _serverPeer.Identifier = serviceIdentifier;
 
     _udpServer = new UdpClient();
+    _udpServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, 1);
     _udpServer.Client.Bind(new IPEndPoint(IPAddress.Any, MulticastPort));
     _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
     _udpIsListening = true;
@@ -157,7 +159,7 @@ public class PeerDiscovery
   {
     try
     {
-      IPEndPoint senderEndPoint = new(IPAddress.Any, MulticastPort);
+      IPEndPoint senderEndPoint = new(IPAddress.Any, 0);
       while (true)
       {
         byte[] data = _udpServer.Receive(ref senderEndPoint);
