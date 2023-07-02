@@ -14,7 +14,7 @@ The actual C# wrapper class is in Qoir.cs in this folder.
 
 ## Installation and usage
 ### Using the wrapper class
-In order to use the wrapper class the binary QoirLib library is needed. For Windows the necessary `QoirLib.dll` file and for Linux the `libQoirLib.so` file compiled on Ubuntu 20.04 (glibc 2.31) are directly provided in the [binaries] folder for your convenience. Simply copy them to the same folder where your xObsBeam plugin file is located, other folders within your system PATH should also work.
+In order to use the wrapper class the binary QoirLib library is needed. For Windows the necessary `QoirLib.dll` file and for Linux the `libQoirLib.so` file compiled on Ubuntu 20.04 (glibc 2.31) are directly provided in the [binaries](binaries) folder for your convenience. Simply copy them to the same folder where your xObsBeam plugin file is located, other folders within your system PATH should also work.
 
 If you want to build it yourself just compile the QoirLib.h file using the Visual Studio 2022 project provided here for Windows, or run `make` on Linux.
 
