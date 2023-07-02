@@ -31,21 +31,37 @@ public class PeerDiscovery
     public string IP;
     public int Port;
 
-    public string UniqueIdentifier => (!IsEmpty ? $"{Identifier}{StringSeparator}{InterfaceId}" : "");
+    public string SocketUniqueIdentifier => (!IsEmpty ? $"{Identifier}{StringSeparator}{InterfaceId}" : "");
 
-    public string ListItemName => (!IsEmpty ? $"{Identifier} [{ServiceType}] / {IP}:{Port}" : "");
+    public string SocketListItemName => (!IsEmpty ? $"{Identifier} [{ServiceType}] / {IP}:{Port}" : "");
 
-    public string ListItemValue => (!IsEmpty ? $"{Identifier}{StringSeparator}{InterfaceId}{StringSeparator}{ServiceType}{StringSeparator}{IP}:{Port}" : "");
+    public string PipeListItemName => (!IsEmpty ? $"{Identifier} [{ServiceType}]" : "");
+
+    public string SocketListItemValue => (!IsEmpty ? $"{Identifier}{StringSeparator}{InterfaceId}{StringSeparator}{ServiceType}{StringSeparator}{IP}:{Port}" : "");
+
+    public string PipeListItemValue => (!IsEmpty ? $"{Identifier}{StringSeparator}{ServiceType}" : "");
 
     public static Peer FromListItemValue(string listItem)
     {
       var peer = new Peer();
       var items = listItem.Split(StringSeparator, StringSplitOptions.TrimEntries);
-      if (items.Length != 4)
+      if (items.Length is not 2 and not 4)
         throw new ArgumentException("Invalid list item string.");
+      if (items.Length == 2) // Pipe peer
+      {
+        peer.ConnectionType = ConnectionTypes.Pipe;
+        peer.Identifier = items[0];
+        peer.InterfaceId = ConnectionTypes.Pipe.ToString();
+        peer.ServiceType = Enum.Parse<ServiceTypes>(items[1]);
+        peer.IP = "127.0.0.1";
+        peer.Port = 0;
+        return peer;
+      }
+      // Socket peer
+      peer.ConnectionType = ConnectionTypes.Socket;
       peer.Identifier = items[0];
       peer.InterfaceId = items[1];
-      peer.ServiceType = (ServiceTypes)Enum.Parse(typeof(ServiceTypes), items[2]);
+      peer.ServiceType = Enum.Parse<ServiceTypes>(items[2]);
       var ipPort = items[3].Split(':');
       peer.IP = ipPort[0];
       peer.Port = int.Parse(ipPort[1]);
@@ -67,8 +83,8 @@ public class PeerDiscovery
         InterfaceId = peerStrings[2],
         IP = peerStrings[3],
         Port = Convert.ToInt32(peerStrings[4]),
-        ServiceType = (ServiceTypes)Enum.Parse(typeof(ServiceTypes), peerStrings[5]),
-        ConnectionType = (ConnectionTypes)Enum.Parse(typeof(ConnectionTypes), peerStrings[6]),
+        ServiceType = Enum.Parse<ServiceTypes>(peerStrings[5]),
+        ConnectionType = Enum.Parse<ConnectionTypes>(peerStrings[6]),
         Identifier = peerStrings[7]
       };
     }

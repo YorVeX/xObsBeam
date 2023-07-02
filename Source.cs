@@ -144,7 +144,13 @@ public class Source
             Module.Log("No feed selected to connect to.", ObsLogLevel.Error);
             return;
           }
-          targetPipeName = availableFeedsListSelection;
+          try
+          {
+            targetPipeName = PeerDiscovery.Peer.FromListItemValue(availableFeedsListSelection).Identifier;
+          }
+          catch
+          {
+          }
         }
         if (string.IsNullOrEmpty(targetPipeName))
           targetPipeName = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_default_string(settings, (sbyte*)propertyTargetPipeNameId))!;
@@ -198,6 +204,7 @@ public class Source
     var discoveredPeers = PeerDiscovery.Discover().Result;
     bool foundPipePeers = false;
     bool foundSocketPeers = false;
+    bool foundExactPreviousPipePeer = false;
     bool foundExactPreviousSocketPeer = false;
     bool foundConflicts = false;
     var pipePeerItemValues = new List<string>();
@@ -212,29 +219,41 @@ public class Source
       var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
 
       // variables needed to restore the previous selection in the lists, even if an updated IP and/or port were detected through discovery
+      var previousPipeFeedsListSelectionValue = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailablePipeFeedsId))!;
       var previousSocketFeedsListSelectionValue = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailableSocketFeedsId))!;
-      PeerDiscovery.Peer previousPeer;
+      PeerDiscovery.Peer previousSocketPeer;
       try
       {
-        previousPeer = PeerDiscovery.Peer.FromListItemValue(previousSocketFeedsListSelectionValue);
+        previousSocketPeer = PeerDiscovery.Peer.FromListItemValue(previousSocketFeedsListSelectionValue);
       }
       catch
       {
-        previousPeer = default;
+        previousSocketPeer = default;
       }
-      var previousPeerSocketItemUniqueIdentifier = previousPeer.UniqueIdentifier;
-      var previousSocketFeedsListSelectionName = previousPeer.ListItemName;
+      PeerDiscovery.Peer previousPipePeer;
+      try
+      {
+        previousPipePeer = PeerDiscovery.Peer.FromListItemValue(previousPipeFeedsListSelectionValue);
+      }
+      catch
+      {
+        previousPipePeer = default;
+      }
+      var previousPeerSocketItemUniqueIdentifier = previousSocketPeer.SocketUniqueIdentifier;
+      var previousPipeFeedsListSelectionName = previousPipePeer.PipeListItemName;
+      var previousSocketFeedsListSelectionName = previousSocketPeer.SocketListItemName;
       var newSocketFeedsListSelectionValue = "";
 
       ObsProperties.obs_property_list_clear(peerDiscoveryAvailablePipeFeedsList);
       ObsProperties.obs_property_list_clear(peerDiscoveryAvailableSocketFeedsList);
       foreach (var peer in discoveredPeers)
       {
-        var peerSocketItemName = peer.ListItemName;
-        var peerSocketItemValue = peer.ListItemValue;
+        var peerSocketItemName = peer.SocketListItemName;
+        var peerSocketItemValue = peer.SocketListItemValue;
+        var peerPipeItemValue = peer.PipeListItemValue;
         fixed (byte*
-          peerListPipeItemName = Encoding.UTF8.GetBytes($"{peer.Identifier} [{peer.ServiceType}]"),
-          peerListPipeItemValue = Encoding.UTF8.GetBytes(peer.Identifier),
+          peerListPipeItemName = Encoding.UTF8.GetBytes(peer.PipeListItemName),
+          peerListPipeItemValue = Encoding.UTF8.GetBytes(peerPipeItemValue),
           peerListSocketItemName = Encoding.UTF8.GetBytes(peerSocketItemName),
           peerListSocketItemValue = Encoding.UTF8.GetBytes(peerSocketItemValue)
         )
@@ -242,6 +261,8 @@ public class Source
           if (peer.ConnectionType == PeerDiscovery.ConnectionTypes.Pipe)
           {
             foundPipePeers = true;
+            if (previousPipeFeedsListSelectionValue == peerPipeItemValue)
+              foundExactPreviousPipePeer = true;
             ObsProperties.obs_property_list_add_string(peerDiscoveryAvailablePipeFeedsList, (sbyte*)peerListPipeItemName, (sbyte*)peerListPipeItemValue);
             if (pipePeerItemValues.Contains(peer.Identifier))
             {
@@ -253,12 +274,12 @@ public class Source
           }
           else if (peer.ConnectionType == PeerDiscovery.ConnectionTypes.Socket)
           {
+            foundSocketPeers = true;
             if (previousSocketFeedsListSelectionValue == peerSocketItemValue)
               foundExactPreviousSocketPeer = true;
-            string peerSocketItemUniqueIdentifier = peer.UniqueIdentifier;
+            string peerSocketItemUniqueIdentifier = peer.SocketUniqueIdentifier;
             if (previousPeerSocketItemUniqueIdentifier == peerSocketItemUniqueIdentifier) // this matches even when IP and/or port have changed, so we can restore the previous selection, but with updated IP/port
               newSocketFeedsListSelectionValue = peerSocketItemValue;
-            foundSocketPeers = true;
             ObsProperties.obs_property_list_add_string(peerDiscoveryAvailableSocketFeedsList, (sbyte*)peerListSocketItemName, (sbyte*)peerListSocketItemValue);
             if (socketPeerItemValues.Contains(peerSocketItemUniqueIdentifier))
             {
@@ -287,12 +308,21 @@ public class Source
         else
           ObsProperties.obs_property_list_add_string(peerDiscoveryAvailableSocketFeedsList, (sbyte*)noFeedsListItem, (sbyte*)noFeedsListItem);
 
-        // was a peer previously configured that wasn't discovered anymore this time?
+        // was a pipe peer previously configured that wasn't discovered anymore this time?
+        if (!foundExactPreviousPipePeer && (previousPipeFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) && (previousPipeFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
+        {
+          // then make this transparent by adding this as a disabled list item
+          fixed (byte* listItemName = Encoding.UTF8.GetBytes(previousPipeFeedsListSelectionName), listItemValue = Encoding.UTF8.GetBytes(previousPipeFeedsListSelectionValue))
+            ObsProperties.obs_property_list_insert_string(peerDiscoveryAvailablePipeFeedsList, 1, (sbyte*)listItemName, (sbyte*)listItemValue);
+          ObsProperties.obs_property_list_item_disable(peerDiscoveryAvailablePipeFeedsList, 1, Convert.ToByte(true));
+        }
+
+        // was a socket peer previously configured that wasn't discovered anymore this time?
         if (!foundExactPreviousSocketPeer && (previousSocketFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) && (previousSocketFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
         {
           // then make this transparent by adding this as a disabled list item
-          fixed (byte* previousSocketFeedsListSelectionValueBytes = Encoding.UTF8.GetBytes(previousSocketFeedsListSelectionValue), previousSocketFeedsListSelectionNameBytes = Encoding.UTF8.GetBytes(previousSocketFeedsListSelectionName))
-            ObsProperties.obs_property_list_insert_string(peerDiscoveryAvailableSocketFeedsList, 1, (sbyte*)previousSocketFeedsListSelectionNameBytes, (sbyte*)previousSocketFeedsListSelectionValueBytes);
+          fixed (byte* listItemName = Encoding.UTF8.GetBytes(previousSocketFeedsListSelectionName), listItemValue = Encoding.UTF8.GetBytes(previousSocketFeedsListSelectionValue))
+            ObsProperties.obs_property_list_insert_string(peerDiscoveryAvailableSocketFeedsList, 1, (sbyte*)listItemName, (sbyte*)listItemValue);
           ObsProperties.obs_property_list_item_disable(peerDiscoveryAvailableSocketFeedsList, 1, Convert.ToByte(true));
         }
 
