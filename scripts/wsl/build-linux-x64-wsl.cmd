@@ -38,13 +38,15 @@ mkdir ..\..\publish\linux-x64\ 2>nul
 copy /Y %BuildFolderFromWindows%\%ProjectName%\publish\* ..\..\publish\linux-x64\
 
 REM Create release structure.
-mkdir ..\..\release\linux-x64\.config\obs-studio\plugins\%ProjectName%\bin\64bit 2>nul
-mkdir ..\..\release\linux-x64\.config\obs-studio\plugins\%ProjectName%\data\locale 2>nul
-del /F /S /Q ..\..\release\linux-x64\.config\obs-studio\plugins\%ProjectName%\bin\64bit\*
-del /F /S /Q ..\..\release\linux-x64\.config\obs-studio\plugins\%ProjectName%\data\locale\*
-copy /Y ..\..\publish\linux-x64\ ..\..\release\linux-x64\.config\obs-studio\plugins\%ProjectName%\bin\64bit\
-copy /Y ..\..\locale\* ..\..\release\linux-x64\.config\obs-studio\plugins\%ProjectName%\data\locale
+mkdir ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit 2>nul
+mkdir ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\data\locale 2>nul
+del /F /S /Q ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit\*
+del /F /S /Q ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\data\locale\*
+copy /Y ..\..\publish\linux-x64\ ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit\
+copy /Y ..\..\locale\* ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\data\locale
+
+REM Copy extra binaries to the release structure
+copy /Y ..\..\QoirLib\binaries\linux-x64-glibc-2.31\libQoirLib.so ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit\
 
 REM Final cleanup in WSL
 wsl rm -Rf %BuildFolderFromLinux%/%ProjectName%/*
-

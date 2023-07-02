@@ -12,8 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The modification to this file compared to the original is that "__declspec(dllexport)" has been added to the qoir_encode and qoir_decode function declarations and that the
-// QOIR_IMPLEMENTATION define has been removed and all code that was within that define. This is so that this class can serve as a pure header file template for the C# wrapper.
+// The modifications to this file compared to the original are that 1) "DLL_EXPORT"
+// has been added to the qoir_encode and qoir_decode function declarations that is
+// defined on Windows and Linux so that it's exporting these functions to a library
+// and 2) the QOIR_IMPLEMENTATION define has been removed and all code that was within
+// that define. This is so that this class can serve as a pure header file template
+// for the C# wrapper.
+
+#if defined(_WIN32)
+#define DLL_EXPORT __declspec(dllexport)
+#elif defined(__linux__)
+#define DLL_EXPORT __attribute__ ((visibility ("default")))
+#endif
 
 #ifndef QOIR_INCLUDE_GUARD
 #define QOIR_INCLUDE_GUARD
@@ -402,7 +412,7 @@ typedef struct qoir_decode_options_struct {
 //
 // A NULL options is valid and is equivalent to a non-NULL pointer to a
 // zero-valued struct (where all fields are zero / NULL / false).
-__declspec(dllexport) qoir_decode_result  //
+DLL_EXPORT qoir_decode_result  //
 qoir_decode(                          //
     const uint8_t* src_ptr,           //
     const size_t src_len,             //
@@ -476,7 +486,7 @@ typedef struct qoir_encode_options_struct {
 //
 // A NULL options is valid and is equivalent to a non-NULL pointer to a
 // zero-valued struct (where all fields are zero / NULL / false).
-__declspec(dllexport) qoir_encode_result      //
+DLL_EXPORT qoir_encode_result      //
 qoir_encode(                              //
     const qoir_pixel_buffer* src_pixbuf,  //
     const qoir_encode_options* options);

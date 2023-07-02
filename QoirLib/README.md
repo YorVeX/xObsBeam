@@ -1,28 +1,22 @@
 ﻿# QoirLib
 ## C++ library
-QoirLib.h is a copy of the original qoir.h, Copyright 2022 Nigel Tao, visit https://github.com/nigeltao/qoir for the original source.
+`QoirLib.h` is a copy of the original qoir.h, Copyright 2022 Nigel Tao, visit https://github.com/nigeltao/qoir for the original source.
 
-The only modification to this file compared to the original is that "__declspec(dllexport)" has been added to the qoir_encode and qoir_decode function declarations.
-The project files and main.cpp included here merely exist to compile the QoirLib.dll binary library file from it using Visual Studio 2022 (probably earlier versions will work as well).
+The only modification to this file compared to the original is that "DLL_EXPORT" has been added to the qoir_encode and qoir_decode function declarations that is defined on Windows and Linux so that it's exporting these functions to a library.
+The project files and main.cpp included here merely exist to compile the QoirLib.dll binary library file from it using Visual Studio 2022 (probably earlier versions will work as well), a makefile is available for Linux g++ builds.
 
 ## C# wrapper class
-QoirLibCs.h is a copy of the original qoir.h, Copyright 2022 Nigel Tao, visit https://github.com/nigeltao/qoir for the original source.
+`QoirLibCs.h` is a copy of the original qoir.h, Copyright 2022 Nigel Tao, visit https://github.com/nigeltao/qoir for the original source.
 
-The modification to this file compared to the original is that "__declspec(dllexport)" has been added to the qoir_encode and qoir_decode function declarations and that the QOIR_IMPLEMENTATION define has been removed and all code that was within that define. This is so that this class can serve as a pure header file template for the C# wrapper.
+In addition to the modification for the C++ library the QOIR_IMPLEMENTATION define has been removed and all code that was within that define. This is so that this class can serve as a pure header file template for the C# wrapper.
 
 The actual C# wrapper class is in Qoir.cs in this folder.
 
 ## Installation and usage
 ### Using the wrapper class
-#### Windows
-In order to use the wrapper class the binary QoirLib library is needed. For Windows the necessary `QoirLib.dll` version is directly provided here for your convenience. 
+In order to use the wrapper class the binary QoirLib library is needed. For Windows the necessary `QoirLib.dll` file and for Linux the `libQoirLib.so` file compiled on Ubuntu 20.04 (glibc 2.31) are directly provided in the [binaries] folder for your convenience. Simply copy them to the same folder where your xObsBeam plugin file is located, other folders within your system PATH should also work.
 
-This DLL should be placed in the same folder as the xObsBeam plugin for simplicity. Alternatively it can be placed in the `bin` folder of the OBS installation (where also obs64.exe is located), into Windows system directories where these libraries typically reside in, or into a directory that is in your PATH environment variable.
-
-If you want to build it yourself just compile the QoirLib.h file using the Visual Studio 2022 project provided here.
-
-#### Linux
-Since the original qoir.h file can be used on Linux too creating a similar library build should be possible, but this hasn't been built or tested for Linux yet. Any PRs to add what is necessary for a Linux build are very welcome.
+If you want to build it yourself just compile the QoirLib.h file using the Visual Studio 2022 project provided here for Windows, or run `make` on Linux.
 
 ## Creating the wrapper class (for developers)
 The wrapper class in Qoir.cs was generated using ClangSharpPInvokeGenerator from [ClangSharp project](https://github.com/dotnet/ClangSharp) with the generate.ps1 script in this folder. This is a PowerShell script and therefore is for Windows only.
