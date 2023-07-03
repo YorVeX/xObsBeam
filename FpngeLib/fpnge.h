@@ -12,7 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The only modification to this file compared to the original is that "__declspec(dllexport)" has been added to the FPNGEEncode and FPNGEOutputAllocSize function declarations.
+// The modification to this file compared to the original is that "DLL_EXPORT"
+// has been added to the FPNGEEncode and FPNGEOutputAllocSize function
+// declarations that is defined on Windows and Linux so that it's exporting
+// these functions to a library. In addition, the FPNGEOutputAllocSize function
+// had its inline implementation replaced by a pure header declaration.
 
 #ifndef FPNGE_H
 #define FPNGE_H
@@ -20,6 +24,12 @@
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+#if defined(_WIN32)
+#define DLL_EXPORT __declspec(dllexport)
+#elif defined(__linux__)
+#define DLL_EXPORT __attribute__ ((visibility ("default")))
 #endif
 
 enum FPNGECicpColorspace { FPNGE_CICP_NONE, FPNGE_CICP_PQ };
@@ -67,17 +77,14 @@ inline void FPNGEFillOptions(struct FPNGEOptions *options, int level,
 
 // bytes_per_channel = 1/2 for 8-bit and 16-bit. num_channels: 1/2/3/4
 // (G/GA/RGB/RGBA)
-__declspec(dllexport) size_t FPNGEEncode(size_t bytes_per_channel, size_t num_channels,
+DLL_EXPORT size_t FPNGEEncode(size_t bytes_per_channel, size_t num_channels,
                    const void *data, size_t width, size_t row_stride,
                    size_t height, void *output,
                    const struct FPNGEOptions *options);
 
-__declspec(dllexport) inline size_t FPNGEOutputAllocSize(size_t bytes_per_channel,
+DLL_EXPORT size_t FPNGEOutputAllocSize(size_t bytes_per_channel,
                                    size_t num_channels, size_t width,
-                                   size_t height) {
-  // likely an overestimate
-  return 1024 + (2 * bytes_per_channel * width * num_channels + 1) * height;
-}
+                                   size_t height);
 
 #ifdef __cplusplus
 }

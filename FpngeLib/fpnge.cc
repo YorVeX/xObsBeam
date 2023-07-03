@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// The modification to this file from the original is that the
+// FPNGEOutputAllocSize function code from fpnge.h has been moved here.
+
+
 #include "fpnge.h"
 #include <algorithm>
 #include <assert.h>
@@ -1588,4 +1592,11 @@ extern "C" size_t FPNGEEncode(size_t bytes_per_channel, size_t num_channels,
   writer.Write(32, 0x826042ae);
 
   return writer.bytes_written;
+}
+
+extern "C" size_t FPNGEOutputAllocSize(size_t bytes_per_channel,
+                                   size_t num_channels, size_t width,
+                                   size_t height) {
+  // likely an overestimate
+  return 1024 + (2 * bytes_per_channel * width * num_channels + 1) * height;
 }

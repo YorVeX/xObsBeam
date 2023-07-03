@@ -1,11 +1,14 @@
 ﻿# FpngeLib
 ## C++ library
-fpnge.cc is a copy of the original fpnge.cc, Copyright 2021 Google LLC, visit https://github.com/veluca93/fpnge for the original source.
-
 fpnge.h is a modified copy of the original fpnge.h, Copyright 2021 Google LLC, visit https://github.com/veluca93/fpnge for the original source.
 
-The only modification to this file compared to the original is that "__declspec(dllexport)" has been added to the FPNGEEncode and FPNGEOutputAllocSize function declarations.
-The project files and main.cpp included here merely exist to compile the FpngeLib.dll binary library file from it using Visual Studio 2022 (probably earlier versions will work as well).
+The modification to this file compared to the original is that "DLL_EXPORT" has been added to the FPNGEEncode and FPNGEOutputAllocSize function declarations that is defined on Windows and Linux so that it's exporting these functions to a library. In addition, the FPNGEOutputAllocSize function had its inline implementation replaced by a pure header declaration.
+
+fpnge.cc is a modified copy of the original fpnge.cc, Copyright 2021 Google LLC, visit https://github.com/veluca93/fpnge for the original source.
+
+The modification to this file from the original is that the FPNGEOutputAllocSize function code from fpnge.h has been moved here.
+
+The project files and FpngeLib.cpp included here merely exist to compile the FpngeLib.dll binary library file from it using Visual Studio 2022 (probably earlier versions will work as well) on Windows or clang++ on Linux.
 
 ## C# wrapper class
 Fpnge.cs is the C# wrapper for the modified fpnge.h file.
@@ -13,15 +16,9 @@ Fpnge.cs is the C# wrapper for the modified fpnge.h file.
 It is not a fully featured managed wrapper class, it instead is a very basic wrapper that only exposes the (unsafe) FPNGEOutputAllocSize() and FPNGEEncode() function calls that are needed for this project. Be aware of this when you want to use this in your own project.
 
 ## Using the wrapper class
-### Windows
-In order to use the wrapper class the binary FpngeLib library is needed. For Windows the necessary `FpngeLib.dll` version is directly provided here for your convenience. 
+In order to use the wrapper class the binary QoirLib library is needed. For Windows the necessary `FpngeLib.dll` file and for Linux the `libFpngeLib.so` file compiled on Ubuntu 20.04 (glibc 2.31) are directly provided in the [binaries](binaries) folder for your convenience. Simply copy them to the same folder where your xObsBeam plugin file is located, other folders within your system PATH should also work.
 
-This DLL should be placed in the same folder as the xObsBeam plugin for simplicity. Alternatively it can be placed in the `bin` folder of the OBS installation (where also obs64.exe is located), into Windows system directories where these libraries typically reside in, or into a directory that is in your PATH environment variable.
-
-If you want to build it yourself just compile the FpngeLib project provided here using Visual Studio 2022.
-
-### Linux
-Since the original fpnge.cc and fpnge.h files can be used on Linux too creating a similar library build should be possible, but this hasn't been built or tested for Linux yet. Any PRs to add what is necessary for a Linux build are very welcome.
+If you want to build it yourself just compile the files using the Visual Studio 2022 project provided here for Windows, or run `make CXX=clang++` on Linux (you could also try just `make`, but the original build script explicitly uses clang++ so that's what is recommended) to use the Makefile provided here.
 
 ## Creating the wrapper class (for developers)
 The wrapper class in Fpnge.cs was generated using ClangSharpPInvokeGenerator from [ClangSharp project](https://github.com/dotnet/ClangSharp) with the generate.ps1 script in this folder. This is a PowerShell script and therefore is for Windows only.
