@@ -133,11 +133,11 @@ pre-link : post-compile
 # Compared to the original the link flags in the following section have been changed as follows to link
 # based on the objects and not on the static lib (otherwise the necessary function exports are missing):
 # old: $(CC) $(LFLAGS) -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(BUILD_DIRECTORY)/$(TARGET)$(STATIC_EXTENSION)
-# new: $(CC) $(LFLAGS) -fvisibility=default -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(DENSITY_OBJ)
+# new: $(CC) $(LFLAGS) -fvisibility=default -static-libgcc -static-libstdc++ -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(DENSITY_OBJ)
 
 link: pre-link $(DENSITY_OBJ)
 	$(AR) crs $(BUILD_DIRECTORY)/$(TARGET)$(STATIC_EXTENSION) $(DENSITY_OBJ)
-	$(CC) $(LFLAGS) -fvisibility=default -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(DENSITY_OBJ)
+	$(CC) $(LFLAGS) -fvisibility=default -static-libgcc -static-libstdc++ -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(DENSITY_OBJ)
 
 post-link: link
 	@echo Done.
