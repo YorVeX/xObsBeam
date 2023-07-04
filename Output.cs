@@ -138,10 +138,11 @@ public static class Output
 
     // color format compatibility check
     var requiredVideoFormatConversion = SettingsDialog.GetRequiredVideoFormatConversion();
+    video_scale_info* videoScaleInfo = null;
     if (requiredVideoFormatConversion != video_format.VIDEO_FORMAT_NONE)
     {
       // request conversion from OBS
-      video_scale_info* videoScaleInfo = ObsBmem.bzalloc<video_scale_info>();
+      videoScaleInfo = ObsBmem.bzalloc<video_scale_info>();
       _conversionVideoFormat = requiredVideoFormatConversion;
       videoScaleInfo->format = _conversionVideoFormat;
       videoScaleInfo->range = _videoInfo->range; // needs to be explicitly set to leave it as it is, otherwise it will be converted to whatever video_range_type.VIDEO_RANGE_DEFAULT is
@@ -152,6 +153,9 @@ public static class Output
     }
 
     Obs.obs_output_begin_data_capture(_outputData.Output, ObsOutput.OBS_OUTPUT_AV);
+
+    if (videoScaleInfo != null)
+      ObsBmem.bfree(videoScaleInfo);
 
     return Convert.ToByte(true);
   }
