@@ -33,6 +33,8 @@ public class BeamReceiver
 
   public ArrayPool<byte> RawDataBufferPool { get; private set; } = ArrayPool<byte>.Create();
 
+  public FrameBuffer? FrameBuffer { get; private set; }
+
   uint _width;
   public uint Width
   {
@@ -402,12 +404,7 @@ public class BeamReceiver
     ulong lastVideoTimestamp = 0;
     ulong senderVideoTimestamp;
 
-    var frameBuffer = new FrameBuffer
-    {
-      FrameBufferTimeMs = FrameBufferTimeMs
-    };
-
-    bool firstFrame = true;
+    bool firstVideoFrame = true;
 
     if (EncoderSupport.LibJpegTurbo)
       TurboJpegDecompressInit();
@@ -483,9 +480,17 @@ public class BeamReceiver
               _width = videoHeader.Width;
               _height = videoHeader.Height;
             }
-            if (sizeChanged || firstFrame) // re-allocate the arrays matching the new necessary size
+            if (sizeChanged || firstVideoFrame) // re-allocate the arrays matching the new necessary size
             {
-              firstFrame = false;
+              firstVideoFrame = false;
+
+              if (FrameBufferTimeMs > 0)
+              {
+                FrameBuffer = new FrameBuffer(FrameBufferTimeMs, fps);
+                Module.Log($"Buffering {FrameBuffer.VideoFrameBufferCount} video frames based on a frame buffer time of {FrameBuffer.FrameBufferTimeMs} ms at {fps} FPS.", ObsLogLevel.Info);
+              }
+              else
+                Module.Log("Frame buffering disabled.", ObsLogLevel.Info);
 
               if (videoHeader.Compression == Beam.CompressionTypes.JpegLossy)
               {
@@ -560,7 +565,7 @@ public class BeamReceiver
             }
 
             // process the frame
-            if (frameBuffer.FrameBufferTimeMs == 0)
+            if (FrameBuffer == null)
             {
               if (videoHeader.Timestamp < lastVideoTimestamp)
                 Module.Log($"Warning: Received video frame {videoHeader.Timestamp} is older than previous frame {lastVideoTimestamp}. Use a high enough frame buffer if the sender is not compressing from the OBS render thread.", ObsLogLevel.Warning);
@@ -569,7 +574,7 @@ public class BeamReceiver
               lastVideoTimestamp = videoHeader.Timestamp;
             }
             else
-              frameBuffer.ProcessFrame(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime));
+              FrameBuffer.ProcessFrame(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime));
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(videoHeader.DataSize), readResult.Buffer.End);
 
@@ -609,19 +614,7 @@ public class BeamReceiver
             break;
           }
 
-          // set frame timestamp offset
-          if (_frameTimestampOffset == 0) // initialize the offset if this is the very first frame since connecting
-          {
-            _frameTimestampOffset = audioHeader.Timestamp;
-            Module.Log($"Audio data: Frame timestamp offset initialized to: {_frameTimestampOffset}", ObsLogLevel.Debug);
-          }
-          if (_frameTimestampOffset > audioHeader.Timestamp) // could happen for the very first pair of audio and video frames after connecting
-          {
-            Module.Log($"Audio data: Frame timestamp offset {_frameTimestampOffset} is higher than current timestamp {audioHeader.Timestamp}, correcting to timestamp 1.", ObsLogLevel.Warning);
-            audioHeader.Timestamp = 1;
-          }
-          else
-            audioHeader.Timestamp -= _frameTimestampOffset;
+          audioHeader.Timestamp -= _frameTimestampOffset;
 
           // read audio data
           if (audioHeader.DataSize > 0)
@@ -637,10 +630,13 @@ public class BeamReceiver
             }
 
             // process the frame
-            if (frameBuffer.FrameBufferTimeMs == 0)
-              OnAudioFrameReceived(new Beam.BeamAudioData(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray(), frameReceivedTime));
-            else
-              frameBuffer.ProcessFrame(new Beam.BeamAudioData(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray(), frameReceivedTime));
+            if (!firstVideoFrame && (_frameTimestampOffset > 0)) // Beam treads video frames as a kind of header in several ways, ignore audio frames that were received before the first video frame
+            {
+              if (FrameBuffer == null)
+                OnAudioFrameReceived(new Beam.BeamAudioData(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray(), frameReceivedTime));
+              else
+                FrameBuffer.ProcessFrame(new Beam.BeamAudioData(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray(), frameReceivedTime));
+            }
 
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(audioHeader.DataSize), readResult.Buffer.End);
@@ -654,24 +650,6 @@ public class BeamReceiver
         {
           Module.Log($"Received unknown header type ({beamType}), aborting connection.", ObsLogLevel.Error);
           break;
-        }
-
-        // process frames from the frame buffer
-        if (frameBuffer.FrameBufferTimeMs > 0)
-        {
-          foreach (var renderFrame in frameBuffer.GetNextFrames(5))
-          {
-            if (renderFrame.Type == Beam.Type.Video)
-            {
-              if (renderFrame.Timestamp < lastVideoTimestamp)
-                Module.Log($"Warning: Received video frame {renderFrame.Timestamp} is older than previous frame {lastVideoTimestamp}. Consider increasing the frame buffer time to avoid this.", ObsLogLevel.Warning);
-              else
-                OnVideoFrameReceived((Beam.BeamVideoData)renderFrame);
-              lastVideoTimestamp = renderFrame.Timestamp;
-            }
-            else if (renderFrame.Type == Beam.Type.Audio)
-              OnAudioFrameReceived((Beam.BeamAudioData)renderFrame);
-          }
         }
       }
       catch (OperationCanceledException ex)
@@ -691,6 +669,15 @@ public class BeamReceiver
         pipeReader.Complete(ex);
         break;
       }
+    }
+
+    // stop the frame buffer so that the source no longer shows any frames and return the remaining unused frames from the buffer to the pool
+    if (FrameBuffer != null)
+    {
+      var unusedVideoFrames = FrameBuffer.Stop();
+      foreach (var frame in unusedVideoFrames)
+        RawDataBufferPool.Return(frame.Data); // don't leak those unused frames
+      FrameBuffer = null;
     }
 
     try { pipeReader.Complete(); } catch { } // exceptions are possible if the pipe is already closed, but can then be ignored

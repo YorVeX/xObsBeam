@@ -16,81 +16,185 @@ With sync feeds these problems don't exist, the order stays unaltered and audio 
 
 public class FrameBuffer
 {
+  readonly object _frameListLock = new();
   readonly List<Beam.IBeamData> _frameList = new();
+  bool _rampUp = true;
+  bool _isFirstAudioFrame = true;
+  int _videoFrameCount;
+  readonly uint _fps;
+  ulong _lastVideoTimestamp;
+  ulong _lastAudioTimestamp;
 
-  //TODO: make buffering more useful
-  /*
-  the current implementation solves only one specific problem, and this not even good:
-  frames not received in the right order will be sorted if arriving within the buffering time, hence sent to the output with the right sorting.
-  however, the frame that is late will be delayed by the buffering time, so the output will still receive it all with a delay.
-  for the same reason A/V desyncs will not be corrected, because the audio frames will be delayed by the buffering time as well.
-  and: if some frames are late due to a network lag they will be put delayed into the buffer and also retrieved with the same delay out of the buffer.
+  /// <summary>The expected timestamp difference between two video frames in nanoseconds.</summary>
+  ulong _videoTimestampStep;
+  /// <summary>The expected timestamp difference between two audio frames in nanoseconds.</summary>
+  ulong _audioTimestampStep;
+  ulong _maxVideoTimestampDeviation;
+  ulong _maxAudioTimestampDeviation;
 
-  so the big problem is, that the buffering time is applied to all frames, no matter if they are late or not.
-
-  what about this:
-  - from the buffering time calculate the number of frames to buffer (do that on BeamReceiver class already, FrameBuffer then only has a FrameBufferCount setting)
-  - as long long as the buffer is not full, ProcessFrame just adds the frames to the buffer but doesn't return any frames
-  - as soon as the buffer is full ProcessFrame will output a like for like frame, so one video frame for each input video frame and one audio frame for each input audio frame
-
-  problems with this:
-  - what happens if e.g. a few video frames are missing?
-  - can we fill those gaps, i.e. duplicate the previous frame? otherwise we would have to break with the like for like frame returning
-  - but when we don't receive frames for a while we also don't have the trigger to output an old frame, so we alternative means to trigger the output of an old frame
-  - can we still use video_render and audio_render callbacks even though we're an async source? and use that all the time, or only to check whether a gap needs to be filled?
-  */
-  public int FrameBufferTimeMs { get; set; } = 1000;
+  public int FrameBufferTimeMs { get; private set; } = 1000;
+  public int VideoFrameBufferCount { get; private set; } = 60;
+  public FrameBuffer(int frameBufferTimeMs, uint fps)
+  {
+    _fps = fps;
+    VideoFrameBufferCount = (int)Math.Ceiling((double)frameBufferTimeMs / 1000 * _fps);
+    FrameBufferTimeMs = VideoFrameBufferCount * 1000 / (int)_fps;
+    _videoTimestampStep = (ulong)Math.Ceiling((1 / (double)_fps) * 1000000000);
+    _maxVideoTimestampDeviation = (ulong)Math.Ceiling(_videoTimestampStep * 1.8);
+    Module.Log($"Frame buffer max video deviation is: {_maxVideoTimestampDeviation}", ObsLogLevel.Debug);
+  }
 
   public void ProcessFrame(Beam.IBeamData frame)
   {
-    int frameIndex = (_frameList.Count - 1);
-    if (frameIndex < 0) // the very first frame, no need to apply any further logic
+    lock (_frameListLock)
     {
-      _frameList.Add(frame);
-      return;
-    }
-    // the standard case should be that this frame timestamp was received in the right order and therefore can be added at the end, so check this first
-    if (frame.Timestamp > _frameList[frameIndex].Timestamp)
-      _frameList.Add(frame);
-    else // not the standard case, need to see where to insert this frame
-    {
-      bool inserted = false;
-      // run this loop backwards, if the new frame is not the very last in the list it should at least be close to the end
-      while (--frameIndex >= 0)
+      if (frame.Type == Beam.Type.Video)
+        _videoFrameCount++;
+
+      if (_rampUp)
       {
-        if (frame.Timestamp > _frameList[frameIndex].Timestamp)
+        if (_videoFrameCount > VideoFrameBufferCount) // ramp-up is finished when the buffer is filled to its configured size
+          _rampUp = false;
+
+        if (_isFirstAudioFrame && (frame.Type == Beam.Type.Audio)) // calculate the max audio frame time deviation based on header information from the first audio frame
         {
-          _frameList.Insert(frameIndex + 1, frame);
-          inserted = true;
-          break;
+          _isFirstAudioFrame = false;
+          var audioFrame = (Beam.BeamAudioData)frame;
+          _audioTimestampStep = (ulong)Math.Ceiling((1 / (double)audioFrame.Header.SampleRate) * audioFrame.Header.Frames * 1000000000);
+          _maxAudioTimestampDeviation = (ulong)Math.Ceiling(_audioTimestampStep * 1.8);
+          Module.Log($"Frame buffer max audio deviation is: {_maxAudioTimestampDeviation}", ObsLogLevel.Debug);
         }
       }
-      if (!inserted)
-        _frameList.Insert(0, frame);
+
+      int frameIndex = (_frameList.Count - 1);
+      if (frameIndex < 0) // the very first frame, no need to apply any further logic
+      {
+        _frameList.Add(frame);
+        return;
+      }
+      // the standard case should be that this frame timestamp was received in the right order and therefore can be added at the end, so check this first
+      if (frame.Timestamp > _frameList[frameIndex].Timestamp)
+        _frameList.Add(frame);
+      else // not the standard case, need to see where to insert this frame
+      {
+        bool inserted = false;
+        // run this loop backwards, if the new frame is not the very last in the list it should at least be close to the end
+        while (--frameIndex >= 0)
+        {
+          if (frame.Timestamp > _frameList[frameIndex].Timestamp)
+          {
+            _frameList.Insert(frameIndex + 1, frame);
+            inserted = true;
+            break;
+          }
+        }
+        if (!inserted)
+          _frameList.Insert(0, frame);
+      }
     }
   }
 
-  public Beam.IBeamData[] GetNextFrames(int searchFrameCount)
+  private void Reset()
   {
-    var result = new List<Beam.IBeamData>(searchFrameCount);
-
-    var now = DateTime.UtcNow;
-    int frameIndex = 0;
-    int searchCount = 0;
-    while ((frameIndex < _frameList.Count) && (searchCount < searchFrameCount))
+    lock (_frameListLock)
     {
-      var frame = _frameList[frameIndex];
-      if (now.Subtract(frame.Created).TotalMilliseconds >= FrameBufferTimeMs) // has this frame been long enough in the buffer?
-      {
-        _frameList.RemoveAt(frameIndex);
-        result.Add(frame);
-        if (result.Count >= searchFrameCount)
-          break;
-      }
-      else
-        frameIndex++;
-      searchCount++;
+      _rampUp = true;
+      _isFirstAudioFrame = true;
+      _videoFrameCount = 0;
+      _lastVideoTimestamp = 0;
+      _lastAudioTimestamp = 0;
+      _videoTimestampStep = 0;
+      _audioTimestampStep = 0;
+      _maxVideoTimestampDeviation = 0;
+      _maxAudioTimestampDeviation = 0;
     }
-    return result.ToArray();
+  }
+
+  public List<Beam.BeamVideoData> Stop()
+  {
+    lock (_frameListLock)
+    {
+      Reset();
+      var unusedVideoFrames = new List<Beam.BeamVideoData>();
+      foreach (var frame in _frameList)
+      {
+        if (frame.Type == Beam.Type.Video)
+          unusedVideoFrames.Add((Beam.BeamVideoData)frame);
+      }
+      _frameList.Clear();
+      return unusedVideoFrames;
+    }
+  }
+
+  public Beam.IBeamData[] GetNextFrames()
+  {
+    lock (_frameListLock)
+    {
+      int debugVideoFrameCount = 0; //HACK: for debugging only, remove later
+      int debugAudioFrameCount = 0; //HACK: for debugging only, remove later
+
+      if (_rampUp)
+        return Array.Empty<Beam.IBeamData>(); // still in ramp-up phase, don't return anything yet
+      else if (_frameList.Count == 0) // out of ramp-up phase but the buffer is empty?
+      {
+        //TODO: think about making this behavior configurable or whether a better solution is possible
+        Reset(); // the buffer ran dry, start over with ramp up
+        Module.Log("The frame buffer ran dry, refilling. Consider increasing the buffering time to compensate for longer gaps.", ObsLogLevel.Warning);
+        return Array.Empty<Beam.IBeamData>();
+      }
+
+      if (_frameList.Count < VideoFrameBufferCount) //HACK: for debugging only, remove later
+        Module.Log($"Frame buffer below target: {_frameList.Count}/{VideoFrameBufferCount}", ObsLogLevel.Warning);
+
+      var result = new List<Beam.IBeamData>();
+
+      bool foundEnoughVideoFrames = false;
+      while (_frameList.Count > 0)
+      {
+        // ProcessFrame already did the sorting by timestamp while inserting, so we can just take the first frame to get the next frame that is due
+        var frame = _frameList[0];
+        if (foundEnoughVideoFrames)
+        {
+          if (frame.Type == Beam.Type.Video) // return only one video frame and all audio frames around it
+            break;
+          debugAudioFrameCount++;
+          _frameList.RemoveAt(0);
+          result.Add(frame);
+        }
+        else
+        {
+          if (frame.Type == Beam.Type.Video)
+          {
+            if ((_lastVideoTimestamp > 0) && ((long)(frame.Timestamp - _lastVideoTimestamp) > (long)_maxVideoTimestampDeviation))
+            {
+              Module.Log($"Missing video frame in frame buffer, timestamp deviation of {(long)(frame.Timestamp - _lastVideoTimestamp)} > max deviation of {_maxVideoTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
+              //TODO: add mode to keep the delay stable based on comparing the local system time to frame timestamps (need to fill gaps with dummy frames then)
+              // it's not clear whether filling video frame gaps has any use outside of the "keep the delay stable" feature, e.g. missing video frames shouldn't trigger audio buffering, but that needs testing to be sure
+              // if it _does_ has a separate use, offer a separate option for gap filling outside of the stable delay feature
+            }
+            _lastVideoTimestamp = frame.Timestamp;
+
+            _videoFrameCount--;
+            foundEnoughVideoFrames = (_videoFrameCount <= VideoFrameBufferCount); // only found enough video frames to return when the buffer is not filled more than its configured size
+            debugVideoFrameCount++;
+          }
+          else if (frame.Type == Beam.Type.Audio)
+          {
+            debugAudioFrameCount++;
+            if ((_lastAudioTimestamp > 0) && ((long)(frame.Timestamp - _lastAudioTimestamp) > (long)_maxAudioTimestampDeviation))
+            {
+              Module.Log($"Missing audio frame in frame buffer, timestamp deviation of {(long)(frame.Timestamp - _lastAudioTimestamp)} > max deviation of {_maxAudioTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
+              //TODO: separate option to do this only for audio frames so that OBS doesn't trigger audio buffering
+            }
+            _lastAudioTimestamp = frame.Timestamp;
+          }
+
+          _frameList.RemoveAt(0);
+          result.Add(frame);
+        }
+      }
+      // Module.Log($"GetNextFrames returning {result.Count} frames ({debugVideoFrameCount} video and {debugAudioFrameCount} audio), {_frameList.Count} in buffer ({_videoFrameCount} video and {_frameList.Count - _videoFrameCount} audio).", ObsLogLevel.Debug);
+      return result.ToArray();
+    }
   }
 }

@@ -54,6 +54,8 @@ public class Source
       sourceInfo.destroy = &source_destroy;
       sourceInfo.get_defaults = &source_get_defaults;
       sourceInfo.get_properties = &source_get_properties;
+      sourceInfo.video_tick = &source_video_tick;
+      // sourceInfo.audio_mix = &source_audio_mix;
       sourceInfo.update = &source_update;
       sourceInfo.save = &source_save;
       ObsSource.obs_register_source_s(&sourceInfo, (nuint)sizeof(obs_source_info));
@@ -582,6 +584,29 @@ public class Source
   {
     return GetSource(data).BeamReceiver.Height;
   }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void source_video_tick(void* data, float seconds)
+  {
+    // Module.Log("source_video_tick", ObsLogLevel.Error);
+    if (!Convert.ToBoolean(Obs.obs_source_showing(((Context*)data)->Source))) // nothing to do if the source is not visible
+      return;
+
+    //HACK: handle the case when the sender has a lower FPS setting than this receiver (higher FPS setting works, because excess frames not fitting into the buffer will just be pushed out to OBS)
+
+    var thisSource = GetSource(data);
+    if (thisSource?.BeamReceiver?.FrameBuffer != null)
+    {
+      foreach (var frame in thisSource.BeamReceiver.FrameBuffer.GetNextFrames())
+      {
+        if (frame.Type == Beam.Type.Video)
+          thisSource.VideoFrameReceivedEventHandler(thisSource, (Beam.BeamVideoData)frame);
+        else if (frame.Type == Beam.Type.Audio)
+          thisSource.AudioFrameReceivedEventHandler(thisSource, (Beam.BeamAudioData)frame);
+      }
+    }
+  }
+
 #pragma warning restore IDE1006
   #endregion Source API methods
 

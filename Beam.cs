@@ -216,7 +216,7 @@ public class Beam
     public Type Type { get; set; } = Type.Video;
     public VideoHeader Header;
     public readonly byte[] Data;
-    public readonly ulong Timestamp { get; }
+    public ulong Timestamp { get; set; }
     public DateTime Created { get; }
 
     // used by receivers
