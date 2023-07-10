@@ -147,7 +147,7 @@ public class FrameBuffer
         return Array.Empty<Beam.IBeamData>();
       }
 
-      if (_frameList.Count < VideoFrameBufferCount) //HACK: for debugging only, remove later
+      if (_frameList.Count < VideoFrameBufferCount)
         Module.Log($"Frame buffer below target: {_frameList.Count}/{VideoFrameBufferCount}", ObsLogLevel.Warning);
 
       var result = new List<Beam.IBeamData>();
@@ -157,47 +157,38 @@ public class FrameBuffer
       {
         // ProcessFrame already did the sorting by timestamp while inserting, so we can just take the first frame to get the next frame that is due
         var frame = _frameList[0];
-        if (foundEnoughVideoFrames)
+        if (frame.Type == Beam.Type.Video)
         {
-          if (frame.Type == Beam.Type.Video) // return only one video frame and all audio frames around it
+          if (foundEnoughVideoFrames) // return only one video frame and all audio frames around it
             break;
-          debugAudioFrameCount++;
-          _frameList.RemoveAt(0);
-          result.Add(frame);
+          if ((_lastVideoTimestamp > 0) && ((long)(frame.Timestamp - _lastVideoTimestamp) > (long)_maxVideoTimestampDeviation))
+          {
+            Module.Log($"Missing video frame in frame buffer, timestamp deviation of {(long)(frame.Timestamp - _lastVideoTimestamp)} > max deviation of {_maxVideoTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
+            //TODO: add mode to keep the delay stable based on comparing the local system time to frame timestamps (need to fill gaps with dummy frames then)
+            // it's not clear whether filling video frame gaps has any use outside of the "keep the delay stable" feature, e.g. missing video frames shouldn't trigger audio buffering, but that needs testing to be sure
+            // if it _does_ has a separate use, offer a separate option for gap filling outside of the stable delay feature
+          }
+          _lastVideoTimestamp = frame.Timestamp;
+
+          _videoFrameCount--;
+          foundEnoughVideoFrames = (_videoFrameCount <= VideoFrameBufferCount); // only found enough video frames when the buffer doesn't hold more of them than configured
+          debugVideoFrameCount++;
         }
-        else
+        else if (frame.Type == Beam.Type.Audio)
         {
-          if (frame.Type == Beam.Type.Video)
+          debugAudioFrameCount++;
+          if ((_lastAudioTimestamp > 0) && ((long)(frame.Timestamp - _lastAudioTimestamp) > (long)_maxAudioTimestampDeviation))
           {
-            if ((_lastVideoTimestamp > 0) && ((long)(frame.Timestamp - _lastVideoTimestamp) > (long)_maxVideoTimestampDeviation))
-            {
-              Module.Log($"Missing video frame in frame buffer, timestamp deviation of {(long)(frame.Timestamp - _lastVideoTimestamp)} > max deviation of {_maxVideoTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
-              //TODO: add mode to keep the delay stable based on comparing the local system time to frame timestamps (need to fill gaps with dummy frames then)
-              // it's not clear whether filling video frame gaps has any use outside of the "keep the delay stable" feature, e.g. missing video frames shouldn't trigger audio buffering, but that needs testing to be sure
-              // if it _does_ has a separate use, offer a separate option for gap filling outside of the stable delay feature
-            }
-            _lastVideoTimestamp = frame.Timestamp;
-
-            _videoFrameCount--;
-            foundEnoughVideoFrames = (_videoFrameCount <= VideoFrameBufferCount); // only found enough video frames to return when the buffer is not filled more than its configured size
-            debugVideoFrameCount++;
+            Module.Log($"Missing audio frame in frame buffer, timestamp deviation of {(long)(frame.Timestamp - _lastAudioTimestamp)} > max deviation of {_maxAudioTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
+            //TODO: optionally fill gaps with empty audio frames so that OBS doesn't trigger audio buffering
           }
-          else if (frame.Type == Beam.Type.Audio)
-          {
-            debugAudioFrameCount++;
-            if ((_lastAudioTimestamp > 0) && ((long)(frame.Timestamp - _lastAudioTimestamp) > (long)_maxAudioTimestampDeviation))
-            {
-              Module.Log($"Missing audio frame in frame buffer, timestamp deviation of {(long)(frame.Timestamp - _lastAudioTimestamp)} > max deviation of {_maxAudioTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
-              //TODO: separate option to do this only for audio frames so that OBS doesn't trigger audio buffering
-            }
-            _lastAudioTimestamp = frame.Timestamp;
-          }
-
-          _frameList.RemoveAt(0);
-          result.Add(frame);
+          _lastAudioTimestamp = frame.Timestamp;
         }
+
+        _frameList.RemoveAt(0);
+        result.Add(frame);
       }
-      // Module.Log($"GetNextFrames returning {result.Count} frames ({debugVideoFrameCount} video and {debugAudioFrameCount} audio), {_frameList.Count} in buffer ({_videoFrameCount} video and {_frameList.Count - _videoFrameCount} audio).", ObsLogLevel.Debug);
+      Module.Log($"GetNextFrames returning {result.Count} frames ({debugVideoFrameCount} video and {debugAudioFrameCount} audio), {_frameList.Count} in buffer ({_videoFrameCount} video and {_frameList.Count - _videoFrameCount} audio).", ObsLogLevel.Debug);
       return result.ToArray();
     }
   }
