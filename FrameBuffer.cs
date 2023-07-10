@@ -1,6 +1,8 @@
 ﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
+using System.Buffers;
+
 namespace xObsBeam;
 
 /*
@@ -32,10 +34,13 @@ public class FrameBuffer
   ulong _maxVideoTimestampDeviation;
   ulong _maxAudioTimestampDeviation;
 
+  readonly ArrayPool<byte> _arrayPool;
+
   public int FrameBufferTimeMs { get; private set; } = 1000;
   public int VideoFrameBufferCount { get; private set; } = 60;
-  public FrameBuffer(int frameBufferTimeMs, uint fps)
+  public FrameBuffer(int frameBufferTimeMs, uint fps, ArrayPool<byte> arrayPool)
   {
+    _arrayPool = arrayPool;
     _fps = fps;
     VideoFrameBufferCount = (int)Math.Ceiling((double)frameBufferTimeMs / 1000 * _fps);
     FrameBufferTimeMs = VideoFrameBufferCount * 1000 / (int)_fps;
@@ -110,7 +115,7 @@ public class FrameBuffer
     }
   }
 
-  public List<Beam.BeamVideoData> Stop()
+  public void Stop()
   {
     lock (_frameListLock)
     {
@@ -119,10 +124,9 @@ public class FrameBuffer
       foreach (var frame in _frameList)
       {
         if (frame.Type == Beam.Type.Video)
-          unusedVideoFrames.Add((Beam.BeamVideoData)frame);
+          _arrayPool.Return(((Beam.BeamVideoData)frame).Data); // don't leak those unused frames
       }
       _frameList.Clear();
-      return unusedVideoFrames;
     }
   }
 

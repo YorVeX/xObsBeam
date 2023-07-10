@@ -822,7 +822,6 @@ public class Source
       // Module.Log($"VideoFrameReceivedEventHandler(): Output timestamp {videoFrame.Header.Timestamp}", ObsLogLevel.Debug);
       Obs.obs_source_output_video(context->Source, context->Video);
     }
-    BeamReceiver.RawDataBufferPool.Return(videoFrame.Data);
   }
 
   private unsafe void AudioFrameReceivedEventHandler(object? sender, Beam.BeamAudioData audioFrame)

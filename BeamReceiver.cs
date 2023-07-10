@@ -486,7 +486,7 @@ public class BeamReceiver
 
               if (FrameBufferTimeMs > 0)
               {
-                FrameBuffer = new FrameBuffer(FrameBufferTimeMs, fps);
+                FrameBuffer = new FrameBuffer(FrameBufferTimeMs, fps, RawDataBufferPool);
                 Module.Log($"Buffering {FrameBuffer.VideoFrameBufferCount} video frames based on a frame buffer time of {FrameBuffer.FrameBufferTimeMs} ms at {fps} FPS.", ObsLogLevel.Info);
               }
               else
@@ -570,7 +570,10 @@ public class BeamReceiver
               if (videoHeader.Timestamp < lastVideoTimestamp)
                 Module.Log($"Warning: Received video frame {videoHeader.Timestamp} is older than previous frame {lastVideoTimestamp}. Use a high enough frame buffer if the sender is not compressing from the OBS render thread.", ObsLogLevel.Warning);
               else
+              {
                 OnVideoFrameReceived(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime));
+                RawDataBufferPool.Return(rawDataBuffer);
+              }
               lastVideoTimestamp = videoHeader.Timestamp;
             }
             else
@@ -672,13 +675,7 @@ public class BeamReceiver
     }
 
     // stop the frame buffer so that the source no longer shows any frames and return the remaining unused frames from the buffer to the pool
-    if (FrameBuffer != null)
-    {
-      var unusedVideoFrames = FrameBuffer.Stop();
-      foreach (var frame in unusedVideoFrames)
-        RawDataBufferPool.Return(frame.Data); // don't leak those unused frames
-      FrameBuffer = null;
-    }
+    FrameBuffer?.Stop();
 
     try { pipeReader.Complete(); } catch { } // exceptions are possible if the pipe is already closed, but can then be ignored
     try { pipeWriter.Complete(); } catch { } // exceptions are possible if the pipe is already closed, but can then be ignored
