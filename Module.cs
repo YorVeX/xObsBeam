@@ -208,7 +208,7 @@ public static class Module
     Output.Create();
 
     Version version = thisAssembly.GetName().Version!;
-    Log($"Version {version.Major}.{version.Minor}.{version.Build} loaded.", ObsLogLevel.Info);
+    Log($"Version {version.Major}.{version.Minor}.{version.Build} loaded (built with .NET {Environment.Version}).", ObsLogLevel.Info);
     return true;
   }
 
