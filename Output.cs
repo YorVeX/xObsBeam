@@ -210,7 +210,7 @@ public static class Output
     _beamSender.SendVideo(frame->timestamp, frame->data.e0);
 
     _videoFrameCycleCounter++;
-    if ((_videoFrameCycleCounter > 5) && (_videoFrameCycleCounter > _videoInfo->fps_num)) // do this only roughly once per second
+    if ((_videoFrameCycleCounter > 5) && (_videoFrameCycleCounter > (ulong)Math.Round((double)_videoInfo->fps_num / _videoInfo->fps_den))) // do this only roughly once per second
     {
       _videoFrameCycleCounter = 1;
       Module.Log("output_raw_video called, frame timestamp: " + frame->timestamp, ObsLogLevel.Debug);

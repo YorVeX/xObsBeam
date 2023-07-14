@@ -182,6 +182,7 @@ public class Beam
       Timestamp = timestamp,
       Compression = CompressionTypes.None,
       Fps = 30,
+      FpsDenominator = 1,
       DataSize = videoDataSize,
     };
     new ReadOnlySpan<uint>(linesize, VideoHeader.MAX_AV_PLANES).CopyTo(new Span<uint>(header.Linesize, VideoHeader.MAX_AV_PLANES));
@@ -283,6 +284,7 @@ public class Beam
     public uint Height;
     public fixed uint Linesize[MAX_AV_PLANES];
     public uint Fps;
+    public uint FpsDenominator;
     public video_format Format;
     public video_range_type Range;
     public video_colorspace Colorspace;
@@ -333,6 +335,9 @@ public class Beam
       // read uint fps from the next 4 bytes in header
       reader.TryReadLittleEndian(out tempInt);
       Fps = (uint)tempInt;
+      // read uint fps denominator from the next 4 bytes in header
+      reader.TryReadLittleEndian(out tempInt);
+      FpsDenominator = (uint)tempInt;
       // read video_format enum from the next 4 bytes in header
       reader.TryReadLittleEndian(out tempInt);
       Format = (video_format)tempInt;
@@ -366,6 +371,7 @@ public class Beam
         headerBytes += 4;
       }
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Fps); headerBytes += 4;
+      BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), FpsDenominator); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Format); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Range); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Colorspace); headerBytes += 4;

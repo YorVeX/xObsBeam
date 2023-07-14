@@ -115,6 +115,7 @@ public class BeamSender
       Width = info->width,
       Height = info->height,
       Fps = info->fps_num,
+      FpsDenominator = info->fps_den,
       Format = format,
       Range = info->range,
       Colorspace = info->colorspace,
