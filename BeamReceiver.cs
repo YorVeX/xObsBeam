@@ -15,6 +15,7 @@ using DensityApi;
 using K4os.Compression.LZ4;
 using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Png;
+using ObsInterop;
 
 namespace xObsBeam;
 
@@ -352,6 +353,17 @@ public class BeamReceiver
     return rawVideoDataSize;
   }
 
+  public static unsafe double GetLocalFps()
+  {
+    double fps = 0;
+    // get current video format
+    obs_video_info* obsVideoInfo = ObsBmem.bzalloc<obs_video_info>();
+    if (Convert.ToBoolean(Obs.obs_get_video_info(obsVideoInfo)) && (obsVideoInfo != null))
+      fps = ((double)obsVideoInfo->fps_num / obsVideoInfo->fps_den);
+    ObsBmem.bfree(obsVideoInfo);
+    return fps;
+  }
+
   #endregion unsafe helper functions
 
   private async Task ProcessDataLoopAsync(Socket? socket, NamedPipeClientStream? pipeStream, CancellationToken cancellationToken)
@@ -387,7 +399,7 @@ public class BeamReceiver
     uint rawVideoDataSize = 0;
     uint[] videoPlaneSizes = new uint[Beam.VideoHeader.MAX_AV_PLANES];
 
-    uint fps = 30;
+    double senderFps = 30;
     uint logCycle = 0;
 
     byte[] receivedFrameData = Array.Empty<byte>();
@@ -434,8 +446,8 @@ public class BeamReceiver
           // read and validate header information
           pipeReader.AdvanceTo(videoHeader.FromSequence(readResult.Buffer), readResult.Buffer.End);
           if (videoHeader.Fps > 0)
-            fps = videoHeader.Fps;
-          if (logCycle >= fps)
+            senderFps = ((double)videoHeader.Fps / videoHeader.FpsDenominator);
+          if (logCycle >= senderFps)
             Module.Log($"Video data: Received header {videoHeader.Timestamp}", ObsLogLevel.Debug);
           if (videoHeader.DataSize == 0)
             Module.Log($"Video data: Frame {videoHeader.Timestamp} skipped by sender.", ObsLogLevel.Warning);
@@ -458,7 +470,7 @@ public class BeamReceiver
             videoHeader.Timestamp = 1;
           }
           else
-            videoHeader.Timestamp -= _frameTimestampOffset;
+            videoHeader.Timestamp -= _frameTimestampOffset; // normal operation, just apply the offset
 
           // read video data
           if (videoHeader.DataSize > 0)
@@ -484,14 +496,6 @@ public class BeamReceiver
             {
               firstVideoFrame = false;
 
-              if (FrameBufferTimeMs > 0)
-              {
-                FrameBuffer = new FrameBuffer(FrameBufferTimeMs, fps, RawDataBufferPool);
-                Module.Log($"Buffering {FrameBuffer.VideoFrameBufferCount} video frames based on a frame buffer time of {FrameBuffer.FrameBufferTimeMs} ms at {fps} FPS.", ObsLogLevel.Info);
-              }
-              else
-                Module.Log("Frame buffering disabled.", ObsLogLevel.Info);
-
               if (videoHeader.Compression == Beam.CompressionTypes.JpegLossy)
               {
                 var jpegSubsampling = (int)EncoderSupport.ObsToJpegSubsampling(videoHeader.Format);
@@ -516,6 +520,15 @@ public class BeamReceiver
 
               receivedFrameData = new byte[rawVideoDataSize];
               RawDataBufferPool = ArrayPool<byte>.Create((int)rawVideoDataSize, 2);
+
+              if (FrameBufferTimeMs > 0)
+              {
+                var localFps = GetLocalFps();
+                FrameBuffer = new FrameBuffer(FrameBufferTimeMs, senderFps, localFps, RawDataBufferPool, false);
+                Module.Log($"Buffering {FrameBuffer.VideoFrameBufferCount} video frames based on a frame buffer time of {FrameBuffer.FrameBufferTimeMs} ms for {senderFps:F} sender FPS (local: {localFps:F} FPS).", ObsLogLevel.Info);
+              }
+              else
+                Module.Log("Frame buffering disabled.", ObsLogLevel.Info);
             }
 
             var rawDataBuffer = RawDataBufferPool.Rent((int)rawVideoDataSize);
@@ -570,10 +583,7 @@ public class BeamReceiver
               if (videoHeader.Timestamp < lastVideoTimestamp)
                 Module.Log($"Warning: Received video frame {videoHeader.Timestamp} is older than previous frame {lastVideoTimestamp}. Use a high enough frame buffer if the sender is not compressing from the OBS render thread.", ObsLogLevel.Warning);
               else
-              {
                 OnVideoFrameReceived(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime));
-                RawDataBufferPool.Return(rawDataBuffer);
-              }
               lastVideoTimestamp = videoHeader.Timestamp;
             }
             else
@@ -594,18 +604,18 @@ public class BeamReceiver
               break;
             }
 
-            if (logCycle >= fps)
+            if (logCycle >= senderFps)
               Module.Log($"Video data: Expected {videoHeader.DataSize} bytes, received {receiveLength} bytes", ObsLogLevel.Debug);
 
           }
-          if (logCycle++ >= fps)
+          if (logCycle++ >= senderFps)
             logCycle = 0;
         }
         else if (beamType == Beam.Type.Audio)
         {
           // read and validate header information
           pipeReader.AdvanceTo(audioHeader.FromSequence(readResult.Buffer), readResult.Buffer.End);
-          if (logCycle >= fps)
+          if (logCycle >= senderFps)
             Module.Log($"Audio data: Received header {audioHeader.Timestamp}", ObsLogLevel.Debug);
           if (audioHeader.DataSize == 0)
           {
@@ -644,7 +654,7 @@ public class BeamReceiver
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(audioHeader.DataSize), readResult.Buffer.End);
 
-            if (logCycle >= fps)
+            if (logCycle >= senderFps)
               Module.Log($"Audio data: Expected {audioHeader.DataSize} bytes, received {receiveLength} bytes", ObsLogLevel.Debug);
 
           }

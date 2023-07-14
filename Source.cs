@@ -592,12 +592,10 @@ public class Source
     if (!Convert.ToBoolean(Obs.obs_source_showing(((Context*)data)->Source))) // nothing to do if the source is not visible
       return;
 
-    //HACK: handle the case when the sender has a lower FPS setting than this receiver (higher FPS setting works, because excess frames not fitting into the buffer will just be pushed out to OBS)
-
     var thisSource = GetSource(data);
     if (thisSource?.BeamReceiver?.FrameBuffer != null)
     {
-      foreach (var frame in thisSource.BeamReceiver.FrameBuffer.GetNextFrames())
+      foreach (var frame in thisSource.BeamReceiver.FrameBuffer.GetNextFrames(seconds))
       {
         if (frame.Type == Beam.Type.Video)
           thisSource.VideoFrameReceivedEventHandler(thisSource, (Beam.BeamVideoData)frame);
@@ -822,6 +820,7 @@ public class Source
       // Module.Log($"VideoFrameReceivedEventHandler(): Output timestamp {videoFrame.Header.Timestamp}", ObsLogLevel.Debug);
       Obs.obs_source_output_video(context->Source, context->Video);
     }
+    BeamReceiver.RawDataBufferPool.Return(videoFrame.Data);
   }
 
   private unsafe void AudioFrameReceivedEventHandler(object? sender, Beam.BeamAudioData audioFrame)
