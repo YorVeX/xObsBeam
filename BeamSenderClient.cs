@@ -155,6 +155,7 @@ sealed class BeamSenderClient
     2. The PipeWriter workflow ends with "FlushAsync" (implicitly through WriteAsync). Since this call is async it could still be busy while the next frame is already being processed (and in tests this indeed has occasionally happened).
        As part of this processing the next call to PipeWriter.GetMemory() would be made, but: "Calling GetMemory or GetSpan while there's an incomplete call to FlushAsync isn't safe.", see:
        https://learn.microsoft.com/en-us/dotnet/standard/io/pipelines#pipewriter-common-problems
+    3. If compression is done asynchonously, frames could be finished by their worker threads in the wrong order, the queue gives enough time to collect all frames before sending them out in the correct order.
     */
     try
     {
