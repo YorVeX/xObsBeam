@@ -16,6 +16,7 @@ public class FrameBuffer
   readonly double _senderFps;
   ulong _lastVideoTimestamp;
   byte[] _lastVideoFrameData = Array.Empty<byte>();
+  byte[] _lastAudioFrameData = Array.Empty<byte>();
   ulong _lastAudioTimestamp;
 
   /// <summary>The expected timestamp difference between two audio frames in nanoseconds.</summary>
@@ -27,13 +28,15 @@ public class FrameBuffer
   public int FrameBufferTimeMs { get; private set; } = 1000;
   public int VideoFrameBufferCount { get; private set; } = 60;
   public bool FillVideoFrameGaps { get; private set; }
+  public bool FillAudioFrameGaps { get; private set; }
 
-  public FrameBuffer(int frameBufferTimeMs, double senderFps, double localFps, ArrayPool<byte> arrayPool, bool fillVideoFrameGaps)
+  public FrameBuffer(int frameBufferTimeMs, double senderFps, double localFps, ArrayPool<byte> arrayPool, bool fillVideoFrameGaps, bool fillAudioFrameGaps)
   {
     _arrayPool = arrayPool;
     _localFps = localFps;
     _senderFps = senderFps;
     FillVideoFrameGaps = fillVideoFrameGaps;
+    FillAudioFrameGaps = fillAudioFrameGaps;
     VideoFrameBufferCount = (int)Math.Ceiling((double)frameBufferTimeMs / 1000 * _senderFps);
     FrameBufferTimeMs = VideoFrameBufferCount * 1000 / (int)_senderFps;
 
@@ -100,6 +103,7 @@ public class FrameBuffer
       _videoFrameCount = 0;
       _lastVideoTimestamp = 0;
       _lastVideoFrameData = Array.Empty<byte>();
+      _lastAudioFrameData = Array.Empty<byte>();
       _lastAudioTimestamp = 0;
       _audioTimestampStep = 0;
       _maxAudioTimestampDeviation = 0;
@@ -168,12 +172,10 @@ public class FrameBuffer
             {
               // the actual frame data doesn't even matter, the only purpose that this dummy frame serves is giving OBS an intermediate timestamp so that the gap between timestamps doesn't get too big
               // (but then of course the frame data needs to be right and repeat that of the last frame)
-              //TODO: this is only useful in case OBS could trigger audio buffering because of video frame timestamp gaps, which is something that needs to be tested
-              // if OBS doesn't trigger audio buffering because of this, then this FillVideoFrameGaps feature can be removed, in the meantime it's disabled can only be enabled internally
-              var gapFillvideoFrame = new Beam.BeamVideoData(((Beam.BeamVideoData)frame).Header, _lastVideoFrameData, DateTime.UtcNow);
-              gapFillvideoFrame.Header.Timestamp = _lastVideoTimestamp; // the timestamp that the missing frame should have had
+              var gapFillVideoFrame = new Beam.BeamVideoData(((Beam.BeamVideoData)frame).Header, _lastVideoFrameData, DateTime.UtcNow);
+              gapFillVideoFrame.Header.Timestamp = _lastVideoTimestamp; // the timestamp that the missing frame should have had
               debugVideoFrameCount++;
-              result.Add(gapFillvideoFrame);
+              result.Add(gapFillVideoFrame);
             }
             foundEnoughVideoFrames = true; // don't return any real video frames from the buffer this round, making sure it's not depleted
           }
@@ -199,7 +201,20 @@ public class FrameBuffer
           if ((_lastAudioTimestamp > 0) && ((long)(frame.Timestamp - _lastAudioTimestamp) > (long)_maxAudioTimestampDeviation))
           {
             Module.Log($"Missing audio frame in frame buffer, timestamp deviation of {(long)(frame.Timestamp - _lastAudioTimestamp)} > max deviation of {_maxAudioTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
-            //TODO: optionally fill gaps with empty audio frames so that OBS doesn't trigger audio buffering
+            if (FillAudioFrameGaps)
+            {
+              var audioFrame = (Beam.BeamAudioData)frame;
+              if (_lastAudioFrameData == Array.Empty<byte>())
+                _lastAudioFrameData = new byte[audioFrame.Data.Length]; // just use empty data, will create a small distortion, but that cannot be avoided anyway
+              var gapFillAudioFrame = new Beam.BeamAudioData(audioFrame.Header, _lastAudioFrameData, DateTime.UtcNow);
+
+              while ((long)(frame.Timestamp - _lastAudioTimestamp) > (long)_maxAudioTimestampDeviation)
+              {
+                _lastAudioTimestamp += _audioTimestampStep; // close the timestamp gap by the step that was expected
+                gapFillAudioFrame.Header.Timestamp = _lastAudioTimestamp; // the timestamp that the missing frame should have had
+                result.Add(gapFillAudioFrame);
+              }
+            }
           }
           _lastAudioTimestamp = frame.Timestamp;
           _frameList.RemoveAt(0);
