@@ -64,16 +64,12 @@ Install the same version of the plugin (different versions are never guaranteed 
 ### Installation
 Before installing make sure that OBS is not running.
 
+For portable mode simply extract the .7z file into the root directory of the portable folder structure. For regular OBS installations see the operating system specific instructions below.
+
 <details>
 <summary>🟦 Windows</summary>
 
-Open an Explorer window and into the address bar paste this and press enter:
-
-`%APPDATA%\obs-studio`
-
-This will redirect to a location like C:\Users\<YourWindowsUsername>\AppData\Roaming\obs-studio. Extract the files from the downloaded .7z file to this folder (= copy the contained obs-plugins and data folders to it). This will install the plugin for the current Windows user.
-
-If you need to install the plugin for all users on the system you can also extract the downloaded .7z file (= copy the contained obs-plugins and data folders) into the OBS Studio installation directory. The default location for this is
+Extract the downloaded .7z file (= copy the contained obs-plugins and data folders) into the OBS Studio installation directory. The default location for this is
 
 `C:\Program Files\obs-studio`
 
