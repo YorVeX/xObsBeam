@@ -1,82 +1,103 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "publish (win-x64)",
-            "command": "dotnet",
-            "type": "process",
-            "args": [
-                "publish",
-                "-c",
-                "Release",
-                "-o",
-                "publish\\win-x64",
-                "-r",
-                "win-x64",
-                "/p:DefineConstants=WINDOWS",
-                "/p:NativeLib=Shared",
-                "/p:SelfContained=true"
-            ],
-            "problemMatcher": "$msCompile",
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            }
-        },
-        {
-            "label": "publish and release (WSL linux-x64)",
-            "type": "shell",
-            "options": {
-                "cwd": "${workspaceFolder}/scripts/wsl"
-            },
-            "command": ".\\build-linux-x64-wsl.cmd"
-        },
-        {
-            "label": "test (win-x64)",
-            "type": "shell",
-            "options": {
-                "cwd": "${workspaceFolder}/scripts"
-            },
-            "command": ".\\test.local.cmd"
-        },
-        {
-            "label": "publish and test (win-x64)",
-            "type": "shell",
-            "options": {
-                "cwd": "${workspaceFolder}/scripts"
-            },
-            "command": ".\\test.local.cmd",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "publish (win-x64)"
-            ],
-            "problemMatcher": "$msCompile"
-        },
-        {
-            "label": "publish and test2 (win-x64)",
-            "type": "shell",
-            "options": {
-                "cwd": "${workspaceFolder}/scripts"
-            },
-            "command": ".\\test2.local.cmd",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "publish (win-x64)"
-            ],
-            "problemMatcher": "$msCompile"
-        },
-        {
-            "label": "publish and release (win-x64)",
-            "type": "shell",
-            "options": {
-                "cwd": "${workspaceFolder}/scripts"
-            },
-            "command": ".\\release-win-x64.cmd",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "publish (win-x64)"
-            ],
-            "problemMatcher": "$msCompile"
-        }
-    ]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "publish (win-x64)",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "publish",
+        "-c",
+        "Release",
+        "-o",
+        "publish\\win-x64",
+        "-r",
+        "win-x64",
+        "/p:DefineConstants=WINDOWS",
+        "/p:NativeLib=Shared",
+        "/p:SelfContained=true"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "publish and release (WSL linux-x64)",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}/scripts/wsl"
+      },
+      "command": ".\\build-linux-x64-wsl.cmd"
+    },
+    {
+      "label": "test (win-x64)",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}/scripts"
+      },
+      "command": ".\\test.local.cmd"
+    },
+    {
+      "label": "publish and test (win-x64)",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}/scripts"
+      },
+      "command": ".\\test.local.cmd",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "publish (win-x64)"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "publish and test2 (win-x64)",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}/scripts"
+      },
+      "command": ".\\test2.local.cmd",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "publish (win-x64)"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "publish and release (win-x64)",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}/scripts"
+      },
+      "command": ".\\release-win-x64.cmd",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "publish (win-x64)"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Build win-x64 Installer",
+      "type": "shell",
+      "command": "makensis",
+      "args": [
+        "/V3",
+        "scripts\\xObsBeam-Installer.nsi"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "Build win-x64 Installer (strict)",
+      "type": "shell",
+      "command": "makensis",
+      "args": [
+        "/V3",
+        "/WX",
+        "scripts\\xObsBeam-Installer.nsi"
+      ],
+      "group": "build"
+    }
+  ]
 }

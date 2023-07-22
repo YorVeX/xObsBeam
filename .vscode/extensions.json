@@ -1,6 +1,7 @@
 {
   "recommendations": [
     "gruntfuggly.todo-tree",
-    "editorconfig.editorconfig"
+    "editorconfig.editorconfig",
+    "idleberg.nsis"
   ]
 }
