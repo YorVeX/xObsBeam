@@ -524,7 +524,7 @@ public class BeamReceiver
               if (FrameBufferTimeMs > 0)
               {
                 var localFps = GetLocalFps();
-                FrameBuffer = new FrameBuffer(FrameBufferTimeMs, senderFps, localFps, RawDataBufferPool, false, false);
+                FrameBuffer = new FrameBuffer(FrameBufferTimeMs, senderFps, localFps, RawDataBufferPool);
                 Module.Log($"Buffering {FrameBuffer.VideoFrameBufferCount} video frames based on a frame buffer time of {FrameBuffer.FrameBufferTimeMs} ms for {senderFps:F} sender FPS (local: {localFps:F} FPS).", ObsLogLevel.Info);
               }
               else

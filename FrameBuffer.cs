@@ -15,8 +15,6 @@ public class FrameBuffer
   readonly double _localFps;
   readonly double _senderFps;
   ulong _lastVideoTimestamp;
-  byte[] _lastVideoFrameData = Array.Empty<byte>();
-  byte[] _lastAudioFrameData = Array.Empty<byte>();
   ulong _lastAudioTimestamp;
 
   /// <summary>The expected timestamp difference between two audio frames in nanoseconds.</summary>
@@ -27,16 +25,12 @@ public class FrameBuffer
 
   public int FrameBufferTimeMs { get; private set; } = 1000;
   public int VideoFrameBufferCount { get; private set; } = 60;
-  public bool FillVideoFrameGaps { get; private set; }
-  public bool FillAudioFrameGaps { get; private set; }
 
-  public FrameBuffer(int frameBufferTimeMs, double senderFps, double localFps, ArrayPool<byte> arrayPool, bool fillVideoFrameGaps, bool fillAudioFrameGaps)
+  public FrameBuffer(int frameBufferTimeMs, double senderFps, double localFps, ArrayPool<byte> arrayPool)
   {
     _arrayPool = arrayPool;
     _localFps = localFps;
     _senderFps = senderFps;
-    FillVideoFrameGaps = fillVideoFrameGaps;
-    FillAudioFrameGaps = fillAudioFrameGaps;
     VideoFrameBufferCount = (int)Math.Ceiling((double)frameBufferTimeMs / 1000 * _senderFps);
     FrameBufferTimeMs = VideoFrameBufferCount * 1000 / (int)_senderFps;
 
@@ -102,8 +96,6 @@ public class FrameBuffer
       _isFirstAudioFrame = true;
       _videoFrameCount = 0;
       _lastVideoTimestamp = 0;
-      _lastVideoFrameData = Array.Empty<byte>();
-      _lastAudioFrameData = Array.Empty<byte>();
       _lastAudioTimestamp = 0;
       _audioTimestampStep = 0;
       _maxAudioTimestampDeviation = 0;
@@ -168,15 +160,6 @@ public class FrameBuffer
               Module.Log($"Missing video frame {_lastVideoTimestamp + videoTimestampStep} in frame buffer, timestamp deviation of {(long)(frame.Timestamp - _lastVideoTimestamp)} > max deviation of {maxVideoTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
 
             _lastVideoTimestamp += videoTimestampStep; // close the timestamp gap by the step that was expected
-            if (FillVideoFrameGaps)
-            {
-              // the actual frame data doesn't even matter, the only purpose that this dummy frame serves is giving OBS an intermediate timestamp so that the gap between timestamps doesn't get too big
-              // (but then of course the frame data needs to be right and repeat that of the last frame)
-              var gapFillVideoFrame = new Beam.BeamVideoData(((Beam.BeamVideoData)frame).Header, _lastVideoFrameData, DateTime.UtcNow);
-              gapFillVideoFrame.Header.Timestamp = _lastVideoTimestamp; // the timestamp that the missing frame should have had
-              debugVideoFrameCount++;
-              result.Add(gapFillVideoFrame);
-            }
             foundEnoughVideoFrames = true; // don't return any real video frames from the buffer this round, making sure it's not depleted
           }
           else
@@ -185,11 +168,6 @@ public class FrameBuffer
 
             _videoFrameCount--;
             foundEnoughVideoFrames = (_videoFrameCount <= VideoFrameBufferCount); // only found enough video frames when the buffer doesn't hold more of them than configured
-            if (FillVideoFrameGaps && foundEnoughVideoFrames)
-            {
-              _lastVideoFrameData = _arrayPool.Rent(((Beam.BeamVideoData)frame).Data.Length);
-              new Span<byte>(((Beam.BeamVideoData)frame).Data)[.._lastVideoFrameData.Length].CopyTo(_lastVideoFrameData); // keep a copy of the last video frame for gap filling
-            }
             _frameList.RemoveAt(0);
             debugVideoFrameCount++;
             result.Add(frame);
@@ -199,26 +177,13 @@ public class FrameBuffer
         {
           debugAudioFrameCount++;
           if ((_lastAudioTimestamp > 0) && ((long)(frame.Timestamp - _lastAudioTimestamp) > (long)_maxAudioTimestampDeviation))
-          {
             Module.Log($"Missing audio frame in frame buffer, timestamp deviation of {(long)(frame.Timestamp - _lastAudioTimestamp)} > max deviation of {_maxAudioTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
-            if (FillAudioFrameGaps)
-            {
-              var audioFrame = (Beam.BeamAudioData)frame;
-              if (_lastAudioFrameData == Array.Empty<byte>())
-                _lastAudioFrameData = new byte[audioFrame.Data.Length]; // just use empty data, will create a small distortion, but that cannot be avoided anyway
-              var gapFillAudioFrame = new Beam.BeamAudioData(audioFrame.Header, _lastAudioFrameData, DateTime.UtcNow);
-
-              while ((long)(frame.Timestamp - _lastAudioTimestamp) > (long)_maxAudioTimestampDeviation)
-              {
-                _lastAudioTimestamp += _audioTimestampStep; // close the timestamp gap by the step that was expected
-                gapFillAudioFrame.Header.Timestamp = _lastAudioTimestamp; // the timestamp that the missing frame should have had
-                result.Add(gapFillAudioFrame);
-              }
-            }
-          }
           _lastAudioTimestamp = frame.Timestamp;
           _frameList.RemoveAt(0);
-          result.Add(frame);
+          if (frame.Timestamp >= _lastVideoTimestamp)
+            result.Add(frame);
+          else // this would cause audio buffering in OBS, but that's a local mechanism and shouldn't be triggered by remote data, hence skip such audio frames entirely
+            Module.Log($"Frame buffer is skipping audio frame {frame.Timestamp} that is older than the last video frame {_lastVideoTimestamp}.", ObsLogLevel.Warning);
         }
       }
       // Module.Log($"GetNextFrames returning {result.Count} frames ({debugVideoFrameCount} video and {debugAudioFrameCount} audio), {_frameList.Count} in buffer ({_videoFrameCount} video and {_frameList.Count - _videoFrameCount} audio).", ObsLogLevel.Debug);
