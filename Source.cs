@@ -55,7 +55,6 @@ public class Source
       sourceInfo.get_defaults = &source_get_defaults;
       sourceInfo.get_properties = &source_get_properties;
       sourceInfo.video_tick = &source_video_tick;
-      // sourceInfo.audio_mix = &source_audio_mix;
       sourceInfo.update = &source_update;
       sourceInfo.save = &source_save;
       ObsSource.obs_register_source_s(&sourceInfo, (nuint)sizeof(obs_source_info));
@@ -595,13 +594,16 @@ public class Source
     var thisSource = GetSource(data);
     if (thisSource?.BeamReceiver?.FrameBuffer != null)
     {
-      foreach (var frame in thisSource.BeamReceiver.FrameBuffer.GetNextFrames(seconds))
+      Task.Run(() =>
       {
-        if (frame.Type == Beam.Type.Video)
-          thisSource.VideoFrameReceivedEventHandler(thisSource, (Beam.BeamVideoData)frame);
-        else if (frame.Type == Beam.Type.Audio)
-          thisSource.AudioFrameReceivedEventHandler(thisSource, (Beam.BeamAudioData)frame);
-      }
+        foreach (var frame in thisSource.BeamReceiver.FrameBuffer.GetNextFrames(seconds))
+        {
+          if (frame.Type == Beam.Type.Video)
+            thisSource.VideoFrameReceivedEventHandler(thisSource, (Beam.BeamVideoData)frame);
+          else if (frame.Type == Beam.Type.Audio)
+            thisSource.AudioFrameReceivedEventHandler(thisSource, (Beam.BeamAudioData)frame);
+        }
+      });
     }
   }
 
