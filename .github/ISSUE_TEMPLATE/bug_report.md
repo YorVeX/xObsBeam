@@ -34,6 +34,7 @@ Expect that it will be hard or even impossible to help with your issue without t
  - OS and distro/version
  - OBS version
  - Beam version ("latest" is *not* a valid version, please specify the exact version number)
+ - OBS video settings (resolution, FPS, color settings...)
  - if you're using a network, how do you connect the computers involved, Ethernet (1G? 2.5? 5? 10?), or Wi-Fi, Thunderbolt Network?
 
 **Additional context**
