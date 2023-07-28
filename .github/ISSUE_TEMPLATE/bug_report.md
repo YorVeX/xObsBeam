@@ -30,6 +30,9 @@ Do a fresh start of both sender and receiver OBS, do what is necessary in one or
 
 Then post the links to this log here.
 
+If you encountered a crash, please upload a crash log too (after restarting OBS):
+![image](https://github.com/YorVeX/xObsAsyncImageSource/assets/528974/112e01c7-8e21-4721-bd76-a87887b41315)
+
 Expect that it will be hard or even impossible to help with your issue without these logs. If, for some reason, you really are unable to provide them, at least this information is necessary that would otherwise have been contained in the logs:
  - OS and distro/version
  - OBS version
