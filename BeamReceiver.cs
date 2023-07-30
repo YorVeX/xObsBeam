@@ -528,7 +528,10 @@ public class BeamReceiver
                 Module.Log($"Buffering {FrameBuffer.VideoFrameBufferCount} video frames based on a frame buffer time of {FrameBuffer.FrameBufferTimeMs} ms for {senderFps:F} sender FPS (local: {localFps:F} FPS).", ObsLogLevel.Info);
               }
               else
+              {
+                FrameBuffer = null;
                 Module.Log("Frame buffering disabled.", ObsLogLevel.Info);
+              }
             }
 
             var rawDataBuffer = RawDataBufferPool.Rent((int)rawVideoDataSize);
