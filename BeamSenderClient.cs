@@ -16,6 +16,8 @@ sealed class BeamSenderClient
   Stream? _stream;
   readonly ConcurrentQueue<ulong> _frameTimestampQueue = new();
   readonly ConcurrentDictionary<ulong, Beam.IBeamData> _frames = new();
+  long _receiveDelayMs;
+  long _renderDelayMs;
   readonly AutoResetEvent _frameAvailable = new(false);
   long _videoFrameCount = -1;
   long _audioFrameCount = -1;
@@ -117,7 +119,7 @@ sealed class BeamSenderClient
       _ = Task.Run(() => CheckReceiverAliveLoopAsync(cancellationToken), cancellationToken);
       while (!cancellationToken.IsCancellationRequested)
       {
-        ReadResult readResult = await pipeReader.ReadAtLeastAsync(8, cancellationToken);
+        ReadResult readResult = await pipeReader.ReadAtLeastAsync(sizeof(byte) + sizeof(ulong), cancellationToken);
         if (readResult.IsCanceled || (readResult.Buffer.IsEmpty && readResult.IsCompleted))
         {
           if (readResult.IsCanceled)
@@ -130,10 +132,20 @@ sealed class BeamSenderClient
           }
           break;
         }
-        pipeReader.AdvanceTo(Beam.GetTimestamp(readResult.Buffer, out ulong timestamp), readResult.Buffer.End);
+        pipeReader.AdvanceTo(Beam.GetReceiveTimestamp(readResult.Buffer, out Beam.ReceiveTimestampTypes receiveTimestampType, out ulong timestamp), readResult.Buffer.End);
         _lastFrameTime = DateTime.UtcNow;
-
-        // Module.Log($"<{_clientId}> Receiver is at video timestamp {timestamp}.", ObsLogLevel.Debug);
+        if (receiveTimestampType == Beam.ReceiveTimestampTypes.Receive)
+        {
+          var receiveDelayMs = (ObsInterop.Obs.obs_get_video_frame_time() - timestamp) / 1_000_000;
+          // Module.Log($"<{ClientId}> Receiver received video frame {timestamp} with a delay of {receiveDelayMs} ms", ObsLogLevel.Debug);
+          Interlocked.Exchange(ref _receiveDelayMs, (long)receiveDelayMs);
+        }
+        else if (receiveTimestampType == Beam.ReceiveTimestampTypes.Render)
+        {
+          var renderDelayNs = (ObsInterop.Obs.obs_get_video_frame_time() - timestamp) / 1_000_000;
+          // Module.Log($"<{ClientId}> Receiver rendered video frame {timestamp} with a delay of {renderDelayNs} ms", ObsLogLevel.Debug);
+          Interlocked.Exchange(ref _renderDelayMs, (long)renderDelayNs);
+        }
       }
     }
     catch (OperationCanceledException ex)
@@ -169,6 +181,8 @@ sealed class BeamSenderClient
         bool pipeWriterComplete = true;
         _frameTimestampQueue.Clear();
         _frames.Clear();
+        _receiveDelayMs = 0;
+        _renderDelayMs = 0;
 
         var stopwatch = new System.Diagnostics.Stopwatch();
         long waitTime = 0;
@@ -217,8 +231,12 @@ sealed class BeamSenderClient
               // write video data
               try
               {
+                // get current delay values to add to the header for sending
+                var receiveDelayMs = (int)Interlocked.Read(ref _receiveDelayMs);
+                var renderDelayMs = (int)Interlocked.Read(ref _renderDelayMs);
+
                 // write video header data
-                var headerBytes = videoFrame.Header.WriteTo(pipeWriter.GetSpan(Beam.VideoHeader.VideoHeaderDataSize), videoFrame.Timestamp);
+                var headerBytes = videoFrame.Header.WriteTo(pipeWriter.GetSpan(Beam.VideoHeader.VideoHeaderDataSize), videoFrame.Timestamp, receiveDelayMs, renderDelayMs);
                 pipeWriter.Advance(headerBytes);
 
                 // write video frame data - need to slice videoFrame.Data, since the arrays we get from _videoDataPool are often bigger than what we requested
@@ -337,6 +355,8 @@ sealed class BeamSenderClient
         _cancellationSource.Cancel();
       _frameTimestampQueue.Clear();
       _frames.Clear();
+      _receiveDelayMs = 0;
+      _renderDelayMs = 0;
       if (_socket != null)
       {
         _socket.Shutdown(SocketShutdown.Both);

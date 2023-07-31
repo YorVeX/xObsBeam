@@ -21,6 +21,11 @@ public class Beam
     Density = 7,
   }
 
+  public enum ReceiveTimestampTypes : byte
+  {
+    Receive = 0,
+    Render = 1,
+  }
   #region helper methods
   /// <summary>Sequences could be split accross multiple spans, this method handles both split and non-split cases.</summary>
   public static Type GetBeamType(ReadOnlySequence<byte> sequence)
@@ -37,12 +42,15 @@ public class Beam
     return (Type)result;
   }
 
-  public static SequencePosition GetTimestamp(ReadOnlySequence<byte> sequence, out ulong timestamp)
+  public static SequencePosition GetReceiveTimestamp(ReadOnlySequence<byte> sequence, out ReceiveTimestampTypes receiveTimestampType, out ulong timestamp)
   {
     var reader = new SequenceReader<byte>(sequence);
+    if (!reader.TryRead(out byte byteResult))
+      throw new ArgumentException("Failed to read enough data from sequence.");
     if (!reader.TryReadLittleEndian(out long longResult))
       throw new ArgumentException("Failed to read enough data from sequence.");
     timestamp = (ulong)longResult;
+    receiveTimestampType = (ReceiveTimestampTypes)byteResult;
     return reader.Position;
   }
 
@@ -209,7 +217,7 @@ public class Beam
   {
     Type Type { get; set; }
     ulong Timestamp { get; }
-    DateTime Created { get; }
+    DateTime Received { get; }
   }
 
   public struct BeamVideoData : IBeamData
@@ -218,15 +226,15 @@ public class Beam
     public VideoHeader Header;
     public readonly byte[] Data;
     public ulong Timestamp { get; set; }
-    public DateTime Created { get; }
+    public DateTime Received { get; }
 
     // used by receivers
-    public BeamVideoData(VideoHeader header, byte[] data, DateTime created)
+    public BeamVideoData(VideoHeader header, byte[] data, DateTime received)
     {
       Header = header;
       Data = data;
       Timestamp = header.Timestamp;
-      Created = created;
+      Received = received;
     }
 
     // used by senders
@@ -244,7 +252,7 @@ public class Beam
     public AudioHeader Header;
     public readonly byte[] Data;
     public readonly ulong Timestamp { get; }
-    public DateTime Created { get; }
+    public DateTime Received { get; }
 
     // used by receivers
     public BeamAudioData(AudioHeader header, byte[] data, DateTime created)
@@ -252,7 +260,7 @@ public class Beam
       Header = header;
       Data = data;
       Timestamp = header.Timestamp;
-      Created = created;
+      Received = created;
     }
 
     // used by senders
@@ -289,6 +297,8 @@ public class Beam
     public video_range_type Range;
     public video_colorspace Colorspace;
     public ulong Timestamp;
+    public int ReceiveDelay;
+    public int RenderDelay;
 
     public VideoHeader()
     {
@@ -350,6 +360,10 @@ public class Beam
       // read timestamp from the next 8 bytes in header
       reader.TryReadLittleEndian(out long timestamp);
       Timestamp = (ulong)timestamp;
+      // read int receive delay from the next 4 bytes in header
+      reader.TryReadLittleEndian(out ReceiveDelay);
+      // read int render delay from the next 4 bytes in header
+      reader.TryReadLittleEndian(out RenderDelay);
 
       // log the values that have been read
       // Module.Log($"Video Type: {Type}, Compression: {Compression}, DataSize: {DataSize}, Width: {Width}, Height: {Height}, FPS: {Fps}, Format: {Format}, Range: {Range}, Colorspace: {Colorspace}, Timestamp: {Timestamp}", ObsLogLevel.Debug);
@@ -357,8 +371,10 @@ public class Beam
       return reader.Position;
     }
 
-    public int WriteTo(Span<byte> span, ulong timestamp)
+    public int WriteTo(Span<byte> span, ulong timestamp, int receiveDelay, int renderDelay)
     {
+      // some values are handed over as parameters instead of being set directly to the fields so that this header instance can be reused (avoid unnecessary allocations) by the calling methods
+
       int headerBytes = 0;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), (uint)Type); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Compression); headerBytes += 4;
@@ -376,6 +392,8 @@ public class Beam
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Range); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Colorspace); headerBytes += 4;
       BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(headerBytes, 8), timestamp); headerBytes += 8;
+      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), receiveDelay); headerBytes += 4;
+      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), renderDelay); headerBytes += 4;
       return headerBytes;
     }
   }

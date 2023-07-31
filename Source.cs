@@ -20,6 +20,14 @@ public class Source
     public obs_source* Source;
     public obs_source_frame* Video;
     public obs_source_audio* Audio;
+    public obs_source* TimestampFilter;
+    public bool TimestampFilterAdded;
+  }
+
+  public unsafe struct FilterContext
+  {
+    public uint SourceId;
+    public obs_source* FilterSource;
   }
 
   #region Class fields
@@ -27,38 +35,61 @@ public class Source
   static readonly ConcurrentDictionary<uint, Source> _sourceList = new();
   #endregion Class fields
 
-  #region Instance fields
+  #region Source instance fields
   readonly BeamReceiver BeamReceiver = new();
   IntPtr ContextPointer;
+  ulong CurrentTimestamp;
   uint[] _videoPlaneSizes = Array.Empty<uint>();
   uint _audioPlaneSize;
-
-  #endregion Instance fields
+  #endregion Source instance fields
 
   #region Helper methods
   public static unsafe void Register()
   {
-    var sourceInfo = new obs_source_info();
+    var sourceInfo = ObsBmem.bzalloc<obs_source_info>();
     fixed (byte* id = "Beam Source"u8)
     {
-      sourceInfo.id = (sbyte*)id;
-      sourceInfo.type = obs_source_type.OBS_SOURCE_TYPE_INPUT;
-      sourceInfo.icon_type = obs_icon_type.OBS_ICON_TYPE_CUSTOM;
-      sourceInfo.output_flags = ObsSource.OBS_SOURCE_ASYNC_VIDEO | ObsSource.OBS_SOURCE_AUDIO;
-      sourceInfo.get_name = &source_get_name;
-      sourceInfo.create = &source_create;
-      sourceInfo.get_width = &source_get_width;
-      sourceInfo.get_height = &source_get_height;
-      sourceInfo.show = &source_show;
-      sourceInfo.hide = &source_hide;
-      sourceInfo.destroy = &source_destroy;
-      sourceInfo.get_defaults = &source_get_defaults;
-      sourceInfo.get_properties = &source_get_properties;
-      sourceInfo.video_tick = &source_video_tick;
-      sourceInfo.update = &source_update;
-      sourceInfo.save = &source_save;
-      ObsSource.obs_register_source_s(&sourceInfo, (nuint)sizeof(obs_source_info));
+      sourceInfo->id = (sbyte*)id;
+      sourceInfo->type = obs_source_type.OBS_SOURCE_TYPE_INPUT;
+      sourceInfo->icon_type = obs_icon_type.OBS_ICON_TYPE_CUSTOM;
+      sourceInfo->output_flags = ObsSource.OBS_SOURCE_ASYNC_VIDEO | ObsSource.OBS_SOURCE_AUDIO;
+      sourceInfo->get_name = &source_get_name;
+      sourceInfo->create = &source_create;
+      sourceInfo->get_width = &source_get_width;
+      sourceInfo->get_height = &source_get_height;
+      sourceInfo->show = &source_show;
+      sourceInfo->hide = &source_hide;
+      sourceInfo->destroy = &source_destroy;
+      sourceInfo->get_defaults = &source_get_defaults;
+      sourceInfo->get_properties = &source_get_properties;
+      sourceInfo->video_tick = &source_video_tick;
+      sourceInfo->update = &source_update;
+      sourceInfo->save = &source_save;
+      ObsSource.obs_register_source_s(sourceInfo, (nuint)sizeof(obs_source_info));
     }
+    ObsBmem.bfree(sourceInfo);
+
+    //TODO: option to reconnect/reset if without active frame buffer the delay becomes higher than X ms
+    var filterInfo = ObsBmem.bzalloc<obs_source_info>();
+    fixed (byte* id = "Beam Timestamp Filter"u8)
+    {
+      filterInfo->id = (sbyte*)id;
+      filterInfo->type = obs_source_type.OBS_SOURCE_TYPE_FILTER;
+      filterInfo->output_flags = ObsSource.OBS_SOURCE_ASYNC_VIDEO | ObsSource.OBS_SOURCE_CAP_DISABLED;
+      filterInfo->get_name = &filter_get_name;
+      filterInfo->create = &filter_create;
+      filterInfo->destroy = &filter_destroy;
+      filterInfo->get_properties = &filter_get_properties;
+      filterInfo->filter_video = &filter_video;
+      filterInfo->filter_remove = &filter_remove;
+      ObsSource.obs_register_source_s(filterInfo, (nuint)sizeof(obs_source_info));
+    }
+    ObsBmem.bfree(filterInfo);
+  }
+
+  private static unsafe Source GetSource(obs_source* source)
+  {
+    return _sourceList.First(x => (((Context*)x.Value.ContextPointer)->Source == source)).Value;
   }
 
   private static unsafe Source GetSource(void* data)
@@ -349,8 +380,85 @@ public class Source
 
   #endregion Helper methods
 
-  #region Source API methods
 #pragma warning disable IDE1006
+
+  #region Timestamp measure filter API methods
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe sbyte* filter_get_name(void* data)
+  {
+    fixed (byte* sourceName = "Beam Timestamp Helper"u8)
+      return (sbyte*)sourceName;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void* filter_create(obs_data* settings, obs_source* source)
+  {
+    Module.Log("filter_create called", ObsLogLevel.Debug);
+    var context = ObsBmem.bzalloc<FilterContext>();
+    context->FilterSource = source;
+    context->SourceId = 0;
+    return context;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void filter_destroy(void* data)
+  {
+    Module.Log("filter_destroy called", ObsLogLevel.Debug);
+    ObsBmem.bfree(data);
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe obs_properties* filter_get_properties(void* data)
+  {
+    var properties = ObsProperties.obs_properties_create();
+    fixed (byte*
+      propertyFilterTimestampHelperId = "filter_timestamp_helper_text"u8,
+      propertyFilterTimestampHelperText = Module.ObsText("FilterTimestampHelperText")
+    )
+    {
+      ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyFilterTimestampHelperId, (sbyte*)propertyFilterTimestampHelperText, obs_text_type.OBS_TEXT_INFO);
+    }
+    return properties;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe obs_source_frame* filter_video(void* data, obs_source_frame* frame)
+  {
+    // Module.Log("filter_video called with timestamp " + frame->timestamp, ObsLogLevel.Debug);
+    var filterContext = (FilterContext*)data;
+    if (filterContext->SourceId == 0)
+    {
+      //TODO: move this initialization to filter_add as soon as an OBS (probably the next after 29.1.3) with this new callback has been released: https://github.com/obsproject/obs-studio/commit/a494cf5ce493b77af682e4c4e2a64302d2ecc393
+      // background: obs_filter_get_parent() is not guaranteed to work in filter_create, but it should be in filter_add
+      var parentSource = Obs.obs_filter_get_parent(filterContext->FilterSource);
+      if (parentSource != null)
+        filterContext->SourceId = ((Context*)GetSource(parentSource).ContextPointer)->SourceId;
+    }
+    if (filterContext->SourceId > 0)
+      _sourceList[filterContext->SourceId].CurrentTimestamp = frame->timestamp;
+    return frame;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void filter_remove(void* data, obs_source* source)
+  {
+    Module.Log("filter_remove called", ObsLogLevel.Debug);
+    var filterContext = (FilterContext*)data;
+    if (filterContext->SourceId == 0)
+    {
+      var parentSource = Obs.obs_filter_get_parent(filterContext->FilterSource);
+      if (parentSource != null)
+        filterContext->SourceId = ((Context*)GetSource(parentSource).ContextPointer)->SourceId;
+    }
+    if (filterContext->SourceId > 0)
+    {
+      _sourceList[filterContext->SourceId].CurrentTimestamp = 0;
+      filterContext->SourceId = 0;
+    }
+  }
+  #endregion Timestamp measure filter API methods
+
+  #region Source API methods
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe sbyte* source_get_name(void* data)
   {
@@ -368,6 +476,8 @@ public class Source
     context->Source = source;
     context->Video = ObsBmem.bzalloc<obs_source_frame>();
     context->Audio = ObsBmem.bzalloc<obs_source_audio>();
+    context->TimestampFilter = null;
+    context->TimestampFilterAdded = false;
     context->SourceId = ++_sourceCount;
     var thisSource = new Source();
     _sourceList.TryAdd(context->SourceId, thisSource);
@@ -390,6 +500,8 @@ public class Source
     var context = (Context*)data;
     ObsBmem.bfree(context->Video);
     ObsBmem.bfree(context->Audio);
+    if (context->TimestampFilterAdded) // if it was created by us during this session it needs to be released by us to prevent a memory in the log on exit - otherwise if it was already there from last session OBS will take care of that (and then releasing it here could even cause a crash)
+      Obs.obs_source_release(context->TimestampFilter);
     Marshal.FreeCoTaskMem((IntPtr)context);
     Module.Log("source_destroy finished", ObsLogLevel.Debug);
   }
@@ -399,8 +511,37 @@ public class Source
   {
     Module.Log("source_show called", ObsLogLevel.Debug);
 
+    // add the timestamp helper filter if it doesn't exist yet
+    ensureTimestampHelperFilterExists(data);
+
     // the activate/deactivate events are not triggered by Studio Mode, so we need to connect/disconnect in show/hide events if the source should also work in Studio Mode
     GetSource(data).Connect();
+  }
+
+  public static unsafe void ensureTimestampHelperFilterExists(void* data)
+  {
+    Context* context = (Context*)data;
+    context->TimestampFilter = null;
+    Obs.obs_source_enum_filters(context->Source, &sourceEnumFiltersFindTimestampHelperFilter, data);
+    if (context->TimestampFilter == null) // timestamp helper filter hasn't been added yet to this source, add it now
+    {
+      Module.Log("Timestamp helper filter not found, adding.", ObsLogLevel.Debug);
+      fixed (byte* id = "Beam Timestamp Filter"u8)
+        context->TimestampFilter = Obs.obs_source_create_private((sbyte*)id, (sbyte*)id, null);
+      Obs.obs_source_filter_add(context->Source, context->TimestampFilter);
+      context->TimestampFilterAdded = true;
+    }
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void sourceEnumFiltersFindTimestampHelperFilter(obs_source* parent, obs_source* child, void* data)
+  {
+    Context* context = (Context*)data;
+    if (Marshal.PtrToStringUTF8((IntPtr)Obs.obs_source_get_name(child)) == "Beam Timestamp Filter")
+    {
+      context->TimestampFilter = child;
+      context->TimestampFilterAdded = false;
+    }
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -587,11 +728,12 @@ public class Source
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe void source_video_tick(void* data, float seconds)
   {
-    // Module.Log("source_video_tick", ObsLogLevel.Error);
+    // Module.Log($"source_video_tick {Obs.obs_get_video_frame_time()} (+{seconds})", (((seconds * 1_000_000_000) > Obs.obs_get_frame_interval_ns()) ? ObsLogLevel.Warning : ObsLogLevel.Debug));
     if (!Convert.ToBoolean(Obs.obs_source_showing(((Context*)data)->Source))) // nothing to do if the source is not visible
       return;
 
     var thisSource = GetSource(data);
+    thisSource?.BeamReceiver?.SetLastOutputVideoFrameTimestamp(thisSource.CurrentTimestamp);
     if (thisSource?.BeamReceiver?.FrameBuffer != null)
     {
       Task.Run(() =>

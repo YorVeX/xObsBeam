@@ -3,6 +3,7 @@
 
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.IO.Pipelines;
 using System.IO.Pipes;
 using System.Net;
@@ -29,6 +30,7 @@ public class BeamReceiver
   string _pipeName = "";
   bool _isConnecting;
   ulong _frameTimestampOffset;
+  readonly ConcurrentQueue<ulong> _lastRenderedVideoFrameTimestamps = new();
   unsafe void* _turboJpegDecompress = null;
   unsafe qoir_decode_options_struct* _qoirDecodeOptions;
 
@@ -207,6 +209,11 @@ public class BeamReceiver
     }
   }
 
+  public void SetLastOutputVideoFrameTimestamp(ulong timestamp)
+  {
+    _lastRenderedVideoFrameTimestamps.Enqueue(timestamp);
+  }
+
   public delegate Task AsyncEventHandler<TEventArgs>(object? sender, TEventArgs e);
 
   public event EventHandler<Beam.BeamVideoData>? VideoFrameReceived;
@@ -368,6 +375,9 @@ public class BeamReceiver
 
   private async Task ProcessDataLoopAsync(Socket? socket, NamedPipeClientStream? pipeStream, CancellationToken cancellationToken)
   {
+    _frameTimestampOffset = 0;
+    _lastRenderedVideoFrameTimestamps.Clear();
+
     string endpointName;
     PipeReader pipeReader;
     PipeWriter pipeWriter;
@@ -448,7 +458,7 @@ public class BeamReceiver
           if (videoHeader.Fps > 0)
             senderFps = ((double)videoHeader.Fps / videoHeader.FpsDenominator);
           if (logCycle >= senderFps)
-            Module.Log($"Video data: Received header {videoHeader.Timestamp}", ObsLogLevel.Debug);
+            Module.Log($"Video data: Received header {videoHeader.Timestamp}, Receive/Render delay: {videoHeader.ReceiveDelay} / {videoHeader.RenderDelay} ms ", ObsLogLevel.Debug);
           if (videoHeader.DataSize == 0)
             Module.Log($"Video data: Frame {videoHeader.Timestamp} skipped by sender.", ObsLogLevel.Warning);
           else if (videoHeader.DataSize < 0)
@@ -475,6 +485,21 @@ public class BeamReceiver
           // read video data
           if (videoHeader.DataSize > 0)
           {
+            // tell the sender the current video frame timestamp that was received - only done for frames that were not skipped by the sender
+            pipeWriter.GetSpan(sizeof(byte))[0] = (byte)Beam.ReceiveTimestampTypes.Receive;
+            pipeWriter.Advance(sizeof(byte));
+            BinaryPrimitives.WriteUInt64LittleEndian(pipeWriter.GetSpan(sizeof(ulong)), senderVideoTimestamp);
+            pipeWriter.Advance(sizeof(ulong));
+            var writeReceivedTimestampResult = await pipeWriter.FlushAsync(cancellationToken);
+            if (writeReceivedTimestampResult.IsCanceled || writeReceivedTimestampResult.IsCompleted)
+            {
+              if (writeReceivedTimestampResult.IsCanceled)
+                Module.Log("processDataLoopAsync() exit from sending through cancellation.", ObsLogLevel.Debug);
+              else
+                Module.Log("processDataLoopAsync() exit from sending through completion.", ObsLogLevel.Debug);
+              break;
+            }
+
             readResult = await pipeReader.ReadAtLeastAsync(videoHeader.DataSize, cancellationToken);
             if (readResult.IsCanceled || (readResult.Buffer.IsEmpty && readResult.IsCompleted))
             {
@@ -594,19 +619,6 @@ public class BeamReceiver
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(videoHeader.DataSize), readResult.Buffer.End);
 
-            // tell the sender the current video frame timestamp that was received - only done for frames that were not skipped by the sender
-            BinaryPrimitives.WriteUInt64LittleEndian(pipeWriter.GetSpan(sizeof(ulong)), senderVideoTimestamp);
-            pipeWriter.Advance(sizeof(ulong));
-            var writeResult = await pipeWriter.FlushAsync(cancellationToken);
-            if (writeResult.IsCanceled || writeResult.IsCompleted)
-            {
-              if (writeResult.IsCanceled)
-                Module.Log("processDataLoopAsync() exit from sending through cancellation.", ObsLogLevel.Debug);
-              else
-                Module.Log("processDataLoopAsync() exit from sending through completion.", ObsLogLevel.Debug);
-              break;
-            }
-
             if (logCycle >= senderFps)
               Module.Log($"Video data: Expected {videoHeader.DataSize} bytes, received {receiveLength} bytes", ObsLogLevel.Debug);
 
@@ -666,6 +678,26 @@ public class BeamReceiver
         {
           Module.Log($"Received unknown header type ({beamType}), aborting connection.", ObsLogLevel.Error);
           break;
+        }
+
+        // tell the sender the last video frame timestamps that were output by OBS
+        while (_lastRenderedVideoFrameTimestamps.TryDequeue(out ulong lastRenderedVideoFrameTimestamp))
+        {
+          lastRenderedVideoFrameTimestamp += _frameTimestampOffset;
+          pipeWriter.GetSpan(sizeof(byte))[0] = (byte)Beam.ReceiveTimestampTypes.Render;
+          pipeWriter.Advance(sizeof(byte));
+          BinaryPrimitives.WriteUInt64LittleEndian(pipeWriter.GetSpan(sizeof(ulong)), lastRenderedVideoFrameTimestamp);
+          pipeWriter.Advance(sizeof(ulong));
+          // Module.Log($"Receiver rendered video timestamp {lastRenderedVideoFrameTimestamp} SEND.", ObsLogLevel.Warning); //HACK: only for testing
+          var writeRenderTimestampResult = await pipeWriter.FlushAsync(cancellationToken);
+          if (writeRenderTimestampResult.IsCanceled || writeRenderTimestampResult.IsCompleted)
+          {
+            if (writeRenderTimestampResult.IsCanceled)
+              Module.Log("processDataLoopAsync() exit from sending through cancellation.", ObsLogLevel.Debug);
+            else
+              Module.Log("processDataLoopAsync() exit from sending through completion.", ObsLogLevel.Debug);
+            break;
+          }
         }
       }
       catch (OperationCanceledException ex)
