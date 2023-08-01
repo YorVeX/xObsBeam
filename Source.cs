@@ -22,6 +22,8 @@ public class Source
     public obs_source_audio* Audio;
     public obs_source* TimestampFilter;
     public bool TimestampFilterAdded;
+    public int ReceiveDelay;
+    public int RenderDelay;
   }
 
   public unsafe struct FilterContext
@@ -135,6 +137,9 @@ public class Source
   {
     var context = (Context*)ContextPointer;
     var settings = context->Settings;
+
+    context->ReceiveDelay = -1;
+    context->RenderDelay = -1;
 
     fixed (byte*
       propertyFrameBufferTimeId = "frame_buffer_time"u8,
@@ -478,6 +483,8 @@ public class Source
     context->Audio = ObsBmem.bzalloc<obs_source_audio>();
     context->TimestampFilter = null;
     context->TimestampFilterAdded = false;
+    context->ReceiveDelay = -1;
+    context->RenderDelay = -1;
     context->SourceId = ++_sourceCount;
     var thisSource = new Source();
     _sourceList.TryAdd(context->SourceId, thisSource);
@@ -560,6 +567,12 @@ public class Source
     var properties = ObsProperties.obs_properties_create();
     ObsProperties.obs_properties_set_flags(properties, ObsProperties.OBS_PROPERTIES_DEFER_UPDATE);
     fixed (byte*
+      propertyReceiveAndRenderDelayId = "receive_and_render_delay"u8,
+      propertyReceiveAndRenderDelayCaption = Module.ObsText("ReceiveAndRenderDelayCaption"),
+      propertyReceiveAndRenderDelayText = Module.ObsText("ReceiveAndRenderDelayText", "--", "--"),
+      propertyReceiveAndRenderDelayRefreshButtonId = "receive_and_render_delay_refresh_button"u8,
+      propertyReceiveAndRenderDelayRefreshButtonCaption = Module.ObsText("ReceiveAndRenderDelayRefreshButtonCaption"),
+      propertyReceiveAndRenderDelayRefreshButtonText = Module.ObsText("ReceiveAndRenderDelayRefreshButtonText"),
       propertyFrameBufferTimeId = "frame_buffer_time"u8,
       propertyFrameBufferTimeCaption = Module.ObsText("FrameBufferTimeCaption"),
       propertyFrameBufferTimeText = Module.ObsText("FrameBufferTimeText"),
@@ -598,13 +611,18 @@ public class Source
       propertyNetworkInterfaceListText = Module.ObsText("NetworkInterfaceListText")
     )
     {
+      // label that can display the current delays for an active feed
+      var receiveAndRenderDelayProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyReceiveAndRenderDelayId, (sbyte*)propertyReceiveAndRenderDelayCaption, obs_text_type.OBS_TEXT_INFO);
+      ObsProperties.obs_property_set_long_description(receiveAndRenderDelayProperty, (sbyte*)propertyReceiveAndRenderDelayText);
+      var receiveAndRenderDelayRefreshButton = ObsProperties.obs_properties_add_button(properties, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonId, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonCaption, &ReceiveAndRenderDelayRefreshButtonClickedEventHandler);
+      ObsProperties.obs_property_set_long_description(receiveAndRenderDelayRefreshButton, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonText);
+
       // frame buffer
       var frameBufferTimeProperty = ObsProperties.obs_properties_add_int_slider(properties, (sbyte*)propertyFrameBufferTimeId, (sbyte*)propertyFrameBufferTimeCaption, 0, 5000, 100);
       ObsProperties.obs_property_set_long_description(frameBufferTimeProperty, (sbyte*)propertyFrameBufferTimeText);
       ObsProperties.obs_property_int_set_suffix(frameBufferTimeProperty, (sbyte*)propertyFrameBufferTimeSuffix);
       // frame buffer time memory usage info
-      var frameBufferTimeMemoryUsageInfoProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoId, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoText, obs_text_type.OBS_TEXT_INFO);
-      ObsProperties.obs_property_set_description(frameBufferTimeMemoryUsageInfoProperty, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoText);
+      ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoId, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoText, obs_text_type.OBS_TEXT_INFO);
 
       // connection type selection group
       var connectionTypePropertyGroup = ObsProperties.obs_properties_create();
@@ -741,7 +759,11 @@ public class Source
         foreach (var frame in thisSource.BeamReceiver.FrameBuffer.GetNextFrames(seconds))
         {
           if (frame.Type == Beam.Type.Video)
-            thisSource.VideoFrameReceivedEventHandler(thisSource, (Beam.BeamVideoData)frame);
+          {
+            var videoFrame = (Beam.BeamVideoData)frame;
+            //TODO: adjust the FrameBuffer based on videoFrame.Header.RenderDelay
+            thisSource.VideoFrameReceivedEventHandler(thisSource, videoFrame);
+          }
           else if (frame.Type == Beam.Type.Audio)
             thisSource.AudioFrameReceivedEventHandler(thisSource, (Beam.BeamAudioData)frame);
         }
@@ -753,6 +775,23 @@ public class Source
   #endregion Source API methods
 
   #region Event handlers
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte ReceiveAndRenderDelayRefreshButtonClickedEventHandler(obs_properties* properties, obs_property* prop, void* data)
+  {
+    var context = (Context*)data;
+    Module.Log("ReceiveAndRenderDelayRefreshButtonClickedEventHandler called", ObsLogLevel.Debug);
+    fixed (byte*
+      propertyReceiveAndRenderDelayId = "receive_and_render_delay"u8,
+      propertyReceiveAndRenderDelayText = Module.ObsText("ReceiveAndRenderDelayText", (context->ReceiveDelay < 0 ? "--" : context->ReceiveDelay), (context->RenderDelay < 0 ? "--" : context->RenderDelay)),
+      propertyReceiveAndRenderDelayRefreshButtonId = "receive_and_render_delay_refresh_button"u8
+    )
+    {
+      var receiveAndRenderDelayProperty = ObsProperties.obs_properties_get(properties, (sbyte*)propertyReceiveAndRenderDelayId);
+      ObsProperties.obs_property_set_long_description(receiveAndRenderDelayProperty, (sbyte*)propertyReceiveAndRenderDelayText);
+    }
+    return Convert.ToByte(true);
+  }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte FrameBufferTimeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
@@ -900,6 +939,8 @@ public class Source
     // reset video output
     Obs.obs_source_output_video(context->Source, null);
     context->Video->format = video_format.VIDEO_FORMAT_NONE; // make sure the source is reinitialized on the next frame
+    context->ReceiveDelay = -1;
+    context->RenderDelay = -1;
 
     if (Convert.ToBoolean(Obs.obs_source_showing(context->Source))) // auto-reconnect if the source is visible
     {
@@ -910,6 +951,7 @@ public class Source
       });
     }
   }
+
   private unsafe void VideoFrameReceivedEventHandler(object? sender, Beam.BeamVideoData videoFrame)
   {
     var context = (Context*)ContextPointer;
@@ -951,6 +993,8 @@ public class Source
       return;
 
     context->Video->timestamp = videoFrame.Header.Timestamp;
+    context->ReceiveDelay = videoFrame.Header.ReceiveDelay;
+    context->RenderDelay = videoFrame.Header.RenderDelay;
 
     fixed (byte* videoData = videoFrame.Data) // temporary pinning is sufficient, since Obs.obs_source_output_video() creates a copy of the data anyway
     {
