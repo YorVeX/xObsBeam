@@ -19,6 +19,7 @@ public class Beam
     Qoir = 5,
     Png = 6,
     Density = 7,
+    Qoy = 8,
   }
 
   public enum ReceiveTimestampTypes : byte

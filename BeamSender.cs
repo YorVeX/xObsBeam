@@ -206,6 +206,15 @@ public class BeamSender
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
       _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
     }
+    else if (SettingsDialog.QoyCompression)
+    {
+      _videoHeader.Compression = Beam.CompressionTypes.Qoy;
+      _videoDataPoolMaxSize = Qoy.GetMaxSize((int)info->width, (int)info->height);
+      if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
+        _videoDataPoolMaxSize = 2147483591;
+      _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
+      _compressionThreshold = SettingsDialog.QoyCompressionLevel / 10.0;
+    }
     else if (SettingsDialog.Lz4Compression)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Lz4;
@@ -555,6 +564,8 @@ public class BeamSender
       }
       else if (videoHeader.Compression is Beam.CompressionTypes.Qoi) // apply QOI compression if enabled
         encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedData!); // encode the frame with QOI
+      else if (videoHeader.Compression is Beam.CompressionTypes.Qoy) // apply QOY compression if enabled
+        encodedDataLength = Qoy.Encode(rawData, videoHeader.Width, videoHeader.Height, 0, videoHeader.DataSize, encodedData!); // encode the frame with QOY
       else if (videoHeader.Compression is Beam.CompressionTypes.Lz4)
       {
         fixed (byte* targetData = encodedData)

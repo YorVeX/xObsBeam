@@ -190,6 +190,7 @@ public class BeamReceiver
 
   public void Disconnect()
   {
+    Module.Log("BeamReceiver Disconnect() called", ObsLogLevel.Debug);
     _targetHostname = "";
     _targetPort = -1;
     _pipeName = "";
@@ -575,6 +576,9 @@ public class BeamReceiver
                   break;
                 case Beam.CompressionTypes.Qoi:
                   Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
+                  break;
+                case Beam.CompressionTypes.Qoy:
+                  Qoy.Decode(receivedFrameData, videoHeader.Width, videoHeader.Height, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
                   break;
                 case Beam.CompressionTypes.Qoir:
                   QoirDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
