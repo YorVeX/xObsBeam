@@ -200,7 +200,7 @@ public class BeamSender
     else if (SettingsDialog.QoiCompression)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Qoi;
-      _videoDataPoolMaxSize = (int)((info->width * info->height * 5) + Qoi.PaddingLength); // QOI's theoretical max size for BGRA is 5x the size of the original image
+      _videoDataPoolMaxSize = (int)((info->width * info->height * 5)); // QOI's theoretical max size for BGRA is 5x the size of the original image
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
