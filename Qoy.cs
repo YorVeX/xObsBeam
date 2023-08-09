@@ -93,8 +93,8 @@ sealed class Qoy
     [FieldOffset(0)] public fixed sbyte Y[4];
     [FieldOffset(4)] public sbyte Cb;
     [FieldOffset(5)] public sbyte Cr;
-    [FieldOffset(0)] public ulong Value; // ...this can be used to compare the whole struct at once (the previous 8 bytes combined as one ulong)
     [FieldOffset(6)] public short Zero; // needed to fill two more bytes with zero so that...
+    [FieldOffset(0)] public ulong Value; // ...this can be used to compare the whole struct at once (the previous 8 bytes combined as one ulong)
   }
 
   public static unsafe int GetMaxSize(int width, int height)
@@ -176,7 +176,6 @@ sealed class Qoy
       pixelPackDiff.Cb = (sbyte)(cPlane[0] - cPlanePrevious[0]);
       pixelPackDiff.Cr = (sbyte)(cPlane[1] - cPlanePrevious[1]);
 
-      // if (pixelPackDiff.Y[0] == 0 && pixelPackDiff.Y[1] == 0 && pixelPackDiff.Y[2] == 0 && pixelPackDiff.Y[3] == 0 && pixelPackDiff.Cb == 0 && pixelPackDiff.Cr == 0)
       if (pixelPackDiff.Value == 0)
       {
         run++;
