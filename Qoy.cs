@@ -13,8 +13,12 @@ Changes to the original code:
 - Adapted the code to work with NV12 format as input and output (original seems to use some non-standard packing format not useful here)
 - Removed any code for alpha channel data, since OBS doesn't support that for NV12 anyway
 - QOY_OP_RUN_X only supports up to 257 pixels (only one byte for the run length) for reduced complexity
+- These encoder changes together resulted in a 13.7% speedup in tests on one specific machine with some very simple "benchmarking" (obviously very subjective)
+  - Encoder: Replaced some field assignments for diff calculation with direct input data array access
+  - Encoder: Added lookup table to speed up Cb and Cr diff bit calculations
+  - Encoder: Added Value field to diff struct for faster zero checks (original code also has a very minor bug there that is implicitly fixed by this)
 
-Original license:
+Original copyrights and licenses:
 -- LICENSE: The MIT License(MIT)
 
 Copyright(c) 2021 Dominic Szablewski
@@ -78,17 +82,19 @@ sealed class Qoy
   [StructLayout(LayoutKind.Explicit)]
   internal unsafe ref struct PixelPack
   {
-    [FieldOffset(0)] public fixed byte y[4];
-    [FieldOffset(4)] public byte cb;
-    [FieldOffset(5)] public byte cr;
+    [FieldOffset(0)] public fixed byte Y[4];
+    [FieldOffset(4)] public byte Cb;
+    [FieldOffset(5)] public byte Cr;
   }
 
   [StructLayout(LayoutKind.Explicit)]
   internal unsafe ref struct PixelPackDiff
   {
-    [FieldOffset(0)] public fixed sbyte y[4];
-    [FieldOffset(4)] public sbyte cb;
-    [FieldOffset(5)] public sbyte cr;
+    [FieldOffset(0)] public fixed sbyte Y[4];
+    [FieldOffset(4)] public sbyte Cb;
+    [FieldOffset(5)] public sbyte Cr;
+    [FieldOffset(0)] public ulong Value; // ...this can be used to compare the whole struct at once (the previous 8 bytes combined as one ulong)
+    [FieldOffset(6)] public short Zero; // needed to fill two more bytes with zero so that...
   }
 
   public static unsafe int GetMaxSize(int width, int height)
@@ -98,39 +104,80 @@ sealed class Qoy
     return ((((internal_width * internal_height) + 3) >> 2) * 7);
   }
 
+  static readonly byte[] CbCrBitsLookup = new byte[ushort.MaxValue + 1];
+  static bool _initialized;
+  public static unsafe void Initialize()
+  {
+    if (_initialized)
+      return;
+
+    byte cbBits, crBits;
+
+    for (short cbDiff = -128; cbDiff < 128; cbDiff++)
+    {
+      for (short crDiff = -128; crDiff < 128; crDiff++)
+      {
+        if (cbDiff is >= -2 and < 2)
+          cbBits = 2;
+        else if (cbDiff is >= -4 and < 4)
+          cbBits = 3;
+        else if (cbDiff is >= -16 and < 16)
+          cbBits = 5;
+        else if (cbDiff is >= -32 and < 32)
+          cbBits = 6;
+        else
+          cbBits = 8;
+
+        if (crDiff is >= -1 and < 1)
+          crBits = 1;
+        else if (crDiff is >= -4 and < 4)
+          crBits = 3;
+        else if (crDiff is >= -8 and < 8)
+          crBits = 4;
+        else if (crDiff is >= -16 and < 16)
+          crBits = 5;
+        else if (crDiff is >= -32 and < 32)
+          crBits = 6;
+        else
+          crBits = 8;
+
+        CbCrBitsLookup[((byte)cbDiff << 8) | (byte)crDiff] = (byte)((cbBits << 4) | crBits);
+      }
+    }
+    _initialized = true;
+  }
+
   public static unsafe int Encode(byte* data, uint width, uint height, int startIndex, int dataSize, byte[] output)
   {
     int writeIndex = 0;
 
-    PixelPack pixelPack = default;
-    PixelPack previousPixelPack = default;
-
     PixelPackDiff pixelPackDiff = default;
 
     uint pixelCount = width * height;
-    uint stride = width * 4;
 
     uint cbCrIndex = pixelCount;
     int run = 0;
+    int yBits, crBits, cbBits;
+    byte* yPlane = null;
+    byte* cPlane = null;
+    int zeroInt;
+    byte* yPlanePrevious = (byte*)&zeroInt; // need a place to point to for the first comparison to the previous pixel so that it's zero
+    byte* cPlanePrevious = (byte*)&zeroInt;
 
     for (var yIndex = startIndex; yIndex < pixelCount; yIndex += 4)
     {
-      pixelPack.y[0] = data[yIndex + 0];
-      pixelPack.y[1] = data[yIndex + 1];
-      pixelPack.y[2] = data[yIndex + 2];
-      pixelPack.y[3] = data[yIndex + 3];
-      pixelPack.cb = data[cbCrIndex + 0];
-      pixelPack.cr = data[cbCrIndex + 1];
-      cbCrIndex += 2;
+      yPlane = (data + yIndex);
+      cPlane = (data + cbCrIndex);
 
-      pixelPackDiff.y[0] = (sbyte)(pixelPack.y[0] - previousPixelPack.y[2]);
-      pixelPackDiff.y[1] = (sbyte)(pixelPack.y[1] - previousPixelPack.y[3]);
-      pixelPackDiff.y[2] = (sbyte)(pixelPack.y[2] - pixelPack.y[0]);
-      pixelPackDiff.y[3] = (sbyte)(pixelPack.y[3] - pixelPack.y[1]);
-      pixelPackDiff.cb = (sbyte)(pixelPack.cb - previousPixelPack.cb);
-      pixelPackDiff.cr = (sbyte)(pixelPack.cr - previousPixelPack.cr);
+      pixelPackDiff.Y[0] = (sbyte)(yPlane[0] - yPlanePrevious[2]);
+      pixelPackDiff.Y[1] = (sbyte)(yPlane[1] - yPlanePrevious[3]);
+      pixelPackDiff.Y[2] = (sbyte)(yPlane[2] - yPlane[0]);
+      pixelPackDiff.Y[3] = (sbyte)(yPlane[3] - yPlane[1]);
+      pixelPackDiff.Cb = (sbyte)(cPlane[0] - cPlanePrevious[0]);
+      pixelPackDiff.Cr = (sbyte)(cPlane[1] - cPlanePrevious[1]);
 
-      if (pixelPackDiff.y[0] == 0 && pixelPackDiff.y[1] == 0 && pixelPackDiff.y[2] == 0 && pixelPackDiff.y[3] == 0 && pixelPackDiff.y[4] == 0 && pixelPackDiff.cb == 0 && pixelPackDiff.cr == 0)
+      // if (pixelPackDiff.Y[0] == 0 && pixelPackDiff.Y[1] == 0 && pixelPackDiff.Y[2] == 0 && pixelPackDiff.Y[3] == 0 && pixelPackDiff.Cb == 0 && pixelPackDiff.Cr == 0)
+      if (pixelPackDiff.Value == 0)
       {
         run++;
         if (run == 258)
@@ -148,22 +195,21 @@ sealed class Qoy
       else
       {
         run = 0;
-        int yBits, crBits, cbBits;
 
-        sbyte yMin = pixelPackDiff.y[0];
-        sbyte yMax = pixelPackDiff.y[0];
-        if (pixelPackDiff.y[1] < yMin)
-          yMin = pixelPackDiff.y[1];
-        if (pixelPackDiff.y[1] > yMax)
-          yMax = pixelPackDiff.y[1];
-        if (pixelPackDiff.y[2] < yMin)
-          yMin = pixelPackDiff.y[2];
-        if (pixelPackDiff.y[2] > yMax)
-          yMax = pixelPackDiff.y[2];
-        if (pixelPackDiff.y[3] < yMin)
-          yMin = pixelPackDiff.y[3];
-        if (pixelPackDiff.y[3] > yMax)
-          yMax = pixelPackDiff.y[3];
+        sbyte yMin = pixelPackDiff.Y[0];
+        sbyte yMax = pixelPackDiff.Y[0];
+        if (pixelPackDiff.Y[1] < yMin)
+          yMin = pixelPackDiff.Y[1];
+        if (pixelPackDiff.Y[1] > yMax)
+          yMax = pixelPackDiff.Y[1];
+        if (pixelPackDiff.Y[2] < yMin)
+          yMin = pixelPackDiff.Y[2];
+        if (pixelPackDiff.Y[2] > yMax)
+          yMax = pixelPackDiff.Y[2];
+        if (pixelPackDiff.Y[3] < yMin)
+          yMin = pixelPackDiff.Y[3];
+        if (pixelPackDiff.Y[3] > yMax)
+          yMax = pixelPackDiff.Y[3];
 
         if (yMin >= -4 && yMax < 4)
           yBits = 3;
@@ -176,80 +222,65 @@ sealed class Qoy
         else
           yBits = 8;
 
-        if (pixelPackDiff.cb is >= -2 and < 2)
-          cbBits = 2;
-        else if (pixelPackDiff.cb is >= -4 and < 4)
-          cbBits = 3;
-        else if (pixelPackDiff.cb is >= -16 and < 16)
-          cbBits = 5;
-        else if (pixelPackDiff.cb is >= -32 and < 32)
-          cbBits = 6;
-        else
-          cbBits = 8;
-
-        if (pixelPackDiff.cr is >= -1 and < 1)
-          crBits = 1;
-        else if (pixelPackDiff.cr is >= -4 and < 4)
-          crBits = 3;
-        else if (pixelPackDiff.cr is >= -8 and < 8)
-          crBits = 4;
-        else if (pixelPackDiff.cr is >= -16 and < 16)
-          crBits = 5;
-        else if (pixelPackDiff.cr is >= -32 and < 32)
-          crBits = 6;
-        else
-          crBits = 8;
+        // according to tests using this lookup table is faster than calculating the bit count here (unlike for yBits above, where tests have shown the opposite)
+        var cbCrBits = CbCrBitsLookup[((byte)pixelPackDiff.Cb << 8) | (byte)pixelPackDiff.Cr];
+        cbBits = cbCrBits >> 4;
+        crBits = cbCrBits & 0x0F;
 
         if (yBits <= 3 && cbBits <= 2 && crBits <= 1)
         {
-          output[writeIndex++] = (byte)(QOY_OP_321 | ((pixelPackDiff.y[0] + 4) << 4) | ((pixelPackDiff.y[1] + 4) << 1) | ((pixelPackDiff.y[2] + 4) >> 2));
-          output[writeIndex++] = (byte)(((pixelPackDiff.y[2] + 4) << 6) | ((pixelPackDiff.y[3] + 4) << 3) | ((pixelPackDiff.cb + 2) << 1) | (pixelPackDiff.cr + 1));
+          output[writeIndex++] = (byte)(QOY_OP_321 | ((pixelPackDiff.Y[0] + 4) << 4) | ((pixelPackDiff.Y[1] + 4) << 1) | ((pixelPackDiff.Y[2] + 4) >> 2));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Y[2] + 4) << 6) | ((pixelPackDiff.Y[3] + 4) << 3) | ((pixelPackDiff.Cb + 2) << 1) | (pixelPackDiff.Cr + 1));
         }
         else if (yBits <= 4 && cbBits <= 3 && crBits <= 3)
         {
-          output[writeIndex++] = (byte)(QOY_OP_433 | ((pixelPackDiff.y[0] + 8) << 2) | ((pixelPackDiff.y[1] + 8) >> 2));
-          output[writeIndex++] = (byte)(((pixelPackDiff.y[1] + 8) << 6) | ((pixelPackDiff.y[2] + 8) << 2) | ((pixelPackDiff.y[3] + 8) >> 2));
-          output[writeIndex++] = (byte)(((pixelPackDiff.y[3] + 8) << 6) | ((pixelPackDiff.cb + 4) << 3) | (pixelPackDiff.cr + 4));
+          output[writeIndex++] = (byte)(QOY_OP_433 | ((pixelPackDiff.Y[0] + 8) << 2) | ((pixelPackDiff.Y[1] + 8) >> 2));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Y[1] + 8) << 6) | ((pixelPackDiff.Y[2] + 8) << 2) | ((pixelPackDiff.Y[3] + 8) >> 2));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Y[3] + 8) << 6) | ((pixelPackDiff.Cb + 4) << 3) | (pixelPackDiff.Cr + 4));
         }
         else if (yBits <= 5 && cbBits <= 5 && crBits <= 4)
         {
-          output[writeIndex++] = (byte)(QOY_OP_554 | (pixelPackDiff.y[0] + 16));
-          output[writeIndex++] = (byte)(((pixelPackDiff.y[1] + 16) << 3) | ((pixelPackDiff.y[2] + 16) >> 2));
-          output[writeIndex++] = (byte)(((pixelPackDiff.y[2] + 16) << 6) | ((pixelPackDiff.y[3] + 16) << 1) | ((pixelPackDiff.cb + 16) >> 4));
-          output[writeIndex++] = (byte)(((pixelPackDiff.cb + 16) << 4) | (pixelPackDiff.cr + 8));
+          output[writeIndex++] = (byte)(QOY_OP_554 | (pixelPackDiff.Y[0] + 16));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Y[1] + 16) << 3) | ((pixelPackDiff.Y[2] + 16) >> 2));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Y[2] + 16) << 6) | ((pixelPackDiff.Y[3] + 16) << 1) | ((pixelPackDiff.Cb + 16) >> 4));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Cb + 16) << 4) | (pixelPackDiff.Cr + 8));
         }
         else if (yBits <= 6 && cbBits <= 6 && crBits <= 6)
         {
-          output[writeIndex++] = (byte)(QOY_OP_666 | ((pixelPackDiff.y[0] + 32) >> 2));
-          output[writeIndex++] = (byte)(((pixelPackDiff.y[0] + 32) << 6) | (pixelPackDiff.y[1] + 32));
-          output[writeIndex++] = (byte)(((pixelPackDiff.y[2] + 32) << 2) | ((pixelPackDiff.y[3] + 32) >> 4));
-          output[writeIndex++] = (byte)(((pixelPackDiff.y[3] + 32) << 4) | ((pixelPackDiff.cb + 32) >> 2));
-          output[writeIndex++] = (byte)(((pixelPackDiff.cb + 32) << 6) | (pixelPackDiff.cr + 32));
+          output[writeIndex++] = (byte)(QOY_OP_666 | ((pixelPackDiff.Y[0] + 32) >> 2));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Y[0] + 32) << 6) | (pixelPackDiff.Y[1] + 32));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Y[2] + 32) << 2) | ((pixelPackDiff.Y[3] + 32) >> 4));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Y[3] + 32) << 4) | ((pixelPackDiff.Cb + 32) >> 2));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Cb + 32) << 6) | (pixelPackDiff.Cr + 32));
         }
         else if (yBits <= 8 && cbBits <= 6 && crBits <= 5)
         {
-          output[writeIndex++] = (byte)(QOY_OP_865 | ((pixelPackDiff.y[0] + 128) >> 5));
-          output[writeIndex++] = (byte)(((pixelPackDiff.y[0] + 128) << 3) | ((pixelPackDiff.y[1] + 128) >> 5));
-          output[writeIndex++] = (byte)(((pixelPackDiff.y[1] + 128) << 3) | ((pixelPackDiff.y[2] + 128) >> 5));
-          output[writeIndex++] = (byte)(((pixelPackDiff.y[2] + 128) << 3) | ((pixelPackDiff.y[3] + 128) >> 5));
-          output[writeIndex++] = (byte)(((pixelPackDiff.y[3] + 128) << 3) | ((pixelPackDiff.cb + 32) >> 3));
-          output[writeIndex++] = (byte)(((pixelPackDiff.cb + 32) << 5) | (pixelPackDiff.cr + 16));
+          output[writeIndex++] = (byte)(QOY_OP_865 | ((pixelPackDiff.Y[0] + 128) >> 5));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Y[0] + 128) << 3) | ((pixelPackDiff.Y[1] + 128) >> 5));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Y[1] + 128) << 3) | ((pixelPackDiff.Y[2] + 128) >> 5));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Y[2] + 128) << 3) | ((pixelPackDiff.Y[3] + 128) >> 5));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Y[3] + 128) << 3) | ((pixelPackDiff.Cb + 32) >> 3));
+          output[writeIndex++] = (byte)(((pixelPackDiff.Cb + 32) << 5) | (pixelPackDiff.Cr + 16));
         }
         else
         {
           output[writeIndex++] = QOY_OP_888;
-          output[writeIndex++] = pixelPack.y[0];
-          output[writeIndex++] = pixelPack.y[1];
-          output[writeIndex++] = pixelPack.y[2];
-          output[writeIndex++] = pixelPack.y[3];
-          output[writeIndex++] = pixelPack.cb;
-          output[writeIndex++] = pixelPack.cr;
+          output[writeIndex++] = yPlane[0];
+          output[writeIndex++] = yPlane[1];
+          output[writeIndex++] = yPlane[2];
+          output[writeIndex++] = yPlane[3];
+          output[writeIndex++] = cPlane[0];
+          output[writeIndex++] = cPlane[1];
         }
       }
 
-      previousPixelPack = pixelPack;
+      yPlanePrevious = yPlane;
+      cPlanePrevious = cPlane;
+      cbCrIndex += 2; // unlike yIndex this is not incremented by the main loop
     }
 
+    // var compressionPercentage = 100 - ((dataSize - writeIndex) * 100 / dataSize);
+    // Module.Log($"---------- QOY compressed {dataSize} to {writeIndex} ({compressionPercentage} %) --------------------------------------------", ObsLogLevel.Warning);
     return writeIndex;
   }
 
@@ -267,8 +298,8 @@ sealed class Qoy
     {
       if (run > 0)
       {
-        pixelPack.y[0] = pixelPack.y[2];
-        pixelPack.y[1] = pixelPack.y[3];
+        pixelPack.Y[0] = pixelPack.Y[2];
+        pixelPack.Y[1] = pixelPack.Y[3];
         run--;
       }
       else
@@ -276,57 +307,57 @@ sealed class Qoy
         var b1 = input[readIndex++];
         if ((b1 & QOY_OP_RUN_MASK) == QOY_OP_RUN_1)
         {
-          pixelPack.y[0] = pixelPack.y[2];
-          pixelPack.y[1] = pixelPack.y[3];
+          pixelPack.Y[0] = pixelPack.Y[2];
+          pixelPack.Y[1] = pixelPack.Y[3];
         }
         else if ((b1 & QOY_OP_RUN_MASK) == QOY_OP_RUN_X)
         {
-          pixelPack.y[0] = pixelPack.y[2];
-          pixelPack.y[1] = pixelPack.y[3];
+          pixelPack.Y[0] = pixelPack.Y[2];
+          pixelPack.Y[1] = pixelPack.Y[3];
           var b2 = input[readIndex++];
           run = b2 + 2 - 1;
         }
         else if ((b1 & QOY_OP_888_MASK) == QOY_OP_888)
         {
-          pixelPack.y[0] = input[readIndex++];
-          pixelPack.y[1] = input[readIndex++];
-          pixelPack.y[2] = input[readIndex++];
-          pixelPack.y[3] = input[readIndex++];
-          pixelPack.cb = input[readIndex++];
-          pixelPack.cr = input[readIndex++];
+          pixelPack.Y[0] = input[readIndex++];
+          pixelPack.Y[1] = input[readIndex++];
+          pixelPack.Y[2] = input[readIndex++];
+          pixelPack.Y[3] = input[readIndex++];
+          pixelPack.Cb = input[readIndex++];
+          pixelPack.Cr = input[readIndex++];
         }
         else if ((b1 & QOY_OP_321_MASK) == QOY_OP_321)
         {
           var b2 = input[readIndex++];
-          pixelPack.y[0] = (byte)(pixelPack.y[2] + ((b1 >> 4)) - 4);
-          pixelPack.y[1] = (byte)(pixelPack.y[3] + ((b1 >> 1) & 0x07) - 4);
-          pixelPack.y[2] = (byte)(pixelPack.y[0] + ((b1 & 0x01) << 2) + (b2 >> 6) - 4);
-          pixelPack.y[3] = (byte)(pixelPack.y[1] + ((b2 >> 3) & 0x07) - 4);
-          pixelPack.cb = (byte)(pixelPack.cb + ((b2 >> 1) & 0x03) - 2);
-          pixelPack.cr = (byte)(pixelPack.cr + (b2 & 0x01) - 1);
+          pixelPack.Y[0] = (byte)(pixelPack.Y[2] + ((b1 >> 4)) - 4);
+          pixelPack.Y[1] = (byte)(pixelPack.Y[3] + ((b1 >> 1) & 0x07) - 4);
+          pixelPack.Y[2] = (byte)(pixelPack.Y[0] + ((b1 & 0x01) << 2) + (b2 >> 6) - 4);
+          pixelPack.Y[3] = (byte)(pixelPack.Y[1] + ((b2 >> 3) & 0x07) - 4);
+          pixelPack.Cb = (byte)(pixelPack.Cb + ((b2 >> 1) & 0x03) - 2);
+          pixelPack.Cr = (byte)(pixelPack.Cr + (b2 & 0x01) - 1);
         }
         else if ((b1 & QOY_OP_433_MASK) == QOY_OP_433)
         {
           var b2 = input[readIndex++];
           var b3 = input[readIndex++];
-          pixelPack.y[0] = (byte)(pixelPack.y[2] + ((b1 >> 2) & 0x0F) - 8);
-          pixelPack.y[1] = (byte)(pixelPack.y[3] + ((b1 & 0x03) << 2) + (b2 >> 6) - 8);
-          pixelPack.y[2] = (byte)(pixelPack.y[0] + ((b2 >> 2) & 0x0F) - 8);
-          pixelPack.y[3] = (byte)(pixelPack.y[1] + ((b2 & 0x03) << 2) + (b3 >> 6) - 8);
-          pixelPack.cb = (byte)(pixelPack.cb + ((b3 >> 3) & 0x07) - 4);
-          pixelPack.cr = (byte)(pixelPack.cr + (b3 & 0x07) - 4);
+          pixelPack.Y[0] = (byte)(pixelPack.Y[2] + ((b1 >> 2) & 0x0F) - 8);
+          pixelPack.Y[1] = (byte)(pixelPack.Y[3] + ((b1 & 0x03) << 2) + (b2 >> 6) - 8);
+          pixelPack.Y[2] = (byte)(pixelPack.Y[0] + ((b2 >> 2) & 0x0F) - 8);
+          pixelPack.Y[3] = (byte)(pixelPack.Y[1] + ((b2 & 0x03) << 2) + (b3 >> 6) - 8);
+          pixelPack.Cb = (byte)(pixelPack.Cb + ((b3 >> 3) & 0x07) - 4);
+          pixelPack.Cr = (byte)(pixelPack.Cr + (b3 & 0x07) - 4);
         }
         else if ((b1 & QOY_OP_554_MASK) == QOY_OP_554)
         {
           var b2 = input[readIndex++];
           var b3 = input[readIndex++];
           var b4 = input[readIndex++];
-          pixelPack.y[0] = (byte)(pixelPack.y[2] + (b1 & 0x1F) - 16);
-          pixelPack.y[1] = (byte)(pixelPack.y[3] + ((b2 >> 3) & 0x1F) - 16);
-          pixelPack.y[2] = (byte)(pixelPack.y[0] + ((b2 & 0x07) << 2) + (b3 >> 6) - 16);
-          pixelPack.y[3] = (byte)(pixelPack.y[1] + ((b3 >> 1) & 0x1F) - 16);
-          pixelPack.cb = (byte)(pixelPack.cb + ((b3 & 0x01) << 4) + (b4 >> 4) - 16);
-          pixelPack.cr = (byte)(pixelPack.cr + (b4 & 0x0F) - 8);
+          pixelPack.Y[0] = (byte)(pixelPack.Y[2] + (b1 & 0x1F) - 16);
+          pixelPack.Y[1] = (byte)(pixelPack.Y[3] + ((b2 >> 3) & 0x1F) - 16);
+          pixelPack.Y[2] = (byte)(pixelPack.Y[0] + ((b2 & 0x07) << 2) + (b3 >> 6) - 16);
+          pixelPack.Y[3] = (byte)(pixelPack.Y[1] + ((b3 >> 1) & 0x1F) - 16);
+          pixelPack.Cb = (byte)(pixelPack.Cb + ((b3 & 0x01) << 4) + (b4 >> 4) - 16);
+          pixelPack.Cr = (byte)(pixelPack.Cr + (b4 & 0x0F) - 8);
         }
         else if ((b1 & QOY_OP_666_MASK) == QOY_OP_666)
         {
@@ -334,12 +365,12 @@ sealed class Qoy
           var b3 = input[readIndex++];
           var b4 = input[readIndex++];
           var b5 = input[readIndex++];
-          pixelPack.y[0] = (byte)(pixelPack.y[2] + ((b1 & 0x0F) << 2) + (b2 >> 6) - 32);
-          pixelPack.y[1] = (byte)(pixelPack.y[3] + (b2 & 0x3F) - 32);
-          pixelPack.y[2] = (byte)(pixelPack.y[0] + ((b3 >> 2) & 0x3F) - 32);
-          pixelPack.y[3] = (byte)(pixelPack.y[1] + ((b3 & 0x03) << 4) + (b4 >> 4) - 32);
-          pixelPack.cb = (byte)(pixelPack.cb + ((b4 & 0x0F) << 2) + (b5 >> 6) - 32);
-          pixelPack.cr = (byte)(pixelPack.cr + (b5 & 0x3F) - 32);
+          pixelPack.Y[0] = (byte)(pixelPack.Y[2] + ((b1 & 0x0F) << 2) + (b2 >> 6) - 32);
+          pixelPack.Y[1] = (byte)(pixelPack.Y[3] + (b2 & 0x3F) - 32);
+          pixelPack.Y[2] = (byte)(pixelPack.Y[0] + ((b3 >> 2) & 0x3F) - 32);
+          pixelPack.Y[3] = (byte)(pixelPack.Y[1] + ((b3 & 0x03) << 4) + (b4 >> 4) - 32);
+          pixelPack.Cb = (byte)(pixelPack.Cb + ((b4 & 0x0F) << 2) + (b5 >> 6) - 32);
+          pixelPack.Cr = (byte)(pixelPack.Cr + (b5 & 0x3F) - 32);
         }
         else if ((b1 & QOY_OP_865_MASK) == QOY_OP_865)
         {
@@ -348,21 +379,21 @@ sealed class Qoy
           var b4 = input[readIndex++];
           var b5 = input[readIndex++];
           var b6 = input[readIndex++];
-          pixelPack.y[0] = (byte)(pixelPack.y[2] + ((b1 & 0x07) << 5) + (b2 >> 3) - 128);
-          pixelPack.y[1] = (byte)(pixelPack.y[3] + ((b2 & 0x07) << 5) + (b3 >> 3) - 128);
-          pixelPack.y[2] = (byte)(pixelPack.y[0] + ((b3 & 0x07) << 5) + (b4 >> 3) - 128);
-          pixelPack.y[3] = (byte)(pixelPack.y[1] + ((b4 & 0x07) << 5) + (b5 >> 3) - 128);
-          pixelPack.cb = (byte)(pixelPack.cb + ((b5 & 0x07) << 3) + (b6 >> 5) - 32);
-          pixelPack.cr = (byte)(pixelPack.cr + (b6 & 0x1F) - 16);
+          pixelPack.Y[0] = (byte)(pixelPack.Y[2] + ((b1 & 0x07) << 5) + (b2 >> 3) - 128);
+          pixelPack.Y[1] = (byte)(pixelPack.Y[3] + ((b2 & 0x07) << 5) + (b3 >> 3) - 128);
+          pixelPack.Y[2] = (byte)(pixelPack.Y[0] + ((b3 & 0x07) << 5) + (b4 >> 3) - 128);
+          pixelPack.Y[3] = (byte)(pixelPack.Y[1] + ((b4 & 0x07) << 5) + (b5 >> 3) - 128);
+          pixelPack.Cb = (byte)(pixelPack.Cb + ((b5 & 0x07) << 3) + (b6 >> 5) - 32);
+          pixelPack.Cr = (byte)(pixelPack.Cr + (b6 & 0x1F) - 16);
         }
       }
 
-      output[yIndex + 0] = pixelPack.y[0];
-      output[yIndex + 1] = pixelPack.y[1];
-      output[yIndex + 2] = pixelPack.y[2];
-      output[yIndex + 3] = pixelPack.y[3];
-      output[cbCrIndex + 0] = pixelPack.cb;
-      output[cbCrIndex + 1] = pixelPack.cr;
+      output[yIndex + 0] = pixelPack.Y[0];
+      output[yIndex + 1] = pixelPack.Y[1];
+      output[yIndex + 2] = pixelPack.Y[2];
+      output[yIndex + 3] = pixelPack.Y[3];
+      output[cbCrIndex + 0] = pixelPack.Cb;
+      output[cbCrIndex + 1] = pixelPack.Cr;
       cbCrIndex += 2; // unlike yIndex this is not incremented by the main loop
     }
   }

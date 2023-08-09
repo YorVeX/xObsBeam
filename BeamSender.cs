@@ -208,6 +208,7 @@ public class BeamSender
     }
     else if (SettingsDialog.QoyCompression)
     {
+      Qoy.Initialize();
       _videoHeader.Compression = Beam.CompressionTypes.Qoy;
       _videoDataPoolMaxSize = Qoy.GetMaxSize((int)info->width, (int)info->height);
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
