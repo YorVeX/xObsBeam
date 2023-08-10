@@ -175,7 +175,7 @@ sealed class BeamSenderClient
       {
         if (pipeWriter == null)
           return;
-        uint fps = 30;
+        double fps = 30;
         uint frameCycle = 1;
         ulong totalBytes = 0;
         bool pipeWriterComplete = true;
@@ -215,12 +215,11 @@ sealed class BeamSenderClient
             if (frame is Beam.BeamVideoData videoFrame)
             {
               var videoFrameCount = Interlocked.Decrement(ref _videoFrameCount);
-
-              if ((videoFrame.Header.Fps > 0) && (fps != videoFrame.Header.Fps))
+              if ((videoFrame.Header.Fps > 0) && (fps != (videoFrame.Header.Fps / videoFrame.Header.FpsDenominator)))
               {
                 totalBytes = 0;
                 frameCycle = 1;
-                fps = videoFrame.Header.Fps;
+                fps = (videoFrame.Header.Fps / videoFrame.Header.FpsDenominator);
 
                 waitTime = 0;
                 dequeueTime = 0;
@@ -387,13 +386,14 @@ sealed class BeamSenderClient
   public unsafe bool EnqueueVideoFrame(ulong timestamp, Beam.VideoHeader videoHeader, byte[] videoData)
   {
     long videoFrameCount = Interlocked.Increment(ref _videoFrameCount);
-    if (videoFrameCount > (videoHeader.Fps))
+    double fps = (videoHeader.Fps / videoHeader.FpsDenominator);
+    if (videoFrameCount > fps)
     {
       Module.Log($"<{ClientId}> Error: Max send queue size reached: {videoFrameCount} ({_frameTimestampQueue.Count}).", ObsLogLevel.Error);
       Disconnect(0);
       return false;
     }
-    else if (videoFrameCount > (videoHeader.Fps / 2))
+    else if (videoFrameCount > (fps / 2))
     {
       videoHeader.DataSize = 0;
       var emptyFrame = new Beam.BeamVideoData(videoHeader, Array.Empty<byte>(), timestamp);
