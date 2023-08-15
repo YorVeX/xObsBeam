@@ -17,6 +17,8 @@ Changes to the original code:
   - Encoder: Replaced some field assignments for diff calculation with direct input data array access
   - Encoder: Added lookup table to speed up Cb and Cr diff bit calculations
   - Encoder: Added Value field to diff struct for faster zero checks (original code also has a very minor bug there that is implicitly fixed by this)
+- Encoder: Diff between adjacent Y values instead of "crossover" ([0] - [2] and [1] - [3]) for better compression ratio and maybe later potential SIMD optimizations
+- Encoder: Added skipping for some pixels when a bunch of bad cases occurs in a row (666 or higher) for further speedup, sacrificing a bit of compression ratio
 
 Original copyrights and licenses:
 -- LICENSE: The MIT License(MIT)
@@ -51,6 +53,8 @@ namespace xObsBeam;
 
 sealed class Qoy
 {
+  const byte PixelSkipCount = 16;
+
   const byte QOY_OP_321_MASK = 0x80; /* 1.......                                                                          */
   const byte QOY_OP_321 = 0x00;      /* 0yyyYYYy yyYYYbbr                                     y:4*3 cb:2 cr:1 --> 2 bytes */
   const byte QOY_OP_433_MASK = 0xc0; /* 11......                                                                          */
@@ -76,8 +80,7 @@ sealed class Qoy
 
   const byte QOY_OP_888_MASK = 0xff; /* 11111111                                                                          */
   const byte QOY_OP_888 = 0xfe;      /* 11111110 y8 y8 y8 y8 b8 r8                            y:4*8 cb:8 cr:8 --> 7 bytes */
-
-  const byte QOY_OP_UNUSED = 0xff;   /* 11111111 just to remember this could be used for something if necessary           */
+  const byte QOY_OP_SKIP = 0xff;     /* 11111111 skip fixed amount of pixel packs                                         */
 
   [StructLayout(LayoutKind.Explicit)]
   internal unsafe ref struct PixelPack
@@ -93,8 +96,17 @@ sealed class Qoy
     [FieldOffset(0)] public fixed sbyte Y[4];
     [FieldOffset(4)] public sbyte Cb;
     [FieldOffset(5)] public sbyte Cr;
+    [FieldOffset(4)] public ushort CbCrValue;
     [FieldOffset(6)] public short Zero; // needed to fill two more bytes with zero so that...
     [FieldOffset(0)] public ulong Value; // ...this can be used to compare the whole struct at once (the previous 8 bytes combined as one ulong)
+  }
+
+  [StructLayout(LayoutKind.Explicit)]
+  internal struct PixelPackCbCr
+  {
+    [FieldOffset(0)] public sbyte Cb;
+    [FieldOffset(1)] public sbyte Cr;
+    [FieldOffset(0)] public ushort Value; // ...this can be used to compare the whole struct at once (the previous 2 bytes combined as one ushort)
   }
 
   public static unsafe int GetMaxSize(int width, int height)
@@ -104,7 +116,7 @@ sealed class Qoy
     return ((((internal_width * internal_height) + 3) >> 2) * 7);
   }
 
-  static readonly byte[] CbCrBitsLookup = new byte[ushort.MaxValue + 1];
+  static readonly ushort[] CbCrBitsLookup = new ushort[ushort.MaxValue + 1];
   static bool _initialized;
   public static unsafe void Initialize()
   {
@@ -141,7 +153,7 @@ sealed class Qoy
         else
           crBits = 8;
 
-        CbCrBitsLookup[((byte)cbDiff << 8) | (byte)crDiff] = (byte)((cbBits << 4) | crBits);
+        CbCrBitsLookup[((byte)crDiff << 8) | (byte)cbDiff] = (ushort)((crBits << 8) | cbBits);
       }
     }
     _initialized = true;
@@ -152,12 +164,15 @@ sealed class Qoy
     int writeIndex = 0;
 
     PixelPackDiff pixelPackDiff = default;
+    PixelPackCbCr bitsCbCr = default;
 
     uint pixelCount = width * height;
 
     uint cbCrIndex = pixelCount;
     int run = 0;
-    int yBits, crBits, cbBits;
+    int badPixels = 0;
+    int skipBadPixels = 0;
+    int yBits;
     byte* yPlane = null;
     byte* cPlane = null;
     int zeroInt;
@@ -169,10 +184,30 @@ sealed class Qoy
       yPlane = (data + yIndex);
       cPlane = (data + cbCrIndex);
 
-      pixelPackDiff.Y[0] = (sbyte)(yPlane[0] - yPlanePrevious[2]);
-      pixelPackDiff.Y[1] = (sbyte)(yPlane[1] - yPlanePrevious[3]);
-      pixelPackDiff.Y[2] = (sbyte)(yPlane[2] - yPlane[0]);
-      pixelPackDiff.Y[3] = (sbyte)(yPlane[3] - yPlane[1]);
+      if ((badPixels > 4) || (skipBadPixels > 0))
+      {
+        if (skipBadPixels == 0)
+        {
+          skipBadPixels = PixelSkipCount;
+          badPixels--; // push it back just below the threshold so that next run after skipBadPixels reached 0 will do a diff, but if that is a bad pixel again we will immediately be back here to skip another round (and if it's not reset and go on without skipping)
+          output[writeIndex++] = QOY_OP_SKIP;
+        }
+        new ReadOnlySpan<byte>(yPlane, 4).CopyTo(output.AsSpan(writeIndex));
+        writeIndex += 4;
+        new ReadOnlySpan<byte>(cPlane, 2).CopyTo(output.AsSpan(writeIndex));
+        writeIndex += 2;
+
+        yPlanePrevious = yPlane;
+        cPlanePrevious = cPlane;
+        cbCrIndex += 2; // unlike yIndex this is not incremented by the main loop
+        skipBadPixels--;
+        continue;
+      }
+
+      pixelPackDiff.Y[0] = (sbyte)(yPlane[0] - yPlanePrevious[3]);
+      pixelPackDiff.Y[1] = (sbyte)(yPlane[1] - yPlane[0]);
+      pixelPackDiff.Y[2] = (sbyte)(yPlane[2] - yPlane[1]);
+      pixelPackDiff.Y[3] = (sbyte)(yPlane[3] - yPlane[2]);
       pixelPackDiff.Cb = (sbyte)(cPlane[0] - cPlanePrevious[0]);
       pixelPackDiff.Cr = (sbyte)(cPlane[1] - cPlanePrevious[1]);
 
@@ -222,38 +257,41 @@ sealed class Qoy
           yBits = 8;
 
         // according to tests using this lookup table is faster than calculating the bit count here (unlike for yBits above, where tests have shown the opposite)
-        var cbCrBits = CbCrBitsLookup[((byte)pixelPackDiff.Cb << 8) | (byte)pixelPackDiff.Cr];
-        cbBits = cbCrBits >> 4;
-        crBits = cbCrBits & 0x0F;
+        bitsCbCr.Value = CbCrBitsLookup[pixelPackDiff.CbCrValue];
 
-        if (yBits <= 3 && cbBits <= 2 && crBits <= 1)
+        if (yBits <= 3 && bitsCbCr.Cb <= 2 && bitsCbCr.Cr <= 1)
         {
+          badPixels = 0;
           output[writeIndex++] = (byte)(QOY_OP_321 | ((pixelPackDiff.Y[0] + 4) << 4) | ((pixelPackDiff.Y[1] + 4) << 1) | ((pixelPackDiff.Y[2] + 4) >> 2));
           output[writeIndex++] = (byte)(((pixelPackDiff.Y[2] + 4) << 6) | ((pixelPackDiff.Y[3] + 4) << 3) | ((pixelPackDiff.Cb + 2) << 1) | (pixelPackDiff.Cr + 1));
         }
-        else if (yBits <= 4 && cbBits <= 3 && crBits <= 3)
+        else if (yBits <= 4 && bitsCbCr.Cb <= 3 && bitsCbCr.Cr <= 3)
         {
+          badPixels = 0;
           output[writeIndex++] = (byte)(QOY_OP_433 | ((pixelPackDiff.Y[0] + 8) << 2) | ((pixelPackDiff.Y[1] + 8) >> 2));
           output[writeIndex++] = (byte)(((pixelPackDiff.Y[1] + 8) << 6) | ((pixelPackDiff.Y[2] + 8) << 2) | ((pixelPackDiff.Y[3] + 8) >> 2));
           output[writeIndex++] = (byte)(((pixelPackDiff.Y[3] + 8) << 6) | ((pixelPackDiff.Cb + 4) << 3) | (pixelPackDiff.Cr + 4));
         }
-        else if (yBits <= 5 && cbBits <= 5 && crBits <= 4)
+        else if (yBits <= 5 && bitsCbCr.Cb <= 5 && bitsCbCr.Cr <= 4)
         {
+          badPixels = 0;
           output[writeIndex++] = (byte)(QOY_OP_554 | (pixelPackDiff.Y[0] + 16));
           output[writeIndex++] = (byte)(((pixelPackDiff.Y[1] + 16) << 3) | ((pixelPackDiff.Y[2] + 16) >> 2));
           output[writeIndex++] = (byte)(((pixelPackDiff.Y[2] + 16) << 6) | ((pixelPackDiff.Y[3] + 16) << 1) | ((pixelPackDiff.Cb + 16) >> 4));
           output[writeIndex++] = (byte)(((pixelPackDiff.Cb + 16) << 4) | (pixelPackDiff.Cr + 8));
         }
-        else if (yBits <= 6 && cbBits <= 6 && crBits <= 6)
+        else if (yBits <= 6 && bitsCbCr.Cb <= 6 && bitsCbCr.Cr <= 6)
         {
+          badPixels++;
           output[writeIndex++] = (byte)(QOY_OP_666 | ((pixelPackDiff.Y[0] + 32) >> 2));
           output[writeIndex++] = (byte)(((pixelPackDiff.Y[0] + 32) << 6) | (pixelPackDiff.Y[1] + 32));
           output[writeIndex++] = (byte)(((pixelPackDiff.Y[2] + 32) << 2) | ((pixelPackDiff.Y[3] + 32) >> 4));
           output[writeIndex++] = (byte)(((pixelPackDiff.Y[3] + 32) << 4) | ((pixelPackDiff.Cb + 32) >> 2));
           output[writeIndex++] = (byte)(((pixelPackDiff.Cb + 32) << 6) | (pixelPackDiff.Cr + 32));
         }
-        else if (yBits <= 8 && cbBits <= 6 && crBits <= 5)
+        else if (yBits <= 8 && bitsCbCr.Cb <= 6 && bitsCbCr.Cr <= 5)
         {
+          badPixels++;
           output[writeIndex++] = (byte)(QOY_OP_865 | ((pixelPackDiff.Y[0] + 128) >> 5));
           output[writeIndex++] = (byte)(((pixelPackDiff.Y[0] + 128) << 3) | ((pixelPackDiff.Y[1] + 128) >> 5));
           output[writeIndex++] = (byte)(((pixelPackDiff.Y[1] + 128) << 3) | ((pixelPackDiff.Y[2] + 128) >> 5));
@@ -263,13 +301,12 @@ sealed class Qoy
         }
         else
         {
+          badPixels++;
           output[writeIndex++] = QOY_OP_888;
-          output[writeIndex++] = yPlane[0];
-          output[writeIndex++] = yPlane[1];
-          output[writeIndex++] = yPlane[2];
-          output[writeIndex++] = yPlane[3];
-          output[writeIndex++] = cPlane[0];
-          output[writeIndex++] = cPlane[1];
+          new ReadOnlySpan<byte>(yPlane, 4).CopyTo(output.AsSpan(writeIndex));
+          writeIndex += 4;
+          new ReadOnlySpan<byte>(cPlane, 2).CopyTo(output.AsSpan(writeIndex));
+          writeIndex += 2;
         }
       }
 
@@ -278,8 +315,8 @@ sealed class Qoy
       cbCrIndex += 2; // unlike yIndex this is not incremented by the main loop
     }
 
-    // var compressionPercentage = 100 - ((dataSize - writeIndex) * 100 / dataSize);
-    // Module.Log($"---------- QOY compressed {dataSize} to {writeIndex} ({compressionPercentage} %) --------------------------------------------", ObsLogLevel.Warning);
+    var compressionPercentage = 100 - ((dataSize - writeIndex) * 100 / dataSize);
+    Module.Log($"---------- QOY compressed {dataSize} to {writeIndex} ({compressionPercentage} %) --------------------------------------------", ObsLogLevel.Warning);
     return writeIndex;
   }
 
@@ -289,6 +326,7 @@ sealed class Qoy
 
     int readIndex = 0;
     int run = 0;
+    int skipPixels = 0;
     uint pixelCount = width * height;
 
     uint cbCrIndex = pixelCount;
@@ -300,6 +338,16 @@ sealed class Qoy
         pixelPack.Y[0] = pixelPack.Y[2];
         pixelPack.Y[1] = pixelPack.Y[3];
         run--;
+      }
+      else if (skipPixels > 0) // skipped means they are not encoded and have no opcodes, just read the raw data
+      {
+        pixelPack.Y[0] = input[readIndex++];
+        pixelPack.Y[1] = input[readIndex++];
+        pixelPack.Y[2] = input[readIndex++];
+        pixelPack.Y[3] = input[readIndex++];
+        pixelPack.Cb = input[readIndex++];
+        pixelPack.Cr = input[readIndex++];
+        skipPixels--;
       }
       else
       {
@@ -316,6 +364,16 @@ sealed class Qoy
           var b2 = input[readIndex++];
           run = b2 + 2 - 1;
         }
+        else if (b1 == QOY_OP_SKIP)
+        {
+          pixelPack.Y[0] = input[readIndex++];
+          pixelPack.Y[1] = input[readIndex++];
+          pixelPack.Y[2] = input[readIndex++];
+          pixelPack.Y[3] = input[readIndex++];
+          pixelPack.Cb = input[readIndex++];
+          pixelPack.Cr = input[readIndex++];
+          skipPixels = (PixelSkipCount - 1);
+        }
         else if ((b1 & QOY_OP_888_MASK) == QOY_OP_888)
         {
           pixelPack.Y[0] = input[readIndex++];
@@ -328,10 +386,10 @@ sealed class Qoy
         else if ((b1 & QOY_OP_321_MASK) == QOY_OP_321)
         {
           var b2 = input[readIndex++];
-          pixelPack.Y[0] = (byte)(pixelPack.Y[2] + ((b1 >> 4)) - 4);
-          pixelPack.Y[1] = (byte)(pixelPack.Y[3] + ((b1 >> 1) & 0x07) - 4);
-          pixelPack.Y[2] = (byte)(pixelPack.Y[0] + ((b1 & 0x01) << 2) + (b2 >> 6) - 4);
-          pixelPack.Y[3] = (byte)(pixelPack.Y[1] + ((b2 >> 3) & 0x07) - 4);
+          pixelPack.Y[0] = (byte)(pixelPack.Y[3] + ((b1 >> 4)) - 4);
+          pixelPack.Y[1] = (byte)(pixelPack.Y[0] + ((b1 >> 1) & 0x07) - 4);
+          pixelPack.Y[2] = (byte)(pixelPack.Y[1] + ((b1 & 0x01) << 2) + (b2 >> 6) - 4);
+          pixelPack.Y[3] = (byte)(pixelPack.Y[2] + ((b2 >> 3) & 0x07) - 4);
           pixelPack.Cb = (byte)(pixelPack.Cb + ((b2 >> 1) & 0x03) - 2);
           pixelPack.Cr = (byte)(pixelPack.Cr + (b2 & 0x01) - 1);
         }
@@ -339,10 +397,10 @@ sealed class Qoy
         {
           var b2 = input[readIndex++];
           var b3 = input[readIndex++];
-          pixelPack.Y[0] = (byte)(pixelPack.Y[2] + ((b1 >> 2) & 0x0F) - 8);
-          pixelPack.Y[1] = (byte)(pixelPack.Y[3] + ((b1 & 0x03) << 2) + (b2 >> 6) - 8);
-          pixelPack.Y[2] = (byte)(pixelPack.Y[0] + ((b2 >> 2) & 0x0F) - 8);
-          pixelPack.Y[3] = (byte)(pixelPack.Y[1] + ((b2 & 0x03) << 2) + (b3 >> 6) - 8);
+          pixelPack.Y[0] = (byte)(pixelPack.Y[3] + ((b1 >> 2) & 0x0F) - 8);
+          pixelPack.Y[1] = (byte)(pixelPack.Y[0] + ((b1 & 0x03) << 2) + (b2 >> 6) - 8);
+          pixelPack.Y[2] = (byte)(pixelPack.Y[1] + ((b2 >> 2) & 0x0F) - 8);
+          pixelPack.Y[3] = (byte)(pixelPack.Y[2] + ((b2 & 0x03) << 2) + (b3 >> 6) - 8);
           pixelPack.Cb = (byte)(pixelPack.Cb + ((b3 >> 3) & 0x07) - 4);
           pixelPack.Cr = (byte)(pixelPack.Cr + (b3 & 0x07) - 4);
         }
@@ -351,10 +409,10 @@ sealed class Qoy
           var b2 = input[readIndex++];
           var b3 = input[readIndex++];
           var b4 = input[readIndex++];
-          pixelPack.Y[0] = (byte)(pixelPack.Y[2] + (b1 & 0x1F) - 16);
-          pixelPack.Y[1] = (byte)(pixelPack.Y[3] + ((b2 >> 3) & 0x1F) - 16);
-          pixelPack.Y[2] = (byte)(pixelPack.Y[0] + ((b2 & 0x07) << 2) + (b3 >> 6) - 16);
-          pixelPack.Y[3] = (byte)(pixelPack.Y[1] + ((b3 >> 1) & 0x1F) - 16);
+          pixelPack.Y[0] = (byte)(pixelPack.Y[3] + (b1 & 0x1F) - 16);
+          pixelPack.Y[1] = (byte)(pixelPack.Y[0] + ((b2 >> 3) & 0x1F) - 16);
+          pixelPack.Y[2] = (byte)(pixelPack.Y[1] + ((b2 & 0x07) << 2) + (b3 >> 6) - 16);
+          pixelPack.Y[3] = (byte)(pixelPack.Y[2] + ((b3 >> 1) & 0x1F) - 16);
           pixelPack.Cb = (byte)(pixelPack.Cb + ((b3 & 0x01) << 4) + (b4 >> 4) - 16);
           pixelPack.Cr = (byte)(pixelPack.Cr + (b4 & 0x0F) - 8);
         }
@@ -364,10 +422,10 @@ sealed class Qoy
           var b3 = input[readIndex++];
           var b4 = input[readIndex++];
           var b5 = input[readIndex++];
-          pixelPack.Y[0] = (byte)(pixelPack.Y[2] + ((b1 & 0x0F) << 2) + (b2 >> 6) - 32);
-          pixelPack.Y[1] = (byte)(pixelPack.Y[3] + (b2 & 0x3F) - 32);
-          pixelPack.Y[2] = (byte)(pixelPack.Y[0] + ((b3 >> 2) & 0x3F) - 32);
-          pixelPack.Y[3] = (byte)(pixelPack.Y[1] + ((b3 & 0x03) << 4) + (b4 >> 4) - 32);
+          pixelPack.Y[0] = (byte)(pixelPack.Y[3] + ((b1 & 0x0F) << 2) + (b2 >> 6) - 32);
+          pixelPack.Y[1] = (byte)(pixelPack.Y[0] + (b2 & 0x3F) - 32);
+          pixelPack.Y[2] = (byte)(pixelPack.Y[1] + ((b3 >> 2) & 0x3F) - 32);
+          pixelPack.Y[3] = (byte)(pixelPack.Y[2] + ((b3 & 0x03) << 4) + (b4 >> 4) - 32);
           pixelPack.Cb = (byte)(pixelPack.Cb + ((b4 & 0x0F) << 2) + (b5 >> 6) - 32);
           pixelPack.Cr = (byte)(pixelPack.Cr + (b5 & 0x3F) - 32);
         }
@@ -378,10 +436,10 @@ sealed class Qoy
           var b4 = input[readIndex++];
           var b5 = input[readIndex++];
           var b6 = input[readIndex++];
-          pixelPack.Y[0] = (byte)(pixelPack.Y[2] + ((b1 & 0x07) << 5) + (b2 >> 3) - 128);
-          pixelPack.Y[1] = (byte)(pixelPack.Y[3] + ((b2 & 0x07) << 5) + (b3 >> 3) - 128);
-          pixelPack.Y[2] = (byte)(pixelPack.Y[0] + ((b3 & 0x07) << 5) + (b4 >> 3) - 128);
-          pixelPack.Y[3] = (byte)(pixelPack.Y[1] + ((b4 & 0x07) << 5) + (b5 >> 3) - 128);
+          pixelPack.Y[0] = (byte)(pixelPack.Y[3] + ((b1 & 0x07) << 5) + (b2 >> 3) - 128);
+          pixelPack.Y[1] = (byte)(pixelPack.Y[0] + ((b2 & 0x07) << 5) + (b3 >> 3) - 128);
+          pixelPack.Y[2] = (byte)(pixelPack.Y[1] + ((b3 & 0x07) << 5) + (b4 >> 3) - 128);
+          pixelPack.Y[3] = (byte)(pixelPack.Y[2] + ((b4 & 0x07) << 5) + (b5 >> 3) - 128);
           pixelPack.Cb = (byte)(pixelPack.Cb + ((b5 & 0x07) << 3) + (b6 >> 5) - 32);
           pixelPack.Cr = (byte)(pixelPack.Cr + (b6 & 0x1F) - 16);
         }
