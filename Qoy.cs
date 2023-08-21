@@ -315,8 +315,8 @@ sealed class Qoy
       cbCrIndex += 2; // unlike yIndex this is not incremented by the main loop
     }
 
-    var compressionPercentage = 100 - ((dataSize - writeIndex) * 100 / dataSize);
-    Module.Log($"---------- QOY compressed {dataSize} to {writeIndex} ({compressionPercentage} %) --------------------------------------------", ObsLogLevel.Warning);
+    // var compressionPercentage = 100 - ((dataSize - writeIndex) * 100 / dataSize);
+    // Module.Log($"---------- QOY compressed {dataSize} to {writeIndex} ({compressionPercentage} %) --------------------------------------------", ObsLogLevel.Warning);
     return writeIndex;
   }
 
@@ -335,8 +335,9 @@ sealed class Qoy
     {
       if (run > 0)
       {
-        pixelPack.Y[0] = pixelPack.Y[2];
+        pixelPack.Y[0] = pixelPack.Y[3];
         pixelPack.Y[1] = pixelPack.Y[3];
+        pixelPack.Y[2] = pixelPack.Y[3];
         run--;
       }
       else if (skipPixels > 0) // skipped means they are not encoded and have no opcodes, just read the raw data
@@ -354,13 +355,15 @@ sealed class Qoy
         var b1 = input[readIndex++];
         if ((b1 & QOY_OP_RUN_MASK) == QOY_OP_RUN_1)
         {
-          pixelPack.Y[0] = pixelPack.Y[2];
+          pixelPack.Y[0] = pixelPack.Y[3];
           pixelPack.Y[1] = pixelPack.Y[3];
+          pixelPack.Y[2] = pixelPack.Y[3];
         }
         else if ((b1 & QOY_OP_RUN_MASK) == QOY_OP_RUN_X)
         {
-          pixelPack.Y[0] = pixelPack.Y[2];
+          pixelPack.Y[0] = pixelPack.Y[3];
           pixelPack.Y[1] = pixelPack.Y[3];
+          pixelPack.Y[2] = pixelPack.Y[3];
           var b2 = input[readIndex++];
           run = b2 + 2 - 1;
         }
