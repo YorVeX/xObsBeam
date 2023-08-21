@@ -5,17 +5,17 @@
 C# port of the QOY C++ code from here: https://github.com/Chainfire/qoy/tree/fd9f9ea359cdea0ec9101617159031cb06447583
 Changes to the original code:
 - Type changes necessary to make it work in C#
+- Variable and function name changes to make it fit C# and into the style of this project
 - Removed header data (Beam has its own headers)
 - Removed EOF padding and any checks for it (covered by Beam headers)
 - Removed some unnecessary binary ANDs after RSHs in the decode function
-- Variable and function name changes to make it fit C# and into the style of this project
 - Added separate GetMaxSize function, any necessary buffer memory is supposed to be allocated by the caller based on that
 - Adapted the code to work with NV12 format as input and output (original seems to use some non-standard packing format not useful here)
 - Removed any code for alpha channel data, since OBS doesn't support that for NV12 anyway
 - QOY_OP_RUN_X only supports up to 257 pixels (only one byte for the run length) for reduced complexity
-- These encoder changes together resulted in a 13.7% speedup in tests on one specific machine with some very simple "benchmarking" (obviously very subjective)
+- These encoder changes together resulted in a 15% speedup in tests on one specific machine with some very simple "benchmarking" (obviously very subjective)
   - Encoder: Replaced some field assignments for diff calculation with direct input data array access
-  - Encoder: Added lookup table to speed up Cb and Cr diff bit calculations
+  - Encoder: Added lookup table to speed up Cb and Cr diff bit calculations and Y min and max comparisons
   - Encoder: Added Value field to diff struct for faster zero checks (original code also has a very minor bug there that is implicitly fixed by this)
 - Encoder: Diff between adjacent Y values instead of "crossover" ([0] - [2] and [1] - [3]) for better compression ratio and maybe later potential SIMD optimizations
 - Encoder: Added skipping for some pixels when a bunch of bad cases occurs in a row (666 or higher) for further speedup, sacrificing a bit of compression ratio
@@ -102,11 +102,19 @@ sealed class Qoy
   }
 
   [StructLayout(LayoutKind.Explicit)]
-  internal struct PixelPackCbCr
+  internal struct CbCrBits
   {
     [FieldOffset(0)] public sbyte Cb;
     [FieldOffset(1)] public sbyte Cr;
     [FieldOffset(0)] public ushort Value; // ...this can be used to compare the whole struct at once (the previous 2 bytes combined as one ushort)
+  }
+
+  [StructLayout(LayoutKind.Explicit)]
+  internal struct YMinMax
+  {
+    [FieldOffset(0)] public sbyte YMin;
+    [FieldOffset(1)] public sbyte YMax;
+    [FieldOffset(0)] public ushort Value;
   }
 
   public static unsafe int GetMaxSize(int width, int height)
@@ -117,6 +125,8 @@ sealed class Qoy
   }
 
   static readonly ushort[] CbCrBitsLookup = new ushort[ushort.MaxValue + 1];
+  static readonly ushort[] yMinMax3Lookup = new ushort[16_777_216 + 1]; // 3 bytes = 2^24 + 1
+
   static bool _initialized;
   public static unsafe void Initialize()
   {
@@ -156,6 +166,28 @@ sealed class Qoy
         CbCrBitsLookup[((byte)crDiff << 8) | (byte)cbDiff] = (ushort)((crBits << 8) | cbBits);
       }
     }
+
+    for (short yVal1 = -128; yVal1 < 128; yVal1++)
+    {
+      for (short yVal2 = -128; yVal2 < 128; yVal2++)
+      {
+        for (short yVal3 = -128; yVal3 < 128; yVal3++)
+        {
+          short yMin = yVal1;
+          short yMax = yVal1;
+          if (yVal2 < yMin)
+            yMin = yVal2;
+          if (yVal2 > yMax)
+            yMax = yVal2;
+          if (yVal3 < yMin)
+            yMin = yVal3;
+          if (yVal3 > yMax)
+            yMax = yVal3;
+          yMinMax3Lookup[((byte)yVal1 << 16) | ((byte)yVal2 << 8) | (byte)yVal3] = (ushort)(((byte)yMax << 8) | (byte)yMin);
+        }
+      }
+    }
+
     _initialized = true;
   }
 
@@ -164,7 +196,8 @@ sealed class Qoy
     int writeIndex = 0;
 
     PixelPackDiff pixelPackDiff = default;
-    PixelPackCbCr bitsCbCr = default;
+    CbCrBits bitsCbCr = default;
+    YMinMax yMinMax3 = default;
 
     uint pixelCount = width * height;
 
@@ -178,6 +211,7 @@ sealed class Qoy
     int zeroInt;
     byte* yPlanePrevious = (byte*)&zeroInt; // need a place to point to for the first comparison to the previous pixel so that it's zero
     byte* cPlanePrevious = (byte*)&zeroInt;
+
 
     for (var yIndex = startIndex; yIndex < pixelCount; yIndex += 4)
     {
@@ -232,18 +266,12 @@ sealed class Qoy
 
         sbyte yMin = pixelPackDiff.Y[0];
         sbyte yMax = pixelPackDiff.Y[0];
-        if (pixelPackDiff.Y[1] < yMin)
-          yMin = pixelPackDiff.Y[1];
-        if (pixelPackDiff.Y[1] > yMax)
-          yMax = pixelPackDiff.Y[1];
-        if (pixelPackDiff.Y[2] < yMin)
-          yMin = pixelPackDiff.Y[2];
-        if (pixelPackDiff.Y[2] > yMax)
-          yMax = pixelPackDiff.Y[2];
-        if (pixelPackDiff.Y[3] < yMin)
-          yMin = pixelPackDiff.Y[3];
-        if (pixelPackDiff.Y[3] > yMax)
-          yMax = pixelPackDiff.Y[3];
+        // can't do all 4 bytes (lookup table would be 4 GB in memory), but a 3 byte lookup table and one remaining live min/max comparison is still faster than doing all comparisons here
+        yMinMax3.Value = yMinMax3Lookup[((byte)pixelPackDiff.Y[1] << 16) | ((byte)pixelPackDiff.Y[2] << 8) | (byte)pixelPackDiff.Y[3]];
+        if (yMinMax3.YMin < yMin)
+          yMin = yMinMax3.YMin;
+        if (yMinMax3.YMax > yMax)
+          yMax = yMinMax3.YMax;
 
         if (yMin >= -4 && yMax < 4)
           yBits = 3;
