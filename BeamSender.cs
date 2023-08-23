@@ -566,7 +566,7 @@ public class BeamSender
       else if (videoHeader.Compression is Beam.CompressionTypes.Qoi) // apply QOI compression if enabled
         encodedDataLength = Qoi.Encode(rawData, 0, videoHeader.DataSize, 4, encodedData!); // encode the frame with QOI
       else if (videoHeader.Compression is Beam.CompressionTypes.Qoy) // apply QOY compression if enabled
-        encodedDataLength = Qoy.Encode(rawData, videoHeader.Width, videoHeader.Height, 0, videoHeader.DataSize, encodedData!); // encode the frame with QOY
+        encodedDataLength = Qoy.Encode(rawData, videoHeader.Width, videoHeader.Height, encodedData!); // encode the frame with QOY
       else if (videoHeader.Compression is Beam.CompressionTypes.Lz4)
       {
         fixed (byte* targetData = encodedData)

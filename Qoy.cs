@@ -191,7 +191,7 @@ sealed class Qoy
     _initialized = true;
   }
 
-  public static unsafe int Encode(byte* data, uint width, uint height, int startIndex, int dataSize, byte[] output)
+  public static unsafe int Encode(byte* data, uint width, uint height, byte[] output)
   {
     int writeIndex = 0;
 
@@ -212,8 +212,7 @@ sealed class Qoy
     byte* yPlanePrevious = (byte*)&zeroInt; // need a place to point to for the first comparison to the previous pixel so that it's zero
     byte* cPlanePrevious = (byte*)&zeroInt;
 
-
-    for (var yIndex = startIndex; yIndex < pixelCount; yIndex += 4)
+    for (var yIndex = 0; yIndex < pixelCount; yIndex += 4)
     {
       yPlane = (data + yIndex);
       cPlane = (data + cbCrIndex);
@@ -343,8 +342,9 @@ sealed class Qoy
       cbCrIndex += 2; // unlike yIndex this is not incremented by the main loop
     }
 
+    // int dataSize = (int)(pixelCount + (pixelCount / 2));
     // var compressionPercentage = 100 - ((dataSize - writeIndex) * 100 / dataSize);
-    // Module.Log($"---------- QOY compressed {dataSize} to {writeIndex} ({compressionPercentage} %) --------------------------------------------", ObsLogLevel.Warning);
+    // Module.Log($"---------- QOY compressed {dataSize} to {writeIndex} ({compressionPercentage} %) --------------------------------------------", ObsLogLevel.Debug);
     return writeIndex;
   }
 

@@ -478,4 +478,5 @@ $RECYCLE.BIN/
 
 # Local files
 *.local.cmd
+*.local
 *.bak
