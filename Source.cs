@@ -41,6 +41,7 @@ public class Source
   readonly BeamReceiver BeamReceiver = new();
   IntPtr ContextPointer;
   ulong CurrentTimestamp;
+  int RenderDelayLimit;
   uint[] _videoPlaneSizes = Array.Empty<uint>();
   uint _audioPlaneSize;
   #endregion Source instance fields
@@ -71,7 +72,6 @@ public class Source
     }
     ObsBmem.bfree(sourceInfo);
 
-    //TODO: option to reconnect/reset if without active frame buffer the delay becomes higher than X ms
     var filterInfo = ObsBmem.bzalloc<obs_source_info>();
     fixed (byte* id = "Beam Timestamp Filter"u8)
     {
@@ -142,6 +142,7 @@ public class Source
     context->RenderDelay = -1;
 
     fixed (byte*
+      propertyRenderDelayLimitId = "render_delay_limit"u8,
       propertyFrameBufferTimeId = "frame_buffer_time"u8,
       propertyTargetHostId = "host"u8,
       propertyTargetPipeNameId = "pipe_name"u8,
@@ -152,6 +153,7 @@ public class Source
       propertyPeerDiscoveryAvailableSocketFeedsId = "available_socket_feeds_list"u8
     )
     {
+      RenderDelayLimit = (int)ObsData.obs_data_get_int(settings, (sbyte*)propertyRenderDelayLimitId);
       BeamReceiver.FrameBufferTimeMs = (int)ObsData.obs_data_get_int(settings, (sbyte*)propertyFrameBufferTimeId);
 
       /*
@@ -434,7 +436,7 @@ public class Source
     if (filterContext->SourceId == 0)
     {
       //TODO: move this initialization to filter_add as soon as an OBS (probably the next after 29.1.3) with this new callback has been released: https://github.com/obsproject/obs-studio/commit/a494cf5ce493b77af682e4c4e2a64302d2ecc393
-      // background: obs_filter_get_parent() is not guaranteed to work in filter_create, but it should be in filter_add
+      // background: obs_filter_get_parent() is not guaranteed to work in filter_create, but it should be in filter_add, and then we don't need this check on every frame anymore
       var parentSource = Obs.obs_filter_get_parent(filterContext->FilterSource);
       if (parentSource != null)
         filterContext->SourceId = ((Context*)GetSource(parentSource).ContextPointer)->SourceId;
@@ -567,6 +569,12 @@ public class Source
     var properties = ObsProperties.obs_properties_create();
     ObsProperties.obs_properties_set_flags(properties, ObsProperties.OBS_PROPERTIES_DEFER_UPDATE);
     fixed (byte*
+      propertyRenderDelayLimitId = "render_delay_limit"u8,
+      propertyRenderDelayLimitCaption = Module.ObsText("RenderDelayLimitCaption"),
+      propertyRenderDelayLimitText = Module.ObsText("RenderDelayLimitText"),
+      propertyRenderDelayLimitSuffix = " ms"u8,
+      propertyRenderDelayLimitBelowFrameBufferTimeWarningId = "render_delay_limit_below_frame_buffer_time_warning"u8,
+      propertyRenderDelayLimitBelowFrameBufferTimeWarningText = Module.ObsText("RenderDelayLimitBelowFrameBufferTimeWarningText"),
       propertyReceiveAndRenderDelayId = "receive_and_render_delay"u8,
       propertyReceiveAndRenderDelayCaption = Module.ObsText("ReceiveAndRenderDelayCaption"),
       propertyReceiveAndRenderDelayText = Module.ObsText("ReceiveAndRenderDelayText", "--", "--"),
@@ -611,6 +619,16 @@ public class Source
       propertyNetworkInterfaceListText = Module.ObsText("NetworkInterfaceListText")
     )
     {
+      // render delay limit
+      var renderDelayLimitProperty = ObsProperties.obs_properties_add_int_slider(properties, (sbyte*)propertyRenderDelayLimitId, (sbyte*)propertyRenderDelayLimitCaption, 0, 5000, 50);
+      ObsProperties.obs_property_set_long_description(renderDelayLimitProperty, (sbyte*)propertyRenderDelayLimitText);
+      ObsProperties.obs_property_int_set_suffix(renderDelayLimitProperty, (sbyte*)propertyRenderDelayLimitSuffix);
+      ObsProperties.obs_property_set_modified_callback(renderDelayLimitProperty, &RenderDelayLimitOrFrameBufferChangedEventHandler);
+      // warning if the render delay is set below the frame buffer time
+      var renderDelayLimitBelowFrameBufferTimeWarningProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyRenderDelayLimitBelowFrameBufferTimeWarningId, (sbyte*)propertyRenderDelayLimitBelowFrameBufferTimeWarningText, obs_text_type.OBS_TEXT_INFO);
+      ObsProperties.obs_property_text_set_info_type(renderDelayLimitBelowFrameBufferTimeWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
+      ObsProperties.obs_property_set_visible(renderDelayLimitBelowFrameBufferTimeWarningProperty, Convert.ToByte(false));
+
       // label that can display the current delays for an active feed
       var receiveAndRenderDelayProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyReceiveAndRenderDelayId, (sbyte*)propertyReceiveAndRenderDelayCaption, obs_text_type.OBS_TEXT_INFO);
       ObsProperties.obs_property_set_long_description(receiveAndRenderDelayProperty, (sbyte*)propertyReceiveAndRenderDelayText);
@@ -621,6 +639,7 @@ public class Source
       var frameBufferTimeProperty = ObsProperties.obs_properties_add_int_slider(properties, (sbyte*)propertyFrameBufferTimeId, (sbyte*)propertyFrameBufferTimeCaption, 0, 5000, 100);
       ObsProperties.obs_property_set_long_description(frameBufferTimeProperty, (sbyte*)propertyFrameBufferTimeText);
       ObsProperties.obs_property_int_set_suffix(frameBufferTimeProperty, (sbyte*)propertyFrameBufferTimeSuffix);
+      ObsProperties.obs_property_set_modified_callback(frameBufferTimeProperty, &RenderDelayLimitOrFrameBufferChangedEventHandler);
       // frame buffer time memory usage info
       ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoId, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoText, obs_text_type.OBS_TEXT_INFO);
 
@@ -777,6 +796,36 @@ public class Source
   #region Event handlers
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte RenderDelayLimitOrFrameBufferChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte*
+      propertyRenderDelayLimitId = "render_delay_limit"u8,
+      propertyFrameBufferTimeId = "frame_buffer_time"u8,
+      propertyRenderDelayLimitBelowFrameBufferTimeWarningId = "render_delay_limit_below_frame_buffer_time_warning"u8
+    )
+    {
+      var renderDelayLimit = ObsData.obs_data_get_int(settings, (sbyte*)propertyRenderDelayLimitId);
+      var frameBufferTime = ObsData.obs_data_get_int(settings, (sbyte*)propertyFrameBufferTimeId);
+      var propertyRenderDelayLimitBelowFrameBufferTimeWarningProperty = ObsProperties.obs_properties_get(properties, (sbyte*)propertyRenderDelayLimitBelowFrameBufferTimeWarningId);
+      var warningVisible = Convert.ToBoolean(ObsProperties.obs_property_visible(propertyRenderDelayLimitBelowFrameBufferTimeWarningProperty));
+
+      bool warningChanged = false;
+      if (!warningVisible && (renderDelayLimit > 0) && (renderDelayLimit <= frameBufferTime))
+      {
+        warningChanged = true;
+        ObsProperties.obs_property_set_visible(propertyRenderDelayLimitBelowFrameBufferTimeWarningProperty, Convert.ToByte(true));
+      }
+      else if (warningVisible && ((renderDelayLimit == 0) || (renderDelayLimit > frameBufferTime)))
+      {
+        warningChanged = true;
+        ObsProperties.obs_property_set_visible(propertyRenderDelayLimitBelowFrameBufferTimeWarningProperty, Convert.ToByte(false));
+      }
+
+      return Convert.ToByte(warningChanged);
+    }
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte ReceiveAndRenderDelayRefreshButtonClickedEventHandler(obs_properties* properties, obs_property* prop, void* data)
   {
     var context = (Context*)data;
@@ -791,18 +840,6 @@ public class Source
       ObsProperties.obs_property_set_long_description(receiveAndRenderDelayProperty, (sbyte*)propertyReceiveAndRenderDelayText);
     }
     return Convert.ToByte(true);
-  }
-
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-  public static unsafe byte FrameBufferTimeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-  {
-    fixed (byte* propertyFrameBufferTimeId = "frame_buffer_time"u8)
-    {
-      var frameBufferTime = ObsData.obs_data_get_int(settings, (sbyte*)propertyFrameBufferTimeId);
-      if (frameBufferTime < 0)
-        ObsData.obs_data_set_int(settings, (sbyte*)propertyFrameBufferTimeId, 0);
-      return Convert.ToByte(true);
-    }
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -992,21 +1029,29 @@ public class Source
     if (_videoPlaneSizes.Length == 0) // unsupported format
       return;
 
-    context->Video->timestamp = videoFrame.Header.Timestamp;
-    context->ReceiveDelay = videoFrame.Header.ReceiveDelay;
-    context->RenderDelay = videoFrame.Header.RenderDelay;
-
-    fixed (byte* videoData = videoFrame.Data) // temporary pinning is sufficient, since Obs.obs_source_output_video() creates a copy of the data anyway
+    if ((RenderDelayLimit > 0) && (videoFrame.RenderDelayAverage > RenderDelayLimit))
     {
-      // video data in the array is already in the correct order, but the array offsets need to be set correctly according to the plane sizes
-      uint currentOffset = 0;
-      for (int planeIndex = 0; planeIndex < _videoPlaneSizes.Length; planeIndex++)
+      Task.Run(BeamReceiver.Disconnect);
+      Module.Log($"Render delay limit of {RenderDelayLimit} ms exceeded ({videoFrame.RenderDelayAverage} ms), reconnecting.", ObsLogLevel.Warning);
+    }
+    else
+    {
+      context->Video->timestamp = videoFrame.Header.Timestamp;
+      context->ReceiveDelay = videoFrame.Header.ReceiveDelay;
+      context->RenderDelay = videoFrame.RenderDelayAverage;
+
+      fixed (byte* videoData = videoFrame.Data) // temporary pinning is sufficient, since Obs.obs_source_output_video() creates a copy of the data anyway
       {
-        context->Video->data[planeIndex] = videoData + currentOffset;
-        currentOffset += _videoPlaneSizes[planeIndex];
+        // video data in the array is already in the correct order, but the array offsets need to be set correctly according to the plane sizes
+        uint currentOffset = 0;
+        for (int planeIndex = 0; planeIndex < _videoPlaneSizes.Length; planeIndex++)
+        {
+          context->Video->data[planeIndex] = videoData + currentOffset;
+          currentOffset += _videoPlaneSizes[planeIndex];
+        }
+        // Module.Log($"VideoFrameReceivedEventHandler(): Output timestamp {videoFrame.Header.Timestamp}", ObsLogLevel.Debug);
+        Obs.obs_source_output_video(context->Source, context->Video);
       }
-      // Module.Log($"VideoFrameReceivedEventHandler(): Output timestamp {videoFrame.Header.Timestamp}", ObsLogLevel.Debug);
-      Obs.obs_source_output_video(context->Source, context->Video);
     }
     BeamReceiver.RawDataBufferPool.Return(videoFrame.Data);
   }
