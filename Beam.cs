@@ -228,14 +228,16 @@ public class Beam
     public readonly byte[] Data;
     public ulong Timestamp { get; set; }
     public DateTime Received { get; }
+    public int RenderDelayAverage { get; }
 
     // used by receivers
-    public BeamVideoData(VideoHeader header, byte[] data, DateTime received)
+    public BeamVideoData(VideoHeader header, byte[] data, DateTime received, int renderDelayAverage)
     {
       Header = header;
       Data = data;
       Timestamp = header.Timestamp;
       Received = received;
+      RenderDelayAverage = renderDelayAverage;
     }
 
     // used by senders

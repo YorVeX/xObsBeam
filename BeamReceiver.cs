@@ -412,6 +412,10 @@ public class BeamReceiver
 
     double senderFps = 30;
     uint logCycle = 0;
+    int renderDelayAveragingFrameCount = (int)(senderFps / 2);
+    int renderDelayAveragingCycle = 0;
+    int[] renderDelays = Array.Empty<int>();
+    int renderDelayAverage = -1;
 
     byte[] receivedFrameData = Array.Empty<byte>();
 
@@ -459,7 +463,7 @@ public class BeamReceiver
           if (videoHeader.Fps > 0)
             senderFps = ((double)videoHeader.Fps / videoHeader.FpsDenominator);
           if (logCycle >= senderFps)
-            Module.Log($"Video data: Received header {videoHeader.Timestamp}, Receive/Render delay: {videoHeader.ReceiveDelay} / {videoHeader.RenderDelay} ms ", ObsLogLevel.Debug);
+            Module.Log($"Video data: Received header {videoHeader.Timestamp}, Receive/Render delay: {videoHeader.ReceiveDelay} / {videoHeader.RenderDelay} ({renderDelayAverage}) ms ", ObsLogLevel.Debug);
           if (videoHeader.DataSize == 0)
             Module.Log($"Video data: Frame {videoHeader.Timestamp} skipped by sender.", ObsLogLevel.Warning);
           else if (videoHeader.DataSize < 0)
@@ -522,6 +526,9 @@ public class BeamReceiver
             {
               firstVideoFrame = false;
 
+              renderDelayAveragingFrameCount = (int)(senderFps / 2);
+              renderDelays = new int[renderDelayAveragingFrameCount];
+
               if (videoHeader.Compression == Beam.CompressionTypes.JpegLossy)
               {
                 var jpegSubsampling = (int)EncoderSupport.ObsToJpegSubsampling(videoHeader.Format);
@@ -558,6 +565,14 @@ public class BeamReceiver
                 FrameBuffer = null;
                 Module.Log("Frame buffering disabled.", ObsLogLevel.Info);
               }
+            }
+
+            // average render delay calculation
+            renderDelays[renderDelayAveragingCycle] = videoHeader.RenderDelay;
+            if (++renderDelayAveragingCycle >= renderDelayAveragingFrameCount)
+            {
+              renderDelayAveragingCycle = 0;
+              renderDelayAverage = (int)renderDelays.Average();
             }
 
             var rawDataBuffer = RawDataBufferPool.Rent((int)rawVideoDataSize);
@@ -615,11 +630,11 @@ public class BeamReceiver
               if (videoHeader.Timestamp < lastVideoTimestamp)
                 Module.Log($"Warning: Received video frame {videoHeader.Timestamp} is older than previous frame {lastVideoTimestamp}. Use a high enough frame buffer if the sender is not compressing from the OBS render thread.", ObsLogLevel.Warning);
               else
-                OnVideoFrameReceived(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime));
+                OnVideoFrameReceived(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime, renderDelayAverage));
               lastVideoTimestamp = videoHeader.Timestamp;
             }
             else
-              FrameBuffer.ProcessFrame(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime));
+              FrameBuffer.ProcessFrame(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime, renderDelayAverage));
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(videoHeader.DataSize), readResult.Buffer.End);
 
