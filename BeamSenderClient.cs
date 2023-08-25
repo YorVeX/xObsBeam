@@ -136,15 +136,23 @@ sealed class BeamSenderClient
         _lastFrameTime = DateTime.UtcNow;
         if (receiveTimestampType == Beam.ReceiveTimestampTypes.Receive)
         {
-          var receiveDelayMs = (ObsInterop.Obs.obs_get_video_frame_time() - timestamp) / 1_000_000;
-          // Module.Log($"<{ClientId}> Receiver received video frame {timestamp} with a delay of {receiveDelayMs} ms", ObsLogLevel.Debug);
-          Interlocked.Exchange(ref _receiveDelayMs, (long)receiveDelayMs);
+          var obsFrameTime = ObsInterop.Obs.obs_get_video_frame_time();
+          if (obsFrameTime > timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
+          {
+            var receiveDelayMs = (ObsInterop.Obs.obs_get_video_frame_time() - timestamp) / 1_000_000;
+            // Module.Log($"<{ClientId}> Receiver received video frame {timestamp} with a delay of {receiveDelayMs} ms", ObsLogLevel.Debug);
+            Interlocked.Exchange(ref _receiveDelayMs, (long)receiveDelayMs);
+          }
         }
         else if (receiveTimestampType == Beam.ReceiveTimestampTypes.Render)
         {
-          var renderDelayNs = (ObsInterop.Obs.obs_get_video_frame_time() - timestamp) / 1_000_000;
-          // Module.Log($"<{ClientId}> Receiver rendered video frame {timestamp} with a delay of {renderDelayNs} ms", ObsLogLevel.Debug);
-          Interlocked.Exchange(ref _renderDelayMs, (long)renderDelayNs);
+          var obsFrameTime = ObsInterop.Obs.obs_get_video_frame_time();
+          if (obsFrameTime > timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
+          {
+            var renderDelayMs = (ObsInterop.Obs.obs_get_video_frame_time() - timestamp) / 1_000_000;
+            // Module.Log($"<{ClientId}> Receiver rendered video frame {timestamp} with a delay of {renderDelayMs} ms", ObsLogLevel.Debug);
+            Interlocked.Exchange(ref _renderDelayMs, (long)renderDelayMs);
+          }
         }
       }
     }
