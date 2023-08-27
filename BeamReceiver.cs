@@ -662,7 +662,13 @@ public class BeamReceiver
             break;
           }
 
-          audioHeader.Timestamp -= _frameTimestampOffset;
+          if (audioHeader.Timestamp > _frameTimestampOffset)
+            audioHeader.Timestamp -= _frameTimestampOffset;
+          else
+          {
+            Module.Log($"Audio data: Not applying offset {_frameTimestampOffset} to the smaller frame timestamp {audioHeader.Timestamp}.", ObsLogLevel.Debug);
+            audioHeader.Timestamp = 0;
+          }
 
           // read audio data
           if (audioHeader.DataSize > 0)
