@@ -218,6 +218,7 @@ public class Beam
   {
     Type Type { get; set; }
     ulong Timestamp { get; }
+    ulong AdjustedTimestamp { get; set; }
     DateTime Received { get; }
   }
 
@@ -227,6 +228,7 @@ public class Beam
     public VideoHeader Header;
     public readonly byte[] Data;
     public ulong Timestamp { get; set; }
+    public ulong AdjustedTimestamp { get; set; }
     public DateTime Received { get; }
     public int RenderDelayAverage { get; }
 
@@ -236,6 +238,7 @@ public class Beam
       Header = header;
       Data = data;
       Timestamp = header.Timestamp;
+      AdjustedTimestamp = Timestamp;
       Received = received;
       RenderDelayAverage = renderDelayAverage;
     }
@@ -255,6 +258,7 @@ public class Beam
     public AudioHeader Header;
     public readonly byte[] Data;
     public readonly ulong Timestamp { get; }
+    public ulong AdjustedTimestamp { get; set; }
     public DateTime Received { get; }
 
     // used by receivers
@@ -263,6 +267,7 @@ public class Beam
       Header = header;
       Data = data;
       Timestamp = header.Timestamp;
+      AdjustedTimestamp = Timestamp;
       Received = created;
     }
 

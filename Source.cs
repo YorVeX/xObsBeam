@@ -144,6 +144,7 @@ public class Source
     fixed (byte*
       propertyRenderDelayLimitId = "render_delay_limit"u8,
       propertyFrameBufferTimeId = "frame_buffer_time"u8,
+      propertyFrameBufferTimeFixedRenderDelayId = "frame_buffer_time_fixed_render_delay"u8,
       propertyTargetHostId = "host"u8,
       propertyTargetPipeNameId = "pipe_name"u8,
       propertyTargetPortId = "port"u8,
@@ -155,6 +156,7 @@ public class Source
     {
       RenderDelayLimit = (int)ObsData.obs_data_get_int(settings, (sbyte*)propertyRenderDelayLimitId);
       BeamReceiver.FrameBufferTimeMs = (int)ObsData.obs_data_get_int(settings, (sbyte*)propertyFrameBufferTimeId);
+      BeamReceiver.FrameBufferFixedDelay = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyFrameBufferTimeFixedRenderDelayId));
 
       /*
         this audio reset helps to prevent OBS increasing the audio buffer under some circumstances, e.g. when
@@ -587,6 +589,9 @@ public class Source
       propertyFrameBufferTimeMemoryUsageInfoId = "frame_buffer_time_info"u8,
       propertyFrameBufferTimeMemoryUsageInfoText = Module.ObsText("FrameBufferTimeMemoryUsageInfoText"),
       propertyFrameBufferTimeSuffix = " ms"u8,
+      propertyFrameBufferTimeFixedRenderDelayId = "frame_buffer_time_fixed_render_delay"u8,
+      propertyFrameBufferTimeFixedRenderDelayCaption = Module.ObsText("FrameBufferTimeFixedRenderDelayCaption"),
+      propertyFrameBufferTimeFixedRenderDelayText = Module.ObsText("FrameBufferTimeFixedRenderDelayText"),
       propertyTargetPipeNameId = "pipe_name"u8,
       propertyTargetPipeNameCaption = Module.ObsText("TargetPipeNameCaption"),
       propertyTargetPipeNameText = Module.ObsText("TargetPipeNameText"),
@@ -642,6 +647,9 @@ public class Source
       ObsProperties.obs_property_set_modified_callback(frameBufferTimeProperty, &RenderDelayLimitOrFrameBufferChangedEventHandler);
       // frame buffer time memory usage info
       ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoId, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoText, obs_text_type.OBS_TEXT_INFO);
+      // frame buffer fixed render delay
+      var frameBufferTimeFixedRenderDelayProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyFrameBufferTimeFixedRenderDelayId, (sbyte*)propertyFrameBufferTimeFixedRenderDelayCaption);
+      ObsProperties.obs_property_set_long_description(frameBufferTimeFixedRenderDelayProperty, (sbyte*)propertyFrameBufferTimeFixedRenderDelayText);
 
       // connection type selection group
       var connectionTypePropertyGroup = ObsProperties.obs_properties_create();
@@ -770,23 +778,22 @@ public class Source
       return;
 
     var thisSource = GetSource(data);
-    thisSource?.BeamReceiver?.SetLastOutputVideoFrameTimestamp(thisSource.CurrentTimestamp);
-    if (thisSource?.BeamReceiver?.FrameBuffer != null)
+    if (thisSource != null)
     {
-      Task.Run(() =>
+      thisSource.BeamReceiver?.SetLastOutputVideoFrameTimestamp(thisSource.CurrentTimestamp);
+      if (thisSource.BeamReceiver?.FrameBuffer != null)
       {
-        foreach (var frame in thisSource.BeamReceiver.FrameBuffer.GetNextFrames(seconds))
+        Task.Run(() =>
         {
-          if (frame.Type == Beam.Type.Video)
+          foreach (var frame in thisSource.BeamReceiver.FrameBuffer.GetNextFrames(seconds))
           {
-            var videoFrame = (Beam.BeamVideoData)frame;
-            //TODO: adjust the FrameBuffer based on videoFrame.Header.RenderDelay
-            thisSource.VideoFrameReceivedEventHandler(thisSource, videoFrame);
+            if (frame.Type == Beam.Type.Video)
+              thisSource.VideoFrameReceivedEventHandler(thisSource, (Beam.BeamVideoData)frame);
+            else if (frame.Type == Beam.Type.Audio)
+              thisSource.AudioFrameReceivedEventHandler(thisSource, (Beam.BeamAudioData)frame);
           }
-          else if (frame.Type == Beam.Type.Audio)
-            thisSource.AudioFrameReceivedEventHandler(thisSource, (Beam.BeamAudioData)frame);
-        }
-      });
+        });
+      }
     }
   }
 
@@ -801,27 +808,42 @@ public class Source
     fixed (byte*
       propertyRenderDelayLimitId = "render_delay_limit"u8,
       propertyFrameBufferTimeId = "frame_buffer_time"u8,
+      propertyFrameBufferTimeFixedRenderDelayId = "frame_buffer_time_fixed_render_delay"u8,
       propertyRenderDelayLimitBelowFrameBufferTimeWarningId = "render_delay_limit_below_frame_buffer_time_warning"u8
     )
     {
       var renderDelayLimit = ObsData.obs_data_get_int(settings, (sbyte*)propertyRenderDelayLimitId);
       var frameBufferTime = ObsData.obs_data_get_int(settings, (sbyte*)propertyFrameBufferTimeId);
-      var propertyRenderDelayLimitBelowFrameBufferTimeWarningProperty = ObsProperties.obs_properties_get(properties, (sbyte*)propertyRenderDelayLimitBelowFrameBufferTimeWarningId);
-      var warningVisible = Convert.ToBoolean(ObsProperties.obs_property_visible(propertyRenderDelayLimitBelowFrameBufferTimeWarningProperty));
+      var renderDelayLimitBelowFrameBufferTimeWarningProperty = ObsProperties.obs_properties_get(properties, (sbyte*)propertyRenderDelayLimitBelowFrameBufferTimeWarningId);
+      var warningVisible = Convert.ToBoolean(ObsProperties.obs_property_visible(renderDelayLimitBelowFrameBufferTimeWarningProperty));
+      var frameBufferTimeFixedRenderDelayProperty = ObsProperties.obs_properties_get(properties, (sbyte*)propertyFrameBufferTimeFixedRenderDelayId);
+      var frameBufferTimeFixedRenderDelayPropertyVisible = Convert.ToBoolean(ObsProperties.obs_property_visible(frameBufferTimeFixedRenderDelayProperty));
 
-      bool warningChanged = false;
+      bool visibilityChanged = false;
+
       if (!warningVisible && (renderDelayLimit > 0) && (renderDelayLimit <= frameBufferTime))
       {
-        warningChanged = true;
-        ObsProperties.obs_property_set_visible(propertyRenderDelayLimitBelowFrameBufferTimeWarningProperty, Convert.ToByte(true));
+        visibilityChanged = true;
+        ObsProperties.obs_property_set_visible(renderDelayLimitBelowFrameBufferTimeWarningProperty, Convert.ToByte(true));
       }
       else if (warningVisible && ((renderDelayLimit == 0) || (renderDelayLimit > frameBufferTime)))
       {
-        warningChanged = true;
-        ObsProperties.obs_property_set_visible(propertyRenderDelayLimitBelowFrameBufferTimeWarningProperty, Convert.ToByte(false));
+        visibilityChanged = true;
+        ObsProperties.obs_property_set_visible(renderDelayLimitBelowFrameBufferTimeWarningProperty, Convert.ToByte(false));
       }
 
-      return Convert.ToByte(warningChanged);
+      if (frameBufferTimeFixedRenderDelayPropertyVisible && (frameBufferTime == 0))
+      {
+        visibilityChanged = true;
+        ObsProperties.obs_property_set_visible(frameBufferTimeFixedRenderDelayProperty, Convert.ToByte(false));
+      }
+      else if (!frameBufferTimeFixedRenderDelayPropertyVisible && (frameBufferTime > 0))
+      {
+        visibilityChanged = true;
+        ObsProperties.obs_property_set_visible(frameBufferTimeFixedRenderDelayProperty, Convert.ToByte(true));
+      }
+
+      return Convert.ToByte(visibilityChanged);
     }
   }
 
@@ -1036,7 +1058,7 @@ public class Source
     }
     else
     {
-      context->Video->timestamp = videoFrame.Header.Timestamp;
+      context->Video->timestamp = videoFrame.AdjustedTimestamp;
       context->ReceiveDelay = videoFrame.Header.ReceiveDelay;
       context->RenderDelay = videoFrame.RenderDelayAverage;
 
@@ -1076,7 +1098,7 @@ public class Source
       Module.Log("AudioFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
     }
 
-    context->Audio->timestamp = audioFrame.Header.Timestamp;
+    context->Audio->timestamp = audioFrame.AdjustedTimestamp;
 
     fixed (byte* audioData = audioFrame.Data) // temporary pinning is sufficient, since Obs.obs_source_output_audio() creates a copy of the data anyway
     {

@@ -61,6 +61,7 @@ public class BeamReceiver
   public bool IsConnected { get; private set; }
 
   public int FrameBufferTimeMs { get; set; }
+  public bool FrameBufferFixedDelay { get; set; }
 
   public void Connect(IPAddress bindAddress, string hostname, int port, PeerDiscovery.Peer currentPeer = default)
   {
@@ -557,7 +558,7 @@ public class BeamReceiver
               if (FrameBufferTimeMs > 0)
               {
                 var localFps = GetLocalFps();
-                FrameBuffer = new FrameBuffer(FrameBufferTimeMs, senderFps, localFps, RawDataBufferPool);
+                FrameBuffer = new FrameBuffer(FrameBufferTimeMs, FrameBufferFixedDelay, senderFps, localFps, RawDataBufferPool);
                 Module.Log($"Buffering {FrameBuffer.VideoFrameBufferCount} video frames based on a frame buffer time of {FrameBuffer.FrameBufferTimeMs} ms for {senderFps:F} sender FPS (local: {localFps:F} FPS).", ObsLogLevel.Info);
               }
               else
@@ -677,7 +678,7 @@ public class BeamReceiver
             }
 
             // process the frame
-            if (!firstVideoFrame && (_frameTimestampOffset > 0)) // Beam treads video frames as a kind of header in several ways, ignore audio frames that were received before the first video frame
+            if (!firstVideoFrame && (_frameTimestampOffset > 0)) // Beam treats video frames as a kind of header in several ways, ignore audio frames that were received before the first video frame
             {
               if (FrameBuffer == null)
                 OnAudioFrameReceived(new Beam.BeamAudioData(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray(), frameReceivedTime));
@@ -702,12 +703,14 @@ public class BeamReceiver
         // tell the sender the last video frame timestamps that were output by OBS
         while (_lastRenderedVideoFrameTimestamps.TryDequeue(out ulong lastRenderedVideoFrameTimestamp))
         {
-          lastRenderedVideoFrameTimestamp += _frameTimestampOffset;
+          if (FrameBuffer != null)
+            lastRenderedVideoFrameTimestamp = FrameBuffer.GetOriginalVideoTimestamp(lastRenderedVideoFrameTimestamp) + _frameTimestampOffset;
+          else
+            lastRenderedVideoFrameTimestamp += _frameTimestampOffset;
           pipeWriter.GetSpan(sizeof(byte))[0] = (byte)Beam.ReceiveTimestampTypes.Render;
           pipeWriter.Advance(sizeof(byte));
           BinaryPrimitives.WriteUInt64LittleEndian(pipeWriter.GetSpan(sizeof(ulong)), lastRenderedVideoFrameTimestamp);
           pipeWriter.Advance(sizeof(ulong));
-          // Module.Log($"Receiver rendered video timestamp {lastRenderedVideoFrameTimestamp} SEND.", ObsLogLevel.Warning); //HACK: only for testing
           var writeRenderTimestampResult = await pipeWriter.FlushAsync(cancellationToken);
           if (writeRenderTimestampResult.IsCanceled || writeRenderTimestampResult.IsCompleted)
           {
