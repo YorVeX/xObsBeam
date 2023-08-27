@@ -46,9 +46,26 @@ public class FrameBuffer
     if (VideoFrameBufferCount < MinimumVideoFrameBufferCount)
     {
       VideoFrameBufferCount = MinimumVideoFrameBufferCount;
-      Module.Log($"Enforcing minimum frame buffer size of {VideoFrameBufferCount} frames.", ObsLogLevel.Warning);
+      Module.Log($"Warning: Enforcing minimum frame buffer size of {VideoFrameBufferCount} frames.", ObsLogLevel.Warning);
     }
     FrameBufferTimeMs = VideoFrameBufferCount * 1000 / (int)_senderFps;
+  }
+
+  private void Reset()
+  {
+    lock (_frameListLock)
+    {
+      _rampUp = true;
+      _isFirstAudioFrame = true;
+      _videoFrameCount = 0;
+      _lastVideoTimestamp = 0;
+      _lastAudioTimestamp = 0;
+      _audioTimestampStep = 0;
+      _maxAudioTimestampDeviation = 0;
+      _frameAdjustment = 0;
+      _timestampAdjustment = 0;
+      _tickCycle = 0;
+    }
   }
 
   public void ProcessFrame(Beam.IBeamData frame)
@@ -104,23 +121,6 @@ public class FrameBuffer
     }
   }
 
-  private void Reset()
-  {
-    lock (_frameListLock)
-    {
-      _rampUp = true;
-      _isFirstAudioFrame = true;
-      _videoFrameCount = 0;
-      _lastVideoTimestamp = 0;
-      _lastAudioTimestamp = 0;
-      _audioTimestampStep = 0;
-      _maxAudioTimestampDeviation = 0;
-      _frameAdjustment = 0;
-      _timestampAdjustment = 0;
-      _tickCycle = 0;
-    }
-  }
-
   public void Stop()
   {
     lock (_frameListLock)
@@ -163,16 +163,9 @@ public class FrameBuffer
 
       if (_rampUp)
         return Array.Empty<Beam.IBeamData>(); // still in ramp-up phase, don't return anything yet
-      else if (_frameList.Count == 0) // out of ramp-up phase but the buffer is empty?
-      {
-        //TODO: think about making this behavior configurable or whether a better solution is possible
-        Reset(); // the buffer ran dry, start over with ramp up
-        Module.Log("The frame buffer ran dry, refilling. Consider increasing the buffering time to compensate for longer gaps.", ObsLogLevel.Warning);
-        return Array.Empty<Beam.IBeamData>();
-      }
 
       if (_frameList.Count < VideoFrameBufferCount)
-        Module.Log($"Frame buffer below target: {_frameList.Count}/{VideoFrameBufferCount}", ObsLogLevel.Warning);
+        Module.Log($"Warning: Frame buffer below target: {_frameList.Count}/{VideoFrameBufferCount}", ObsLogLevel.Warning);
 
       var currentVideoTimestampStep = (ulong)(videoFrameFrequencySeconds * 1000000000);
       var maxVideoTimestampDeviation = (ulong)Math.Ceiling(currentVideoTimestampStep * 1.01);
@@ -183,9 +176,9 @@ public class FrameBuffer
       if (_tickCycle >= 1)
       {
         _tickCycle = 0;
-        //TODO: test handling bigger delay differences with bigger adjustments instead of 1 frame per second (would be better, but might have unwanted side effects due to how OBS reacts to this, needs testing)
         if (FixedDelay) // check roughly every second for necessary delay adjustments if fixed delay is enabled
         {
+          // bigger AdjustDelay steps than 1 would be possible from this code, but in tests it was found that this doesn't lead to less adjustments overall, probably due to OBS reacting differently to bigger timestamp jumps
           if (_lastRenderDelay >= (FrameBufferTimeMs + _videoTimestampToleranceMs))
           {
             if (VideoFrameBufferCount > (MinimumVideoFrameBufferCount))
@@ -194,7 +187,7 @@ public class FrameBuffer
               adjustedFrames = true; // so that no warning is shown for this case, since it is expected
             }
             else
-              Module.Log($"Frame buffer delay of {_lastRenderDelay} ms is above tolerance range of {FrameBufferTimeMs} ± {_videoTimestampToleranceMs} ms, but can't be adjusted further because the buffer has already reached its minimum size. Consider increasing the frame buffer size to avoid this situation.", ObsLogLevel.Warning);
+              Module.Log($"Warning: Frame buffer delay of {_lastRenderDelay} ms is above tolerance range of {FrameBufferTimeMs} ± {_videoTimestampToleranceMs} ms, but can't be adjusted further because the buffer has already reached its minimum size. Consider increasing the frame buffer size to avoid this situation.", ObsLogLevel.Warning);
           }
           else if (_lastRenderDelay <= (FrameBufferTimeMs - _videoTimestampToleranceMs))
           {
@@ -224,7 +217,7 @@ public class FrameBuffer
           if ((_lastVideoTimestamp > 0) && (_videoFrameCount < VideoFrameBufferCount) && ((long)(frame.AdjustedTimestamp - _lastVideoTimestamp) > (long)maxVideoTimestampDeviation))
           {
             if (!adjustedFrames && (_senderFps >= _localFps)) // only show a log warning if missing frames wouldn't be expected anyway because of FPS setting differences between sender and receiver or delay adjustments
-              Module.Log($"Missing video frame {_lastVideoTimestamp + currentVideoTimestampStep} in frame buffer, timestamp deviation of {(long)(frame.AdjustedTimestamp - _lastVideoTimestamp)} > max deviation of {maxVideoTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
+              Module.Log($"Warning: Missing video frame {_lastVideoTimestamp + currentVideoTimestampStep} in frame buffer, timestamp deviation of {(long)(frame.AdjustedTimestamp - _lastVideoTimestamp)} > max deviation of {maxVideoTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
 
             _lastVideoTimestamp += currentVideoTimestampStep; // close the timestamp gap by the step that was expected
             foundEnoughVideoFrames = true; // don't return any real video frames from the buffer this round, making sure it's not depleted
@@ -244,17 +237,27 @@ public class FrameBuffer
         {
           debugAudioFrameCount++;
           if (!adjustedFrames && (_lastAudioTimestamp > 0) && ((long)(frame.AdjustedTimestamp - _lastAudioTimestamp) > (long)_maxAudioTimestampDeviation))
-            Module.Log($"Missing audio frame in frame buffer, timestamp deviation of {(long)(frame.AdjustedTimestamp - _lastAudioTimestamp)} > max deviation of {_maxAudioTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
+            Module.Log($"Warning: Missing audio frame in frame buffer, timestamp deviation of {(long)(frame.AdjustedTimestamp - _lastAudioTimestamp)} > max deviation of {_maxAudioTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
           _lastAudioTimestamp = frame.AdjustedTimestamp;
           _frameList.RemoveAt(0);
           if (frame.AdjustedTimestamp >= _lastVideoTimestamp)
             result.Add(frame);
           else // this would cause audio buffering in OBS, but that's a local mechanism and shouldn't be triggered by remote data, hence skip such audio frames entirely
-            Module.Log($"Frame buffer is skipping audio frame {frame.AdjustedTimestamp} that is older than the last video frame {_lastVideoTimestamp}.", ObsLogLevel.Warning);
+            Module.Log($"Warning: Frame buffer is skipping audio frame {frame.AdjustedTimestamp} that is older than the last video frame {_lastVideoTimestamp}.", ObsLogLevel.Warning);
         }
       }
       if (_tickCycle == 0)
         Module.Log($"Frame buffer returning {result.Count} frames ({debugVideoFrameCount} video and {debugAudioFrameCount} audio), {_frameList.Count} in buffer ({_videoFrameCount} video and {_frameList.Count - _videoFrameCount} audio).", ObsLogLevel.Debug);
+
+      if (_frameList.Count == 0) // out of ramp-up phase but the buffer is empty?
+      {
+        //TODO: think about making this behavior configurable or whether a better solution is possible
+        Reset(); // the buffer ran dry, start over with ramp up
+        _frameList.Clear();
+        Module.Log("Error: The frame buffer ran dry, refilling. Consider increasing the buffering time to compensate for longer gaps.", ObsLogLevel.Error);
+        return Array.Empty<Beam.IBeamData>();
+      }
+
       return result.ToArray();
     }
   }
