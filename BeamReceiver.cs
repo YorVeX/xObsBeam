@@ -14,8 +14,6 @@ using LibJpegTurbo;
 using QoirLib;
 using DensityApi;
 using K4os.Compression.LZ4;
-using SixLabors.ImageSharp.Formats;
-using SixLabors.ImageSharp.Formats.Png;
 using ObsInterop;
 
 namespace xObsBeam;
@@ -420,14 +418,6 @@ public class BeamReceiver
 
     byte[] receivedFrameData = Array.Empty<byte>();
 
-    var decoderOptions = new DecoderOptions
-    {
-      SkipMetadata = true,
-      MaxFrames = 1
-    };
-
-    int decodeErrorCount = 1;
-
     DateTime frameReceivedTime;
     ulong lastVideoTimestamp = 0;
     ulong senderVideoTimestamp;
@@ -607,20 +597,6 @@ public class BeamReceiver
                   break;
                 case Beam.CompressionTypes.JpegLossless:
                   TurboJpegDecompressToBgra(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
-                  break;
-                case Beam.CompressionTypes.Png:
-                  try
-                  {
-                    using var memoryStream = new MemoryStream(receivedFrameData);
-                    using var decodedImage = await PngDecoder.Instance.DecodeAsync<Rgba32>(decoderOptions, memoryStream, cancellationToken);
-                    decodedImage.CopyPixelDataTo(rawDataBuffer);
-                  }
-                  catch (InvalidImageContentException ex)
-                  {
-                    string fileName = "DecodeError" + decodeErrorCount++ + ".png";
-                    Module.Log($"PNG decompression failed with {ex.GetType().Name}: {ex.Message}\nData saved to {fileName} for review.", ObsLogLevel.Error);
-                    _ = File.WriteAllBytesAsync(fileName, receivedFrameData, cancellationToken);
-                  }
                   break;
               }
             }

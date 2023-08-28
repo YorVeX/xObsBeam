@@ -99,7 +99,6 @@ Section "${APPDISPLAYNAME}" Section1
 	SetOutPath "$INSTDIR\obs-plugins\64bit\"
 	File /r "..\publish\win-x64\*.*" ; DLL and PDB file
 	File "..\Density\binaries\win-x64\density.dll" ; Density library file
-	File "..\FpngeLib\binaries\win-x64\FpngeLib.dll" ; fpnge library file
 	File "..\QoirLib\binaries\win-x64\QoirLib.dll" ; QOIR library file
 	File "..\libjpeg-turbo\binaries\win-x64\turbojpeg.dll" ; libjpeg-turbo library file
 

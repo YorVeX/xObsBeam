@@ -252,23 +252,6 @@ dotnet_diagnostic.CA1401.severity = none
 # - also read the comments next to the DisableRuntimeMarshalling attribute
 dotnet_diagnostic.SYSLIB1054.severity = none
 
-[FpngeLib/**]
-# don't care about paranthesis readability here, it's more important that this can be generated and directly used
-dotnet_diagnostic.IDE0048.severity = none
-
-# disable naming rules, as this wrapper is a mapping of the original C(++) API
-dotnet_diagnostic.IDE1006.severity = none
-
-# P/Invoke method '*' should not be visible
-# this whole plugin is full of unsafe code, not going to write extra wrapper methods for this specific library just to satisfy a rule
-dotnet_diagnostic.CA1401.severity = none
-
-# Mark the method '*' with 'LibraryImportAttribute' instead of 'DllImportAttribute' to generate P/Invoke marshalling code at compile time
-# - the ClangSharpPInvokeGenerator already generates the code in a way that LibraryImport wouldn't give any benefits (e.g. not using arrays and strings)
-# - as also explained for csbindgen here: https://neuecc.medium.com/csbindgen-generate-c-native-code-bridge-automatically-or-modern-approaches-to-native-code-78d9f9a616fb
-# - also read the comments next to the DisableRuntimeMarshalling attribute
-dotnet_diagnostic.SYSLIB1054.severity = none
-
 [Density/**]
 # disable naming rules, as this wrapper is a mapping of the original C(++) API
 dotnet_diagnostic.IDE1006.severity = none

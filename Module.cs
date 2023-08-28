@@ -187,12 +187,6 @@ public static class Module
           if (NativeLibrary.TryLoad("libturbojpeg.so.0", assembly, searchPath, out nint handle2))
             return handle2;
         }
-        else if (libraryName == "FpngeLib")
-        {
-          Log($"Trying to load native library \"{libraryName}\" with additional name variant: FpngeLib.so.0", ObsLogLevel.Debug);
-          if (NativeLibrary.TryLoad("FpngeLib.so.0", assembly, searchPath, out nint handle2))
-            return handle2;
-        }
 
         return IntPtr.Zero; // fall back to default search paths and names
       }

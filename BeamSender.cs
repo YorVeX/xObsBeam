@@ -11,7 +11,6 @@ using System.Runtime.InteropServices;
 using K4os.Compression.LZ4;
 using LibJpegTurbo;
 using QoirLib;
-using FpngeLib;
 using DensityApi;
 using ObsInterop;
 
@@ -53,7 +52,6 @@ public class BeamSender
   DENSITY_ALGORITHM _densityAlgorithm;
   bool _compressionThreadingSync = true;
   unsafe qoir_encode_options_struct* _qoirEncodeOptions = null;
-  unsafe FPNGEOptions* _fpngeOptions = null;
   readonly PeerDiscovery _discoveryServer = new();
 
   public unsafe bool SetVideoParameters(video_output_info* info, video_format conversionVideoFormat, uint* linesize, video_data._data_e__FixedBuffer data)
@@ -68,11 +66,6 @@ public class BeamSender
     _videoDataPool = null;
 
     // free previous options objects if they exist
-    if (_fpngeOptions != null)
-    {
-      EncoderSupport.FreePooledPinned(_fpngeOptions);
-      _fpngeOptions = null;
-    }
     if (_qoirEncodeOptions != null)
     {
       EncoderSupport.FreePooledPinned(_qoirEncodeOptions);
@@ -172,20 +165,6 @@ public class BeamSender
         if (_jpegYuvPlaneSizes.Length == 0)
           _jpegYuvPlaneSizes = _videoPlaneSizes; // no deinterleaving needed, fallback to the original plane sizes
       }
-    }
-    else if (SettingsDialog.PngCompression && EncoderSupport.FpngeLib)
-    {
-      _videoHeader.Compression = Beam.CompressionTypes.Png;
-      _videoDataPoolMaxSize = (int)Fpnge.FPNGEOutputAllocSize(1, 4, info->width, info->height);
-      if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
-        _videoDataPoolMaxSize = 2147483591;
-      _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
-
-      _fpngeOptions = EncoderSupport.MAllocPooledPinned<FPNGEOptions>();
-      new Span<byte>(_fpngeOptions, sizeof(FPNGEOptions)).Clear();
-      _fpngeOptions->cicp_colorspace = (sbyte)FPNGECicpColorspace.FPNGE_CICP_NONE; //TODO: implement support for 16 bit HDR with FPNGECicpColorspace.FPNGE_CICP_PQ, in that case the bytes_per_channel param of FPNGEEncode and FPNGEOutputAllocSize calls need to be set to 2
-      _fpngeOptions->predictor = (sbyte)FPNGEOptionsPredictor.FPNGE_PREDICTOR_FIXED_AVG; //TODO: try other settings and look at the CPU vs. bandwidth trade-off - the default FPNGE_PREDICTOR_BEST has good compression but also the highest CPU usage and sometimes produces frames that IrfanView can display but ImageSharp fails to decode with "Invalid PNG data" message
-      _compressionThreshold = SettingsDialog.PngCompressionLevel / 10.0;
     }
     else if (SettingsDialog.DensityCompression && EncoderSupport.DensityApi)
     {
@@ -520,11 +499,6 @@ public class BeamSender
             return;
           }
         }
-      }
-      else if (videoHeader.Compression is Beam.CompressionTypes.Png) // apply PNG compression if enabled
-      {
-        fixed (byte* pngBuf = encodedData)
-          encodedDataLength = (int)Fpnge.FPNGEEncode(1, 4, rawData, videoHeader.Width, videoHeader.Linesize[0], videoHeader.Height, pngBuf, _fpngeOptions);
       }
       else if (videoHeader.Compression is Beam.CompressionTypes.Density) // apply Density compression if enabled
       {

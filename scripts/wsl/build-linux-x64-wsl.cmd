@@ -27,7 +27,6 @@ robocopy.exe ..\..\. %BuildFolderFromWindows%\%ProjectName% *.cs *.csproj
 robocopy.exe ..\..\ClangSharpAttributes %BuildFolderFromWindows%\%ProjectName%\ClangSharpAttributes *.cs *.csproj
 robocopy.exe ..\..\libjpeg-turbo %BuildFolderFromWindows%\%ProjectName%\libjpeg-turbo *.cs
 robocopy.exe ..\..\QoirLib %BuildFolderFromWindows%\%ProjectName%\QoirLib *.cs
-robocopy.exe ..\..\FpngeLib %BuildFolderFromWindows%\%ProjectName%\FpngeLib *.cs
 robocopy.exe ..\..\Density %BuildFolderFromWindows%\%ProjectName%\Density *.cs
 
 REM Run the build.
@@ -47,7 +46,6 @@ copy /Y ..\..\locale\* ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plu
 
 REM Copy extra binaries to the release structure
 copy /Y ..\..\QoirLib\binaries\linux-x64-glibc-2.31\libQoirLib.so ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit\
-copy /Y ..\..\FpngeLib\binaries\linux-x64-glibc-2.31\libFpngeLib.so ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit\
 copy /Y ..\..\Density\binaries\linux-x64-glibc-2.31\libdensity.so ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit\
 
 REM Final cleanup in WSL

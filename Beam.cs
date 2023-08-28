@@ -17,9 +17,8 @@ public class Beam
     JpegLossy = 3,
     JpegLossless = 4,
     Qoir = 5,
-    Png = 6,
-    Density = 7,
-    Qoy = 8,
+    Density = 6,
+    Qoy = 7,
   }
 
   public enum ReceiveTimestampTypes : byte

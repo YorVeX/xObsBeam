@@ -8,7 +8,6 @@ using System.Runtime.InteropServices;
 using ObsInterop;
 using LibJpegTurbo;
 using QoirLib;
-using FpngeLib;
 using DensityApi;
 
 namespace xObsBeam;
@@ -18,7 +17,6 @@ enum Encoders
   LibJpegTurboV2,
   LibJpegTurboV3,
   Qoir,
-  Fpnge,
   Density,
 }
 
@@ -37,29 +35,6 @@ public static class EncoderSupport
         try
         {
           Qoir.qoir_encode(null, null);
-          _checkResults.Add(encoder, true);
-        }
-        catch (Exception ex)
-        {
-          _checkResults.Add(encoder, false);
-          Module.Log($"{encoder} encoder availability check failed with {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Debug);
-        }
-        Module.Log($"{encoder} encoder is " + (_checkResults[encoder] ? "available." : "not available."), ObsLogLevel.Info);
-      }
-      return _checkResults[encoder];
-    }
-  }
-
-  public static unsafe bool FpngeLib
-  {
-    get
-    {
-      var encoder = Encoders.Fpnge;
-      if (!_checkResults.ContainsKey(encoder))
-      {
-        try
-        {
-          Fpnge.FPNGEOutputAllocSize(1, 1, 100, 100);
           _checkResults.Add(encoder, true);
         }
         catch (Exception ex)
