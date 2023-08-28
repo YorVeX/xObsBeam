@@ -63,6 +63,8 @@ public class FrameBuffer
       _lastAudioTimestamp = 0;
       _audioTimestampStep = 0;
       _maxAudioTimestampDeviation = 0;
+      VideoFrameBufferCount = (int)((double)FrameBufferTimeMs / 1000 * _senderFps);
+      _lastRenderDelay = 0;
       _frameAdjustment = 0;
       _timestampAdjustment = 0;
       _tickAdjustmentCycle = 0;
@@ -145,7 +147,7 @@ public class FrameBuffer
       _frameAdjustment += frameAdjustment;
       VideoFrameBufferCount += frameAdjustment;
       _timestampAdjustment = (_frameAdjustment * _videoTimestampStepNs);
-      Module.Log($"Frame buffer delay adjustment: {frameAdjustment:+#;-#;0} ({_frameAdjustment:+#;-#;0}) frames, new buffer size: {VideoFrameBufferCount} frames, timestamp adjustment: {_timestampAdjustment:+#;-#;0} ns.", ObsLogLevel.Info);
+      Module.Log($"Frame buffer delay adjustment at {_lastRenderDelay} ms: {frameAdjustment:+#;-#;0} ({_frameAdjustment:+#;-#;0}) frames, new buffer size: {VideoFrameBufferCount} frames, timestamp adjustment: {_timestampAdjustment:+#;-#;0} ns.", ObsLogLevel.Info);
     }
   }
 
@@ -181,7 +183,7 @@ public class FrameBuffer
         _tickAdjustmentCycle = 0;
         if (_tickSecondCycle >= 1)
           _tickSecondCycle = 0;
-        if (FixedDelay)
+        if (FixedDelay && (_lastRenderDelay > 0))
         {
           // bigger AdjustDelay steps than 1 would be possible from this code, but in tests it was found that this doesn't lead to less adjustments overall, probably due to OBS reacting differently to bigger timestamp jumps
           if (_lastRenderDelay >= (FrameBufferTimeMs + _videoTimestampToleranceMs))
