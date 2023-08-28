@@ -22,7 +22,8 @@ public class FrameBuffer
   readonly long _videoTimestampStepNs;
   int _frameAdjustment;
   int _lastRenderDelay;
-  float _tickCycle;
+  float _tickAdjustmentCycle;
+  float _tickSecondCycle;
 
   /// <summary>The expected timestamp difference between two audio frames in nanoseconds.</summary>
   ulong _audioTimestampStep;
@@ -64,7 +65,8 @@ public class FrameBuffer
       _maxAudioTimestampDeviation = 0;
       _frameAdjustment = 0;
       _timestampAdjustment = 0;
-      _tickCycle = 0;
+      _tickAdjustmentCycle = 0;
+      _tickSecondCycle = 0;
     }
   }
 
@@ -172,11 +174,14 @@ public class FrameBuffer
       var result = new List<Beam.IBeamData>();
 
       bool adjustedFrames = false;
-      _tickCycle += videoFrameFrequencySeconds;
-      if (_tickCycle >= 1)
+      _tickAdjustmentCycle += videoFrameFrequencySeconds;
+      _tickSecondCycle += videoFrameFrequencySeconds;
+      if (_tickAdjustmentCycle >= 0.5) // check roughly twice per second for necessary delay adjustments if fixed delay is enabled - more often wouldn't make sense, as each delay adjustment needs time to settle with OBS and be reflected in measurements
       {
-        _tickCycle = 0;
-        if (FixedDelay) // check roughly every second for necessary delay adjustments if fixed delay is enabled
+        _tickAdjustmentCycle = 0;
+        if (_tickSecondCycle >= 1)
+          _tickSecondCycle = 0;
+        if (FixedDelay)
         {
           // bigger AdjustDelay steps than 1 would be possible from this code, but in tests it was found that this doesn't lead to less adjustments overall, probably due to OBS reacting differently to bigger timestamp jumps
           if (_lastRenderDelay >= (FrameBufferTimeMs + _videoTimestampToleranceMs))
@@ -194,7 +199,7 @@ public class FrameBuffer
             AdjustDelay(1);
             adjustedFrames = true; // so that no warning is shown for this case, since it is expected
           }
-          else
+          else if (_tickSecondCycle == 0)
             Module.Log($"Frame buffer delay of {_lastRenderDelay} ms is within tolerance range of {FrameBufferTimeMs} ± {_videoTimestampToleranceMs} ms.", ObsLogLevel.Debug);
         }
       }
@@ -246,7 +251,7 @@ public class FrameBuffer
             Module.Log($"Warning: Frame buffer is skipping audio frame {frame.AdjustedTimestamp} that is older than the last video frame {_lastVideoTimestamp}.", ObsLogLevel.Warning);
         }
       }
-      if (_tickCycle == 0)
+      if (_tickSecondCycle == 0)
         Module.Log($"Frame buffer returning {result.Count} frames ({debugVideoFrameCount} video and {debugAudioFrameCount} audio), {_frameList.Count} in buffer ({_videoFrameCount} video and {_frameList.Count - _videoFrameCount} audio).", ObsLogLevel.Debug);
 
       if (_frameList.Count == 0) // out of ramp-up phase but the buffer is empty?
