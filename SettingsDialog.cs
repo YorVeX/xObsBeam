@@ -107,15 +107,6 @@ public static class SettingsDialog
     }
   }
 
-  public static unsafe bool JpegCompressionLossless
-  {
-    get
-    {
-      fixed (byte* propertyCompressionJpegLosslessId = "compression_jpeg_lossless"u8)
-        return Convert.ToBoolean(ObsData.obs_data_get_bool(_settings, (sbyte*)propertyCompressionJpegLosslessId));
-    }
-  }
-
   public static bool QoiCompression { get; private set; }
 
   public static unsafe int QoiCompressionLevel
@@ -324,9 +315,6 @@ public static class SettingsDialog
       propertyCompressionJpegId = "compression_jpeg"u8,
       propertyCompressionJpegCaption = Module.ObsText("CompressionJpegCaption"),
       propertyCompressionJpegText = Module.ObsText("CompressionJpegText"),
-      propertyCompressionJpegLosslessId = "compression_jpeg_lossless"u8,
-      propertyCompressionJpegLosslessCaption = Module.ObsText("CompressionJpegLosslessCaption"),
-      propertyCompressionJpegLosslessText = Module.ObsText("CompressionJpegLosslessText"),
       propertyCompressionJpegQualityId = "compression_jpeg_quality"u8,
       propertyCompressionJpegQualityCaption = Module.ObsText("CompressionJpegQualityCaption"),
       propertyCompressionJpegQualityText = Module.ObsText("CompressionJpegQualityText"),
@@ -398,11 +386,6 @@ public static class SettingsDialog
       ObsProperties.obs_property_set_visible(compressionJpegGroupProperty, Convert.ToByte(EncoderSupport.LibJpegTurbo));
       ObsProperties.obs_property_set_long_description(compressionJpegGroupProperty, (sbyte*)propertyCompressionJpegText);
       ObsProperties.obs_property_set_modified_callback(compressionJpegGroupProperty, &CompressionSettingChangedEventHandler);
-      // JPEG lossless compression option
-      var compressionJpegLosslessProperty = ObsProperties.obs_properties_add_bool(compressionJpegGroup, (sbyte*)propertyCompressionJpegLosslessId, (sbyte*)propertyCompressionJpegLosslessCaption);
-      ObsProperties.obs_property_set_long_description(compressionJpegLosslessProperty, (sbyte*)propertyCompressionJpegLosslessText);
-      ObsProperties.obs_property_set_modified_callback(compressionJpegLosslessProperty, &CompressionSettingChangedEventHandler);
-      ObsProperties.obs_property_set_visible(compressionJpegLosslessProperty, Convert.ToByte(EncoderSupport.LibJpegTurboLossless));
       // JPEG compression quality
       var compressionJpegQualityProperty = ObsProperties.obs_properties_add_int_slider(compressionJpegGroup, (sbyte*)propertyCompressionJpegQualityId, (sbyte*)propertyCompressionJpegQualityCaption, 1, 100, 1);
       ObsProperties.obs_property_set_long_description(compressionJpegQualityProperty, (sbyte*)propertyCompressionJpegQualityText);
@@ -681,7 +664,6 @@ public static class SettingsDialog
   {
     fixed (byte*
       propertyCompressionJpegId = "compression_jpeg"u8,
-      propertyCompressionJpegLosslessId = "compression_jpeg_lossless"u8,
       propertyCompressionJpegQualityId = "compression_jpeg_quality"u8,
       propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
       propertyCompressionQoiId = "compression_qoi"u8,
@@ -826,15 +808,7 @@ public static class SettingsDialog
         DensityCompression = densityCompressionEnabled;
       }
 
-      // JPEG: enable quality setting and disable level setting if lossless is disabled or vice versa
-      var jpegLossless = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionJpegLosslessId));
-      if (jpegLossless && !EncoderSupport.LibJpegTurboV3) // handle the special case where JPEG lossless is enabled but the library doesn't support it, in this case force disable this option
-      {
-        jpegLossless = false;
-        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegLosslessId, Convert.ToByte(jpegLossless));
-      }
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionJpegQualityId), Convert.ToByte(!jpegLossless));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionJpegLevelId), Convert.ToByte(jpegLossless));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionJpegLevelId), Convert.ToByte(false)); //TODO: test whether this can be applied to lossy JPEG, gonna be fun :-)
 
       // QOIR: enable quality setting and disable level setting if lossless is disabled or vice versa
       var qoirLossless = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoirLosslessId));
@@ -842,12 +816,12 @@ public static class SettingsDialog
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionQoirLevelId), Convert.ToByte(qoirLossless));
 
       // derive video format requirements from the settings
-      if (QoiCompression || QoirCompression || (JpegCompression && JpegCompressionLossless))
+      if (QoiCompression || QoirCompression)
         RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_BGRA };
       else if (QoyCompression)
         RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_NV12 };
-      else if (JpegCompression && !JpegCompressionLossless)
-        RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_NV12 };
+      else if (JpegCompression)
+        RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_NV12, video_format.VIDEO_FORMAT_BGRA };
       else
         RequireVideoFormats = null;
 

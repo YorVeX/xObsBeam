@@ -117,7 +117,6 @@ public static class EncoderSupport
       return _checkResults[encoder];
     }
   }
-  public static unsafe bool LibJpegTurboLossless => LibJpegTurboV3;
 
   // check format_is_yuv function in OBS video-io.h for reference: https://github.com/obsproject/obs-studio/blob/master/libobs/media-io/video-io.h
   public static bool FormatIsYuv(video_format format)

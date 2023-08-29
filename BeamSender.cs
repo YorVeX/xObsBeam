@@ -141,13 +141,7 @@ public class BeamSender
     }
     else if (SettingsDialog.JpegCompression && EncoderSupport.LibJpegTurbo)
     {
-      if (SettingsDialog.JpegCompressionLossless && EncoderSupport.LibJpegTurboLossless)
-      {
-        _videoHeader.Compression = Beam.CompressionTypes.JpegLossless;
-        _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
-      }
-      else
-        _videoHeader.Compression = Beam.CompressionTypes.JpegLossy;
+      _videoHeader.Compression = Beam.CompressionTypes.Jpeg;
       _jpegCompressionQuality = SettingsDialog.JpegCompressionQuality;
       _videoDataPoolMaxSize = _videoDataSize;
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
@@ -165,6 +159,7 @@ public class BeamSender
         if (_jpegYuvPlaneSizes.Length == 0)
           _jpegYuvPlaneSizes = _videoPlaneSizes; // no deinterleaving needed, fallback to the original plane sizes
       }
+      // _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0; //TODO: test whether this can be applied to lossy JPEG, gonna be fun :-)
     }
     else if (SettingsDialog.DensityCompression && EncoderSupport.DensityApi)
     {
@@ -428,7 +423,7 @@ public class BeamSender
     {
       int encodedDataLength = 0;
 
-      if (videoHeader.Compression is Beam.CompressionTypes.JpegLossy or Beam.CompressionTypes.JpegLossless) // apply JPEG compression if enabled
+      if (videoHeader.Compression is Beam.CompressionTypes.Jpeg) // apply JPEG compression if enabled
       {
         fixed (byte* jpegBuf = encodedData)
         {
@@ -443,9 +438,7 @@ public class BeamSender
             _ = TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_NOREALLOC, 1);
             _ = TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_COLORSPACE, (int)_jpegColorspace);
             _ = TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_SUBSAMP, (int)_jpegSubsampling);
-            _ = (videoHeader.Compression is Beam.CompressionTypes.JpegLossless)
-              ? TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_LOSSLESS, 1)
-              : TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_QUALITY, _jpegCompressionQuality);
+            _ = TurboJpeg.tj3Set(turboJpegCompress, (int)TJPARAM.TJPARAM_QUALITY, _jpegCompressionQuality);
           }
           else
             turboJpegCompress = TurboJpeg.tjInitCompress();
@@ -625,7 +618,7 @@ public class BeamSender
 
     if (_compressionThreadingSync)
     {
-      if ((_videoHeader.Compression is Beam.CompressionTypes.JpegLossy) && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
+      if ((_videoHeader.Compression is Beam.CompressionTypes.Jpeg) && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
       {
         byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize);
         EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneSizes);
@@ -641,7 +634,7 @@ public class BeamSender
       byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize); // need a managed memory copy for async handover
 
       // to save an additional frame copy operation the JPEG deinterleaving is done in sync mode as part of the copy to managed memory that is needed anyway for the async handover
-      if ((_videoHeader.Compression is Beam.CompressionTypes.JpegLossy) && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
+      if ((_videoHeader.Compression is Beam.CompressionTypes.Jpeg) && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
         EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneSizes);
       else
         new ReadOnlySpan<byte>(data, _videoDataSize).CopyTo(managedDataCopy); // just copy to managed as-is for formats that are not packed

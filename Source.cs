@@ -1026,7 +1026,7 @@ public class Source
       context->Video->height = videoFrame.Header.Height;
       context->Video->full_range = Convert.ToByte(videoFrame.Header.Range == video_range_type.VIDEO_RANGE_FULL);
       // get the plane sizes for the current frame format and size
-      if (videoFrame.Header.Compression == Beam.CompressionTypes.JpegLossy)
+      if ((videoFrame.Header.Compression == Beam.CompressionTypes.Jpeg) && (videoFrame.Header.Format == video_format.VIDEO_FORMAT_I420))
       {
         EncoderSupport.GetJpegPlaneSizes(context->Video->format, (int)context->Video->width, (int)context->Video->height, out _videoPlaneSizes, out var jpeglineSize);
         for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++)

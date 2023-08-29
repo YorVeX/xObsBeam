@@ -520,7 +520,7 @@ public class BeamReceiver
               renderDelayAveragingFrameCount = (int)(senderFps / 2);
               renderDelays = new int[renderDelayAveragingFrameCount];
 
-              if (videoHeader.Compression == Beam.CompressionTypes.JpegLossy)
+              if ((videoHeader.Compression == Beam.CompressionTypes.Jpeg) && EncoderSupport.FormatIsYuv(videoHeader.Format))
               {
                 var jpegSubsampling = (int)EncoderSupport.ObsToJpegSubsampling(videoHeader.Format);
                 if (EncoderSupport.LibJpegTurboV3)
@@ -592,11 +592,11 @@ public class BeamReceiver
                 case Beam.CompressionTypes.Density:
                   DensityDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
                   break;
-                case Beam.CompressionTypes.JpegLossy:
-                  TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
-                  break;
-                case Beam.CompressionTypes.JpegLossless:
-                  TurboJpegDecompressToBgra(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
+                case Beam.CompressionTypes.Jpeg:
+                  if (EncoderSupport.FormatIsYuv(videoHeader.Format))
+                    TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
+                  else
+                    TurboJpegDecompressToBgra(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
                   break;
               }
             }

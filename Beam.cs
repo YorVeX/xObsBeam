@@ -14,11 +14,10 @@ public class Beam
     None = 0,
     Qoi = 1,
     Lz4 = 2,
-    JpegLossy = 3,
-    JpegLossless = 4,
-    Qoir = 5,
-    Density = 6,
-    Qoy = 7,
+    Jpeg = 3,
+    Qoir = 4,
+    Density = 5,
+    Qoy = 6,
   }
 
   public enum ReceiveTimestampTypes : byte
