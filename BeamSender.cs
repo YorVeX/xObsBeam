@@ -46,8 +46,6 @@ public class BeamSender
   TJCS _jpegColorspace = TJCS.TJCS_RGB;
   bool _jpegYuv;
   bool _libJpegTurboV3;
-  bool _qoirCompressionLossless;
-  int _qoirCompressionQuality = 90;
   private double _compressionThreshold = 1;
   DENSITY_ALGORITHM _densityAlgorithm;
   bool _compressionThreadingSync = true;
@@ -121,8 +119,6 @@ public class BeamSender
     if (SettingsDialog.QoirCompression && EncoderSupport.QoirLib)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Qoir;
-      _qoirCompressionLossless = SettingsDialog.QoirCompressionLossless;
-      _qoirCompressionQuality = SettingsDialog.QoirCompressionQuality;
       _videoDataPoolMaxSize = (int)((info->width * info->height * 4)); // this buffer will only be used if compression actually reduced the frame size
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
@@ -130,11 +126,8 @@ public class BeamSender
 
       _qoirEncodeOptions = EncoderSupport.MAllocPooledPinned<qoir_encode_options_struct>();
       new Span<byte>(_qoirEncodeOptions, sizeof(qoir_encode_options_struct)).Clear();
-      // 0 = lossless - 1 loses 1 bit and results in 7 bit colors, 2 results in 6 bit colors, etc., even setting this to 7 is working :-D
-      if (SettingsDialog.QoirCompressionLossless)
-        _qoirEncodeOptions->lossiness = 0;
-      else
-        _qoirEncodeOptions->lossiness = 8 - (uint)SettingsDialog.QoirCompressionQuality;
+      // 0 = lossless - 1 loses 1 bit and results in 7 bit colors, 2 results in 6 bit colors, etc., even setting this to 7 is working, but for lossy both CPU load and compression ratio are worse than JPEG, so it's useless
+      _qoirEncodeOptions->lossiness = 0;
       _qoirEncodeOptions->contextual_malloc_func = &EncoderSupport.QoirMAlloc; // important to use our own memory allocator, so that we can also free the memory later, also it's pooled memory
       _qoirEncodeOptions->contextual_free_func = &EncoderSupport.QoirFree;
       _compressionThreshold = SettingsDialog.QoirCompressionLevel / 10.0;
