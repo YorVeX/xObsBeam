@@ -408,6 +408,7 @@ public class BeamReceiver
     int videoHeaderSize = Beam.VideoHeader.VideoHeaderDataSize;
     uint rawVideoDataSize = 0;
     uint[] videoPlaneSizes = new uint[Beam.VideoHeader.MAX_AV_PLANES];
+    bool jpegInitialized = false;
 
     double senderFps = 30;
     uint logCycle = 0;
@@ -520,22 +521,7 @@ public class BeamReceiver
               renderDelayAveragingFrameCount = (int)(senderFps / 2);
               renderDelays = new int[renderDelayAveragingFrameCount];
 
-              if ((videoHeader.Compression == Beam.CompressionTypes.Jpeg) && EncoderSupport.FormatIsYuv(videoHeader.Format))
-              {
-                var jpegSubsampling = (int)EncoderSupport.ObsToJpegSubsampling(videoHeader.Format);
-                if (EncoderSupport.LibJpegTurboV3)
-                  rawVideoDataSize = (uint)TurboJpeg.tj3YUVBufSize((int)videoHeader.Width, 1, (int)videoHeader.Height, jpegSubsampling);
-                else if (EncoderSupport.LibJpegTurbo)
-                  rawVideoDataSize = (uint)TurboJpeg.tjBufSizeYUV2((int)videoHeader.Width, 1, (int)videoHeader.Height, jpegSubsampling);
-                else
-                {
-                  rawVideoDataSize = 0;
-                  Module.Log($"Error: JPEG library is not available, cannot decompress received video data!", ObsLogLevel.Error);
-                  break;
-                }
-                EncoderSupport.GetJpegPlaneSizes(videoHeader.Format, (int)videoHeader.Width, (int)videoHeader.Height, out videoPlaneSizes, out _);
-              }
-              else if (videoHeader.Compression == Beam.CompressionTypes.Density)
+              if (videoHeader.Compression == Beam.CompressionTypes.Density)
                 rawVideoDataSize = (uint)Density.density_decompress_safe_size(GetRawVideoDataSize(videoHeader));
               else
                 rawVideoDataSize = GetRawVideoDataSize(videoHeader);
@@ -594,7 +580,26 @@ public class BeamReceiver
                   break;
                 case Beam.CompressionTypes.Jpeg:
                   if (EncoderSupport.FormatIsYuv(videoHeader.Format))
+                  {
+                    if (!jpegInitialized)
+                    {
+                      jpegInitialized = true;
+                      var jpegSubsampling = (int)EncoderSupport.ObsToJpegSubsampling(videoHeader.Format);
+                      if (EncoderSupport.LibJpegTurboV3)
+                        rawVideoDataSize = (uint)TurboJpeg.tj3YUVBufSize((int)videoHeader.Width, 1, (int)videoHeader.Height, jpegSubsampling);
+                      else if (EncoderSupport.LibJpegTurbo)
+                        rawVideoDataSize = (uint)TurboJpeg.tjBufSizeYUV2((int)videoHeader.Width, 1, (int)videoHeader.Height, jpegSubsampling);
+                      else
+                      {
+                        rawVideoDataSize = 0;
+                        Module.Log($"Error: JPEG library is not available, cannot decompress received video data!", ObsLogLevel.Error);
+                        break;
+                      }
+                      EncoderSupport.GetJpegPlaneSizes(videoHeader.Format, (int)videoHeader.Width, (int)videoHeader.Height, out videoPlaneSizes, out _);
+                    }
+
                     TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
+                  }
                   else
                     TurboJpegDecompressToBgra(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
                   break;

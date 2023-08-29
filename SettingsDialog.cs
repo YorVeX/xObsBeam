@@ -808,8 +808,6 @@ public static class SettingsDialog
         DensityCompression = densityCompressionEnabled;
       }
 
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionJpegLevelId), Convert.ToByte(false)); //TODO: test whether this can be applied to lossy JPEG, gonna be fun :-)
-
       // QOIR: enable quality setting and disable level setting if lossless is disabled or vice versa
       var qoirLossless = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoirLosslessId));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionQoirQualityId), Convert.ToByte(!qoirLossless));
@@ -821,7 +819,12 @@ public static class SettingsDialog
       else if (QoyCompression)
         RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_NV12 };
       else if (JpegCompression)
-        RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_NV12, video_format.VIDEO_FORMAT_BGRA };
+      {
+        if (JpegCompressionLevel < 10) // the internal NV12 to I420 conversion would cause constant format changes between these two for the receiver when alternating between compressed and raw frames
+          RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_BGRA }; //TODO: find a solution that actually allows using NV12 here - maybe the receiver caches settings for both NV12 and I420?
+        else
+          RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_NV12, video_format.VIDEO_FORMAT_BGRA };
+      }
       else
         RequireVideoFormats = null;
 

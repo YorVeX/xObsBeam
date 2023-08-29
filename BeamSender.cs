@@ -159,7 +159,7 @@ public class BeamSender
         if (_jpegYuvPlaneSizes.Length == 0)
           _jpegYuvPlaneSizes = _videoPlaneSizes; // no deinterleaving needed, fallback to the original plane sizes
       }
-      // _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0; //TODO: test whether this can be applied to lossy JPEG, gonna be fun :-)
+      _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
     }
     else if (SettingsDialog.DensityCompression && EncoderSupport.DensityApi)
     {
