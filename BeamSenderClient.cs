@@ -422,13 +422,14 @@ sealed class BeamSenderClient
   public unsafe bool EnqueueVideoFrame(ulong timestamp, Beam.VideoHeader videoHeader, byte* videoData)
   {
     long videoFrameCount = Interlocked.Increment(ref _videoFrameCount);
-    if (videoFrameCount > (videoHeader.Fps))
+    double fps = (videoHeader.Fps / videoHeader.FpsDenominator);
+    if (videoFrameCount > fps)
     {
       Module.Log($"<{ClientId}> Error: Max send queue size reached: {videoFrameCount} ({_frameTimestampQueue.Count}).", ObsLogLevel.Error);
       Disconnect(0);
       return false;
     }
-    else if (videoFrameCount > (videoHeader.Fps / 2))
+    else if (videoFrameCount > (fps / 2))
     {
       videoHeader.DataSize = 0;
       var emptyFrame = new Beam.BeamVideoData(videoHeader, Array.Empty<byte>(), timestamp);
