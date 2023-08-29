@@ -169,6 +169,7 @@ public static class SettingsDialog
     }
   }
 
+  public static readonly Dictionary<Beam.CompressionTypes, video_format[]> RequiredVideoFormats = new();
   public static video_format[]? RequireVideoFormats { get; private set; }
 
   public static unsafe bool UsePipe
@@ -291,6 +292,13 @@ public static class SettingsDialog
       propertyListenPortId = "listen_port"u8,
       propertyListenPortCaption = Module.ObsText("ListenPortCaption"),
       propertyListenPortText = Module.ObsText("ListenPortText"),
+      propertyCompressionHelpId = "compression_help"u8,
+      propertyCompressionHelpCaption = Module.ObsText("CompressionHelpCaption"),
+      propertyCompressionHelpText = Module.ObsText("CompressionHelpText"),
+      propertyCompressionHelpUrl = "https://github.com/YorVeX/xObsBeam/wiki/Compression-help"u8,
+      propertyCompressionShowOnlyRecommendedId = "compression_recommended_only"u8,
+      propertyCompressionShowOnlyRecommendedCaption = Module.ObsText("CompressionShowOnlyRecommendedCaption"),
+      propertyCompressionShowOnlyRecommendedText = Module.ObsText("CompressionShowOnlyRecommendedText"),
       propertyCompressionId = "compression"u8,
       propertyCompressionCaption = Module.ObsText("CompressionCaption"),
       propertyCompressionLevelText = Module.ObsText("CompressionLevelText"),
@@ -355,6 +363,15 @@ public static class SettingsDialog
       // compression group
       var compressionGroup = ObsProperties.obs_properties_create();
       var compressionGroupProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyCompressionId, (sbyte*)propertyCompressionCaption, obs_group_type.OBS_GROUP_NORMAL, compressionGroup);
+      // show only recommended compression options toggle
+      var compressionShowOnlyRecommendedProperty = ObsProperties.obs_properties_add_bool(compressionGroup, (sbyte*)propertyCompressionShowOnlyRecommendedId, (sbyte*)propertyCompressionShowOnlyRecommendedCaption);
+      ObsProperties.obs_property_set_long_description(compressionShowOnlyRecommendedProperty, (sbyte*)propertyCompressionShowOnlyRecommendedText);
+      ObsProperties.obs_property_set_modified_callback(compressionShowOnlyRecommendedProperty, &CompressionSettingChangedEventHandler);
+      // compression help button
+      var compressionHelpProperty = ObsProperties.obs_properties_add_button(compressionGroup, (sbyte*)propertyCompressionHelpId, (sbyte*)propertyCompressionHelpCaption, null);
+      ObsProperties.obs_property_set_long_description(compressionHelpProperty, (sbyte*)propertyCompressionHelpText);
+      ObsProperties.obs_property_button_set_type(compressionHelpProperty, obs_button_type.OBS_BUTTON_URL);
+      ObsProperties.obs_property_button_set_url(compressionHelpProperty, (sbyte*)propertyCompressionHelpUrl);
 
       // JPEG compression options group
       var compressionJpegGroup = ObsProperties.obs_properties_create();
@@ -362,13 +379,13 @@ public static class SettingsDialog
       ObsProperties.obs_property_set_visible(compressionJpegGroupProperty, Convert.ToByte(EncoderSupport.LibJpegTurbo));
       ObsProperties.obs_property_set_long_description(compressionJpegGroupProperty, (sbyte*)propertyCompressionJpegText);
       ObsProperties.obs_property_set_modified_callback(compressionJpegGroupProperty, &CompressionSettingChangedEventHandler);
-      // JPEG compression quality
-      var compressionJpegQualityProperty = ObsProperties.obs_properties_add_int_slider(compressionJpegGroup, (sbyte*)propertyCompressionJpegQualityId, (sbyte*)propertyCompressionJpegQualityCaption, 1, 100, 1);
-      ObsProperties.obs_property_set_long_description(compressionJpegQualityProperty, (sbyte*)propertyCompressionJpegQualityText);
       // JPEG compression level (skip frames)
       var compressionJpegLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionJpegGroup, (sbyte*)propertyCompressionJpegLevelId, (sbyte*)propertyCompressionJpegLevelCaption, 1, 10, 1);
       ObsProperties.obs_property_set_long_description(compressionJpegLevelProperty, (sbyte*)propertyCompressionLevelText);
       ObsProperties.obs_property_set_modified_callback(compressionJpegLevelProperty, &CompressionSettingChangedEventHandler);
+      // JPEG compression quality
+      var compressionJpegQualityProperty = ObsProperties.obs_properties_add_int_slider(compressionJpegGroup, (sbyte*)propertyCompressionJpegQualityId, (sbyte*)propertyCompressionJpegQualityCaption, 1, 100, 1);
+      ObsProperties.obs_property_set_long_description(compressionJpegQualityProperty, (sbyte*)propertyCompressionJpegQualityText);
 
       // QOI compression options group
       var compressionQoiGroup = ObsProperties.obs_properties_create();
@@ -486,6 +503,7 @@ public static class SettingsDialog
       propertyEnableId = "enable"u8,
       propertyIdentifierId = "identifier"u8,
       propertyIdentifierDefaultText = "BeamSender"u8,
+      propertyCompressionShowOnlyRecommendedId = "compression_recommended_only"u8,
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
       propertyCompressionQoyLevelId = "compression_qoy_level"u8,
       propertyCompressionDensityLevelId = "compression_density_level"u8,
@@ -504,6 +522,7 @@ public static class SettingsDialog
     {
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(false));
       ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierDefaultText);
+      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionShowOnlyRecommendedId, Convert.ToByte(true));
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoiLevelId, 10);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoyLevelId, 10);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoirQualityId, 7);
@@ -609,6 +628,13 @@ public static class SettingsDialog
     }
   }
 
+  public static bool NativeVideoFormatSupport(Beam.CompressionTypes compressionType, video_format videoFormat)
+  {
+    if (!RequiredVideoFormats.ContainsKey(compressionType))
+      return true;
+    return RequiredVideoFormats[compressionType].Contains(videoFormat);
+  }
+
   public static unsafe video_format GetRequiredVideoFormatConversion()
   {
     video_format requiredVideoFormat = video_format.VIDEO_FORMAT_NONE;
@@ -630,6 +656,7 @@ public static class SettingsDialog
   private static unsafe void UpdateCompressionSettings(obs_properties* properties, obs_data* settings)
   {
     fixed (byte*
+      propertyCompressionShowOnlyRecommendedId = "compression_recommended_only"u8,
       propertyCompressionJpegId = "compression_jpeg"u8,
       propertyCompressionJpegQualityId = "compression_jpeg_quality"u8,
       propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
@@ -649,33 +676,82 @@ public static class SettingsDialog
     )
     {
       // get current settings after the change
+      var showOnlyRecommended = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionShowOnlyRecommendedId));
       var jpegCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionJpegId));
       var qoiCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoiId));
       var qoyCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoyId));
       var qoirCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoirId));
-      var qoiLevel = ObsData.obs_data_get_int(settings, (sbyte*)propertyCompressionQoiLevelId);
       var lz4CompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionLz4Id));
       var densityCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionDensityId));
 
-      // handle the special case where JPEG is enabled but the library couldn't be loaded, in this case force disable this option
-      if (jpegCompressionEnabled && !EncoderSupport.LibJpegTurbo)
+      // get video format currently configured in OBS
+      obs_video_info* obsVideoInfo = ObsBmem.bzalloc<obs_video_info>();
+      video_format obsVideoFormat = video_format.VIDEO_FORMAT_NONE;
+      if (Convert.ToBoolean(Obs.obs_get_video_info(obsVideoInfo)) && (obsVideoInfo != null))
+        obsVideoFormat = obsVideoInfo->output_format;
+      ObsBmem.bfree(obsVideoInfo);
+
+      // fixed list of compression algorithms and their supported video formats
+      RequiredVideoFormats.Clear();
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Qoi, new[] { video_format.VIDEO_FORMAT_BGRA });
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Qoir, new[] { video_format.VIDEO_FORMAT_BGRA });
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Qoy, new[] { video_format.VIDEO_FORMAT_NV12 });
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Jpeg, new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_NV12, video_format.VIDEO_FORMAT_BGRA });
+
+      // if only recommended items are configured to be shown: hide compression algorithms that don't natively support the current OBS video format or have a superior alternative available
+      var qoiRecommended = !showOnlyRecommended || (NativeVideoFormatSupport(Beam.CompressionTypes.Qoi, obsVideoFormat) && !EncoderSupport.QoirLib);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionQoiId), Convert.ToByte(qoiRecommended));
+      var qoirRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Qoir, obsVideoFormat);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionQoirId), Convert.ToByte(qoirRecommended));
+      var qoyRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Qoy, obsVideoFormat);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionQoyId), Convert.ToByte(qoyRecommended));
+      var lz4Recommended = !showOnlyRecommended || (NativeVideoFormatSupport(Beam.CompressionTypes.Lz4, obsVideoFormat) && !EncoderSupport.DensityApi);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionLz4Id), Convert.ToByte(lz4Recommended));
+      var densityRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Density, obsVideoFormat);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionDensityId), Convert.ToByte(densityRecommended));
+      var jpegRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Jpeg, obsVideoFormat);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyCompressionJpegId), Convert.ToByte(jpegRecommended));
+
+      // handle the special case where JPEG is enabled but is hidden by the setting to only show recommended options or the library couldn't be loaded, in this case force disable this option
+      if (jpegCompressionEnabled && (!EncoderSupport.LibJpegTurbo || !jpegRecommended))
       {
         jpegCompressionEnabled = false;
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(jpegCompressionEnabled));
       }
 
-      // handle the special case where QOIR is enabled but the library couldn't be loaded, in this case force disable this option
-      if (qoirCompressionEnabled && !EncoderSupport.QoirLib)
+      // handle the special case where QOIR is enabled but is hidden by the setting to only show recommended options or the library couldn't be loaded, in this case force disable this option
+      if (qoirCompressionEnabled && (!EncoderSupport.QoirLib || !qoirRecommended))
       {
         qoirCompressionEnabled = false;
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(qoirCompressionEnabled));
       }
 
-      // handle the special case where Density is enabled but the library couldn't be loaded, in this case force disable this option
-      if (densityCompressionEnabled && !EncoderSupport.DensityApi)
+      // handle the special case where Density is enabled but is hidden by the setting to only show recommended options or the library couldn't be loaded, in this case force disable this option
+      if (densityCompressionEnabled && (!EncoderSupport.DensityApi || !densityRecommended))
       {
         densityCompressionEnabled = false;
         ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(densityCompressionEnabled));
+      }
+
+      // handle the special case where LZ4 is enabled but is hidden by the setting to only show recommended options, in this case force disable this option
+      if (lz4CompressionEnabled && !lz4Recommended)
+      {
+        lz4CompressionEnabled = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(lz4CompressionEnabled));
+      }
+
+      // handle the special case where QOI is enabled but is hidden by the setting to only show recommended options, in this case force disable this option
+      if (qoiCompressionEnabled && !qoiRecommended)
+      {
+        qoiCompressionEnabled = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(qoiCompressionEnabled));
+      }
+
+      // handle the special case where QOY is enabled but is hidden by the setting to only show recommended options, in this case force disable this option
+      if (qoyCompressionEnabled && !qoyRecommended)
+      {
+        qoyCompressionEnabled = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(qoyCompressionEnabled));
       }
 
       // react to setting changes, avoid mixing incompatible settings
@@ -776,11 +852,12 @@ public static class SettingsDialog
 
       // derive video format requirements from the settings
       if (QoiCompression || QoirCompression)
-        RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_BGRA };
+        RequireVideoFormats = RequiredVideoFormats[Beam.CompressionTypes.Qoi];
       else if (QoyCompression)
-        RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_NV12 };
+        RequireVideoFormats = RequiredVideoFormats[Beam.CompressionTypes.Qoy];
       else if (JpegCompression)
       {
+        RequireVideoFormats = RequiredVideoFormats[Beam.CompressionTypes.Jpeg];
         if (JpegCompressionLevel < 10) // the internal NV12 to I420 conversion would cause constant format changes between these two for the receiver when alternating between compressed and raw frames
           RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_BGRA }; //TODO: find a solution that actually allows using NV12 here - maybe the receiver caches settings for both NV12 and I420?
         else
