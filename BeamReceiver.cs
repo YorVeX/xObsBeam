@@ -409,6 +409,7 @@ public class BeamReceiver
     uint rawVideoDataSize = 0;
     uint[] videoPlaneSizes = new uint[Beam.VideoHeader.MAX_AV_PLANES];
     bool jpegInitialized = false;
+    byte[] nv12ConversionBuffer = Array.Empty<byte>();
 
     double senderFps = 30;
     uint logCycle = 0;
@@ -596,9 +597,18 @@ public class BeamReceiver
                         break;
                       }
                       EncoderSupport.GetJpegPlaneSizes(videoHeader.Format, (int)videoHeader.Width, (int)videoHeader.Height, out videoPlaneSizes, out _);
+                      if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12) // for this case we need an extra buffer for conversion to NV12, since JPEG decompression always outputs I420
+                        nv12ConversionBuffer = new byte[rawVideoDataSize];
                     }
 
-                    TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
+                    if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12)
+                    {
+                      // for this case we need to decompress to an intermediate buffer for conversion to NV12, since JPEG decompression always outputs I420
+                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, nv12ConversionBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
+                      EncoderSupport.I420ToNv12(nv12ConversionBuffer, rawDataBuffer, videoPlaneSizes);
+                    }
+                    else // for I420 decompression no conversion is needed, decompress directly into the final raw data buffer
+                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
                   }
                   else
                     TurboJpegDecompressToBgra(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);

@@ -856,13 +856,7 @@ public static class SettingsDialog
       else if (QoyCompression)
         RequireVideoFormats = RequiredVideoFormats[Beam.CompressionTypes.Qoy];
       else if (JpegCompression)
-      {
         RequireVideoFormats = RequiredVideoFormats[Beam.CompressionTypes.Jpeg];
-        if (JpegCompressionLevel < 10) // the internal NV12 to I420 conversion would cause constant format changes between these two for the receiver when alternating between compressed and raw frames
-          RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_BGRA }; //TODO: find a solution that actually allows using NV12 here - maybe the receiver caches settings for both NV12 and I420?
-        else
-          RequireVideoFormats = new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_NV12, video_format.VIDEO_FORMAT_BGRA };
-      }
       else
         RequireVideoFormats = null;
 

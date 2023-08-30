@@ -280,6 +280,25 @@ public static class EncoderSupport
     }
   }
 
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  public static void I420ToNv12(Span<byte> sourceBuffer, Span<byte> destinationBuffer, uint[] planeSizes)
+  {
+    // copy the Y plane
+    sourceBuffer[..(int)planeSizes[0]].CopyTo(destinationBuffer);
+
+    // interleave the U and V planes into a single UV plane
+    var uPlane = sourceBuffer.Slice((int)planeSizes[0], (int)planeSizes[1]);
+    var vPlane = sourceBuffer.Slice((int)planeSizes[0] + (int)planeSizes[1], (int)planeSizes[2]);
+    int uvPlaneSize = (int)planeSizes[1] + (int)planeSizes[2];
+    var uvPlane = destinationBuffer.Slice((int)planeSizes[0], uvPlaneSize);
+    var chromaPlaneSize = (int)planeSizes[1]; // in theory ((planeSizes[1] + planeSizes[2]) / 2), but planeSizes[1] == planeSizes[2] for I420
+    for (int i = 0; i < chromaPlaneSize; i++)
+    {
+      uvPlane[(2 * i) + 0] = uPlane[i];
+      uvPlane[(2 * i) + 1] = vPlane[i];
+    }
+  }
+
 #pragma warning disable IDE0060 // we don't make use of the memory_func_context parameter but it needs to be there
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]

@@ -432,7 +432,9 @@ public class BeamSender
 
           if (_jpegYuv)
           {
-            if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12) // packed format, was converted so that libjpeg-turbo can handle it, reflect this in the header
+            // packed format, was converted to I420 so that libjpeg-turbo can handle it, reflect this in the header
+            // but only if frame skipping isn't enabled, because for this case the receiver will convert the frame back to NV12 so that the feed doesn't constantly alternate between NV12 and I420 for compressed and uncompressed frames
+            if ((videoHeader.Format == video_format.VIDEO_FORMAT_NV12) && (_compressionThreshold == 1))
               videoHeader.Format = video_format.VIDEO_FORMAT_I420;
 
             // the data planes are contiguous in memory as validated by SetVideoParameters(), only need to set the pointers to the start of each plane
