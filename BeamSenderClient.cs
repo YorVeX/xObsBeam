@@ -416,18 +416,6 @@ sealed class BeamSenderClient
 
   public unsafe void EnqueueAudio(ulong timestamp, byte* audioData)
   {
-    //TODO: the current assumption is that OBS can work with audio continuing while video frames are dropped/skipped, remove the below block if this can be confirmed to be true, otherwise uncomment
-    // long videoFrameCount = Interlocked.Read(ref _videoFrameCount);
-    // if (videoFrameCount > BeamSender.MaxFrameQueueSize)
-    // {
-    //   var emptyHeader = _audioHeader;
-    //   emptyHeader.DataSize = 0;
-    //   var emptyFrame = new Beam.BeamAudioData(_audioHeader, Array.Empty<byte>(), timestamp);
-    //   _frames.AddOrUpdate(timestamp, emptyFrame, (key, oldValue) => emptyFrame);
-    //   Module.Log($"<{_clientId}> Error: Send queue size {videoFrameCount} ({_frameTimestampQueue.Count}), skipping audio frame {timestamp}.", ObsLogLevel.Error);
-    //   return;
-    // }
-
     var frame = new Beam.BeamAudioData(_audioHeader, _audioDataPool.Rent(_audioHeader.DataSize), timestamp); // get an audio data memory buffer from the pool, avoiding allocations
     new Span<byte>(audioData, frame.Header.DataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
 
