@@ -288,21 +288,18 @@ public class BeamSender
       _listenCancellationSource = new CancellationTokenSource();
     }
 
-    var stopwatch = new System.Diagnostics.Stopwatch();
     while (!_listenCancellationSource.Token.IsCancellationRequested)
     {
       try
       {
         Module.Log($"Waiting for new connections on {localAddr}:{port}.", ObsLogLevel.Debug);
-        stopwatch.Restart();
         var clientSocket = await _listener.AcceptSocketAsync(_listenCancellationSource.Token);
-        stopwatch.Stop();
         if (_listenCancellationSource.Token.IsCancellationRequested)
           break;
         if ((clientSocket != null) && (clientSocket.RemoteEndPoint != null))
         {
-          Module.Log($"Accept after {stopwatch.ElapsedMilliseconds} ms! Pending: {_listener.Pending()}, Data available: {clientSocket.Available}, Blocking: {clientSocket.Blocking}, Connected: {clientSocket.Connected}, DontFragment: {clientSocket.DontFragment}, Dual: {clientSocket.DualMode}, Broadcast: {clientSocket.EnableBroadcast}, Excl: {clientSocket.ExclusiveAddressUse}, Bound: {clientSocket.IsBound}, Linger: {clientSocket.LingerState!}, NoDelay: {clientSocket.NoDelay}, RecvBuff: {clientSocket.ReceiveBufferSize}, SendBuff: {clientSocket.SendBufferSize}, TTL: {clientSocket.Ttl}", ObsLogLevel.Debug);
           string clientId = clientSocket.RemoteEndPoint.ToString()!;
+          Module.Log($"Socket client {clientId} accepted. Pending: {_listener.Pending()}, Data available: {clientSocket.Available}, Blocking: {clientSocket.Blocking}, Connected: {clientSocket.Connected}, DontFragment: {clientSocket.DontFragment}, Dual: {clientSocket.DualMode}, Broadcast: {clientSocket.EnableBroadcast}, Excl: {clientSocket.ExclusiveAddressUse}, Bound: {clientSocket.IsBound}, Linger: {clientSocket.LingerState!}, NoDelay: {clientSocket.NoDelay}, RecvBuff: {clientSocket.ReceiveBufferSize}, SendBuff: {clientSocket.SendBufferSize}, TTL: {clientSocket.Ttl}", ObsLogLevel.Debug);
           var client = new BeamSenderClient(clientId, clientSocket, _videoHeader, _audioHeader);
           client.Disconnected += ClientDisconnectedEventHandler;
           client.Start();
@@ -346,22 +343,19 @@ public class BeamSender
       _listenCancellationSource = new CancellationTokenSource();
     }
 
-    var stopwatch = new System.Diagnostics.Stopwatch();
     while (!_listenCancellationSource.Token.IsCancellationRequested)
     {
       try
       {
         Module.Log($"Waiting for new connections on {_pipeName}.", ObsLogLevel.Debug);
-        stopwatch.Restart();
         await pipeStream.WaitForConnectionAsync(_listenCancellationSource.Token);
-        stopwatch.Stop();
 
         if (_listenCancellationSource.Token.IsCancellationRequested)
           break;
 
         // generate GUID for the client
         string clientId = Guid.NewGuid().ToString();
-        Module.Log($"Accept after {stopwatch.ElapsedMilliseconds} ms!", ObsLogLevel.Debug);
+        Module.Log($"Pipe client {clientId} accepted.", ObsLogLevel.Debug);
 
         // create a new BeamSenderClient
         var client = new BeamSenderClient(clientId, pipeStream, _videoHeader, _audioHeader);

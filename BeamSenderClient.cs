@@ -192,34 +192,19 @@ sealed class BeamSenderClient
         _receiveDelayMs = 0;
         _renderDelayMs = 0;
 
-        var stopwatch = new System.Diagnostics.Stopwatch();
-        long waitTime = 0;
-        long dequeueTime = 0;
-        long sendVideoTime = 0;
-        long sendAudioTime = 0;
-
         Module.Log($"<{ClientId}> sendLoopAsync() started.", ObsLogLevel.Debug);
         Interlocked.Increment(ref _videoFrameCount); // this first increment from -1 to 0 signalizes that the send loop is ready to process the queue
         Interlocked.Increment(ref _audioFrameCount); // this first increment from -1 to 0 signalizes that the send loop is ready to process the queue
         while (!cancellationToken.IsCancellationRequested)
         {
-          stopwatch.Reset();
-          stopwatch.Start();
           // wait for the next signal if the queue is empty right now
           _frameAvailable.WaitOne();
-          // waitTime += (long)stopwatch.Elapsed.TotalNanoseconds;
-          waitTime += stopwatch.ElapsedTicks;
-          stopwatch.Reset();
-          stopwatch.Start();
           if (cancellationToken.IsCancellationRequested)
             break;
 
           if (_frameTimestampQueue.TryPeek(out var frameTimestamp) && (_frames.TryRemove(frameTimestamp, out var frame))) // is the next queued frame already available?
           {
             _frameTimestampQueue.TryDequeue(out _);
-            dequeueTime += stopwatch.ElapsedTicks;
-            stopwatch.Reset();
-            stopwatch.Start();
             if (frame is Beam.BeamVideoData videoFrame)
             {
               var videoFrameCount = Interlocked.Decrement(ref _videoFrameCount);
@@ -228,11 +213,6 @@ sealed class BeamSenderClient
                 totalBytes = 0;
                 frameCycle = 1;
                 fps = (videoFrame.Header.Fps / videoFrame.Header.FpsDenominator);
-
-                waitTime = 0;
-                dequeueTime = 0;
-                sendVideoTime = 0;
-                sendAudioTime = 0;
               }
 
               // write video data
@@ -250,22 +230,12 @@ sealed class BeamSenderClient
                 var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(videoFrame.Data)[..videoFrame.Header.DataSize], cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
                 _videoDataPool.Return(videoFrame.Data); // return video frame data to the memory pool
 
-                sendVideoTime += stopwatch.ElapsedTicks;
-                stopwatch.Reset();
-                stopwatch.Start();
-
                 totalBytes += (ulong)headerBytes + (ulong)videoFrame.Header.DataSize;
                 if (frameCycle >= fps)
                 {
                   var mBitsPerSecond = (totalBytes * 8) / 1000000;
                   Module.Log($"<{ClientId}> Sent {headerBytes} + {videoFrame.Header.DataSize} bytes of video data ({mBitsPerSecond} mbps), queue length: {videoFrameCount} ({_frameTimestampQueue.Count})", ObsLogLevel.Debug);
                   totalBytes = 0;
-
-                  Module.Log($"<{ClientId}> Time stats: wait {waitTime}, dequeue {dequeueTime}, send video {sendVideoTime}, send audio {sendAudioTime}", ObsLogLevel.Debug);
-                  waitTime = 0;
-                  dequeueTime = 0;
-                  sendVideoTime = 0;
-                  sendAudioTime = 0;
                 }
                 if (writeResult.IsCanceled || writeResult.IsCompleted)
                 {
@@ -313,9 +283,6 @@ sealed class BeamSenderClient
                 ArrayPool<byte>.Shared.Return(audioFrame.Data); // return audio frame data to the memory pool
                 if (frameCycle >= fps)
                   Module.Log($"<{ClientId}> Sent {headerBytes} + {audioFrame.Header.DataSize} bytes of audio data, queue length: {audioFrameCount} ({_frameTimestampQueue.Count})", ObsLogLevel.Debug);
-                sendAudioTime += stopwatch.ElapsedTicks;
-                stopwatch.Reset();
-                stopwatch.Start();
                 if (writeResult.IsCanceled || writeResult.IsCompleted)
                 {
                   if (writeResult.IsCanceled)
