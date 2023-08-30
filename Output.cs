@@ -190,11 +190,16 @@ public static class Output
     if (_firstFrame) // this is the first frame since the last output (re)start, get video info
     {
       _firstFrame = false;
-      //TODO: use obs_output_get_video_conversion() here
-      // video_scale_info* videoScaleInfo = Obs.obs_output_get_video_conversion(_outputData.Output);
-      // the correct behavior would be: if videoScaleInfo is not null (meaning conversion is active), then fields in videoScaleInfo override the general settings in _videoInfo and these should be considered
-      // but obs_output_get_video_conversion() was only added in OBS 29.1.X (in beta at time of writing this on April 9th, 2023), so we can't use it yet
-      // the good news is that in the case of this plugin it doesn't matter too much, since it's our own output we know which settings we changed
+      video_scale_info* videoScaleInfo = Obs.obs_output_get_video_conversion(_outputData.Output);
+      if (videoScaleInfo != null)
+      {
+        Module.Log($"Output video conversion in effect: {_videoInfo->width}x{_videoInfo->height} -> {videoScaleInfo->width}x{videoScaleInfo->height}, format: {_videoInfo->format} -> {videoScaleInfo->format}, colorspace: {_videoInfo->colorspace} -> {videoScaleInfo->colorspace}, range: {_videoInfo->range} -> {videoScaleInfo->range}", ObsLogLevel.Info);
+        _videoInfo->colorspace = videoScaleInfo->colorspace;
+        _videoInfo->width = videoScaleInfo->width;
+        _videoInfo->height = videoScaleInfo->height;
+        _videoInfo->range = videoScaleInfo->range;
+        // don't set format, otherwise the info about manual conversions like from NV12 to I420 for JPEG will be lost
+      }
       try
       {
         if (_beamSender.SetVideoParameters(_videoInfo, _conversionVideoFormat, frame->linesize, frame->data))
