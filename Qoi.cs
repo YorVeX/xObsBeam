@@ -30,8 +30,6 @@ sealed class Qoi
     [FieldOffset(0)] public int Value; // this offers a fast way to compare the whole pixel at once
   }
 
-  //TODO: explore options to work with frame difference based compression in addition, some ideas and a link to "QOV" here: https://github.com/phoboslab/qoi/issues/228 and here: https://github.com/nigeltao/qoi2-bikeshed/issues/37
-
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
   static int PixelHash(Pixel pixel)
   {

@@ -258,7 +258,6 @@ public class FrameBuffer
 
       if (_frameList.Count == 0) // out of ramp-up phase but the buffer is empty?
       {
-        //TODO: think about making this behavior configurable or whether a better solution is possible
         Reset(); // the buffer ran dry, start over with ramp up
         _frameList.Clear();
         Module.Log("Error: The frame buffer ran dry, refilling. Consider increasing the buffering time to compensate for longer gaps.", ObsLogLevel.Error);
