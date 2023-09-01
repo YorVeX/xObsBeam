@@ -33,9 +33,8 @@ public class BeamSender
   private int _videoFramesCompressed;
   Beam.VideoHeader _videoHeader;
   Beam.AudioHeader _audioHeader;
-  int _videoDataSize;
-  uint[] _videoPlaneSizes = Array.Empty<uint>();
-  uint[] _jpegYuvPlaneSizes = Array.Empty<uint>();
+  Beam.PlaneInfo _videoPlaneInfo;
+  Beam.PlaneInfo _i420PlaneInfo;
   int _audioDataSize;
   int _audioBytesPerSample;
 
@@ -55,7 +54,6 @@ public class BeamSender
   public unsafe bool SetVideoParameters(video_output_info* info, video_format conversionVideoFormat, uint* linesize, video_data._data_e__FixedBuffer data)
   {
     // reset some variables
-    _videoDataSize = 0;
     _videoFramesProcessed = 0;
     _videoFramesCompressed = 0;
     _compressionThreshold = 1;
@@ -74,35 +72,28 @@ public class BeamSender
     if (conversionVideoFormat != video_format.VIDEO_FORMAT_NONE)
       format = conversionVideoFormat;
 
-    // get the plane sizes for the current frame format and size
-    _videoPlaneSizes = Beam.GetPlaneSizes(format, info->height, linesize);
-    if (_videoPlaneSizes.Length == 0) // unsupported format, will also be logged by the GetPlaneSizes() function
+    // get the plane information for the current frame format and size
+    _videoPlaneInfo = Beam.GetPlaneInfo(format, info->width, info->height);
+    if (_videoPlaneInfo.Count == 0) // unsupported format, will also be logged by the GetPlaneInfo() function
       return false;
 
-    for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++)
-      Module.Log("SetVideoParameters(): linesize[" + i + "] = " + linesize[i], ObsLogLevel.Debug);
-
-    var pointerOffset = (IntPtr)data.e0;
-    for (int planeIndex = 0; planeIndex < _videoPlaneSizes.Length; planeIndex++)
+    for (int planeIndex = 0; planeIndex < _videoPlaneInfo.Count; planeIndex++)
     {
-      // calculate the total size of the video data by summing the plane sizes
-      _videoDataSize += (int)_videoPlaneSizes[planeIndex];
-
+      Module.Log($"SetVideoParameters(): {format} line size[{planeIndex}] = {linesize[planeIndex]}, plane size[{planeIndex}] = {_videoPlaneInfo.PlaneSizes[planeIndex]}, offset[{planeIndex}] = {_videoPlaneInfo.Offsets[planeIndex]}", ObsLogLevel.Debug);
       // validate actual video data plane pointers against the GetPlaneSizes() information
+      var pointerOffset = (IntPtr)data.e0 + _videoPlaneInfo.Offsets[planeIndex];
       if (pointerOffset != (IntPtr)data[planeIndex])
       {
-        // either the GetPlaneSizes() returned wrong information or the video data plane pointers are not contiguous in memory (which we currently rely on)
-        Module.Log($"Video data plane pointer for plane {planeIndex} of format {info->format} has a difference of {pointerOffset - (IntPtr)data[planeIndex]}.", ObsLogLevel.Warning);
-        //BUG: this is currently happening for odd resolutions like 1279x719 on YUV formats, because padding is not properly handled by GetPlaneSizes(), leading to image distortion
+        // either GetPlaneInfo() returned wrong information or the video data plane pointers are not contiguous in memory (which we currently rely on)
+        Module.Log($"Video data plane pointer for {info->format} plane {planeIndex} with resolution {info->width}x{info->height} has a difference of {pointerOffset - (IntPtr)data[planeIndex]} ({(IntPtr)data[planeIndex] - (IntPtr)data.e0} instead of {pointerOffset - (IntPtr)data.e0}).", ObsLogLevel.Warning);
       }
-      pointerOffset += (int)_videoPlaneSizes[planeIndex];
     }
 
     // create the video header with current frame base info as a template for every frame - in most cases only the timestamp changes so that this instance can be reused without copies of it being created
     var videoHeader = new Beam.VideoHeader()
     {
       Type = Beam.Type.Video,
-      DataSize = _videoDataSize,
+      DataSize = (int)_videoPlaneInfo.DataSize,
       Width = info->width,
       Height = info->height,
       Fps = info->fps_num,
@@ -112,7 +103,6 @@ public class BeamSender
       Colorspace = info->colorspace,
       Compression = Beam.CompressionTypes.None,
     };
-    new ReadOnlySpan<uint>(linesize, Beam.VideoHeader.MAX_AV_PLANES).CopyTo(new Span<uint>(videoHeader.Linesize, Beam.VideoHeader.MAX_AV_PLANES));
     _videoHeader = videoHeader;
 
     // cache compression settings
@@ -136,7 +126,7 @@ public class BeamSender
     {
       _videoHeader.Compression = Beam.CompressionTypes.Jpeg;
       _jpegCompressionQuality = SettingsDialog.JpegCompressionQuality;
-      _videoDataPoolMaxSize = _videoDataSize;
+      _videoDataPoolMaxSize = (int)_videoPlaneInfo.DataSize;
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
@@ -146,12 +136,8 @@ public class BeamSender
       _jpegSubsampling = EncoderSupport.ObsToJpegSubsampling(format);
       _jpegColorspace = EncoderSupport.ObsToJpegColorSpace(format);
       _jpegYuv = EncoderSupport.FormatIsYuv(format);
-      if (_jpegYuv) // get plane sizes for a format that libjpeg-turbo can handle (e.g. packed formats need to be deinterleaved)
-      {
-        _jpegYuvPlaneSizes = Beam.GetYuvPlaneSizes(format, info->width, info->height);
-        if (_jpegYuvPlaneSizes.Length == 0)
-          _jpegYuvPlaneSizes = _videoPlaneSizes; // no deinterleaving needed, fallback to the original plane sizes
-      }
+      if (format == video_format.VIDEO_FORMAT_NV12) // NV12 is a special case, because it's already in YUV format, but the planes are interleaved
+        _i420PlaneInfo = Beam.GetPlaneInfo(video_format.VIDEO_FORMAT_I420, info->width, info->height);
       _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
     }
     else if (SettingsDialog.DensityCompression && EncoderSupport.DensityApi)
@@ -186,7 +172,7 @@ public class BeamSender
     else if (SettingsDialog.Lz4Compression)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Lz4;
-      _videoDataPoolMaxSize = LZ4Codec.MaximumOutputSize(_videoDataSize);
+      _videoDataPoolMaxSize = LZ4Codec.MaximumOutputSize((int)_videoPlaneInfo.DataSize);
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
@@ -194,7 +180,7 @@ public class BeamSender
     }
     _compressionThreadingSync = SettingsDialog.CompressionMainThread;
 
-    var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoDataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
+    var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoPlaneInfo.DataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
     if (_videoHeader.Compression == Beam.CompressionTypes.None)
       Module.Log($"Video output feed initialized, theoretical uncompressed net bandwidth demand is {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
     else
@@ -219,11 +205,11 @@ public class BeamSender
     };
   }
 
-  public bool CanStart => ((_videoDataSize > 0) && (_audioDataSize > 0));
+  public bool CanStart => ((_videoPlaneInfo.DataSize > 0) && (_audioDataSize > 0));
 
   public async void Start(string identifier, IPAddress localAddr)
   {
-    if (_videoDataSize == 0)
+    if (_videoPlaneInfo.DataSize == 0)
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
     if (_audioDataSize == 0)
       throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
@@ -325,7 +311,7 @@ public class BeamSender
 
   public async void Start(string identifier, string pipeName)
   {
-    if (_videoDataSize == 0)
+    if (_videoPlaneInfo.DataSize == 0)
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
     if (_audioDataSize == 0)
       throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
@@ -391,7 +377,6 @@ public class BeamSender
       _listenCancellationSource.Cancel();
       foreach (var client in _clients.Values)
         client.Disconnect(); // this will block for up to 1000 ms per client to try and get a clean disconnect
-      _videoDataSize = 0;
       _audioDataSize = 0;
       _discoveryServer.StopServer();
 
@@ -432,19 +417,14 @@ public class BeamSender
 
           if (_jpegYuv)
           {
-            // packed format, was converted to I420 so that libjpeg-turbo can handle it, reflect this in the header
-            // but only if frame skipping isn't enabled, because for this case the receiver will convert the frame back to NV12 so that the feed doesn't constantly alternate between NV12 and I420 for compressed and uncompressed frames
-            if ((videoHeader.Format == video_format.VIDEO_FORMAT_NV12) && (_compressionThreshold == 1))
-              videoHeader.Format = video_format.VIDEO_FORMAT_I420;
+            var planeInfo = _videoPlaneInfo;
+            if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12)
+              planeInfo = _i420PlaneInfo; // packed format, was converted to I420 so that libjpeg-turbo can handle it
 
-            // the data planes are contiguous in memory as validated by SetVideoParameters(), only need to set the pointers to the start of each plane
-            var planes = stackalloc byte*[_jpegYuvPlaneSizes.Length];
-            uint currentOffset = 0;
-            for (int planeIndex = 0; planeIndex < _jpegYuvPlaneSizes.Length; planeIndex++)
-            {
-              planes[planeIndex] = rawData + currentOffset;
-              currentOffset += _jpegYuvPlaneSizes[planeIndex];
-            }
+            // set the pointers to the start of each plane
+            var planes = stackalloc byte*[planeInfo.Count];
+            for (int planeIndex = 0; planeIndex < planeInfo.Count; planeIndex++)
+              planes[planeIndex] = rawData + planeInfo.Offsets[planeIndex];
 
             if (_libJpegTurboV3)
             {
@@ -502,7 +482,7 @@ public class BeamSender
         qoirPixelBuffer->pixcfg.height_in_pixels = videoHeader.Height;
         qoirPixelBuffer->pixcfg.pixfmt = Qoir.QOIR_PIXEL_FORMAT__BGRA_NONPREMUL;
         qoirPixelBuffer->data = rawData;
-        qoirPixelBuffer->stride_in_bytes = videoHeader.Linesize[0];
+        qoirPixelBuffer->stride_in_bytes = _videoPlaneInfo.Linesize[0];
         var qoirEncodeResult = Qoir.qoir_encode(qoirPixelBuffer, _qoirEncodeOptions);
         EncoderSupport.FreePooledPinned(qoirPixelBuffer);
         if (qoirEncodeResult.status_message != null)
@@ -610,7 +590,7 @@ public class BeamSender
       if ((_videoHeader.Compression is Beam.CompressionTypes.Jpeg) && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
       {
         byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize);
-        EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneSizes);
+        EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneInfo, _i420PlaneInfo);
         fixed (byte* videoData = managedDataCopy)
           SendCompressed(timestamp, _videoHeader, videoData, encodedData);
         _videoDataPool!.Return(managedDataCopy);
@@ -622,11 +602,11 @@ public class BeamSender
     {
       byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize); // need a managed memory copy for async handover
 
-      // to save an additional frame copy operation the JPEG deinterleaving is done in sync mode as part of the copy to managed memory that is needed anyway for the async handover
+      // to save an additional frame copy operation the JPEG deinterleaving is done in the sync part of the code with an implicit copy operation to managed memory that is needed anyway for the async handover
       if ((_videoHeader.Compression is Beam.CompressionTypes.Jpeg) && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
-        EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneSizes);
+        EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneInfo, _i420PlaneInfo);
       else
-        new ReadOnlySpan<byte>(data, _videoDataSize).CopyTo(managedDataCopy); // just copy to managed as-is for formats that are not packed
+        new ReadOnlySpan<byte>(data, (int)_videoPlaneInfo.DataSize).CopyTo(managedDataCopy); // just copy to managed as-is for formats that are not packed
 
       var beamVideoData = new Beam.BeamVideoData(_videoHeader, managedDataCopy, timestamp); // create a copy of the video header and data, so that the data can be used in the thread
       Task.Factory.StartNew(state =>

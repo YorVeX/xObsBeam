@@ -278,17 +278,13 @@ public class BeamReceiver
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private unsafe void TurboJpegDecompressToYuv(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, uint[] videoPlaneSizes, int width, int height)
+  private unsafe void TurboJpegDecompressToYuv(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, Beam.PlaneInfo planeInfo, int width, int height)
   {
     fixed (byte* jpegBuf = receivedFrameData, dstBuf = rawDataBuffer)
     {
-      uint currentOffset = 0;
-      var planePointers = stackalloc byte*[videoPlaneSizes.Length];
-      for (int planeIndex = 0; planeIndex < videoPlaneSizes.Length; planeIndex++)
-      {
-        planePointers[planeIndex] = dstBuf + currentOffset;
-        currentOffset += videoPlaneSizes[planeIndex];
-      }
+      var planePointers = stackalloc byte*[planeInfo.Count];
+      for (int planeIndex = 0; planeIndex < planeInfo.Count; planeIndex++)
+        planePointers[planeIndex] = dstBuf + planeInfo.Offsets[planeIndex];
       int compressResult;
       if (EncoderSupport.LibJpegTurboV3)
         compressResult = TurboJpeg.tj3DecompressToYUVPlanes8(_turboJpegDecompress, jpegBuf, (uint)dataSize, planePointers, null);
@@ -346,20 +342,6 @@ public class BeamReceiver
     }
   }
 
-  private static unsafe uint GetRawVideoDataSize(Beam.VideoHeader videoHeader)
-  {
-    uint rawVideoDataSize = 0;
-    // get the plane sizes for the current frame format and size
-    var videoPlaneSizes = Beam.GetPlaneSizes(videoHeader.Format, videoHeader.Height, videoHeader.Linesize);
-    if (videoPlaneSizes.Length == 0) // unsupported format
-      return rawVideoDataSize;
-
-    for (int planeIndex = 0; planeIndex < videoPlaneSizes.Length; planeIndex++)
-      rawVideoDataSize += videoPlaneSizes[planeIndex];
-
-    return rawVideoDataSize;
-  }
-
   public static unsafe double GetLocalFps()
   {
     double fps = 0;
@@ -407,9 +389,10 @@ public class BeamReceiver
 
     int videoHeaderSize = Beam.VideoHeader.VideoHeaderDataSize;
     uint rawVideoDataSize = 0;
-    uint[] videoPlaneSizes = new uint[Beam.VideoHeader.MAX_AV_PLANES];
+    Beam.PlaneInfo planeInfo = Beam.PlaneInfo.Empty;
     bool jpegInitialized = false;
     byte[] nv12ConversionBuffer = Array.Empty<byte>();
+    Beam.PlaneInfo i420PlaneInfo = Beam.PlaneInfo.Empty;
 
     double senderFps = 30;
     uint logCycle = 0;
@@ -522,10 +505,12 @@ public class BeamReceiver
               renderDelayAveragingFrameCount = (int)(senderFps / 2);
               renderDelays = new int[renderDelayAveragingFrameCount];
 
+              planeInfo = Beam.GetPlaneInfo(videoHeader.Format, videoHeader.Width, videoHeader.Height);
+
               if (videoHeader.Compression == Beam.CompressionTypes.Density)
-                rawVideoDataSize = (uint)Density.density_decompress_safe_size(GetRawVideoDataSize(videoHeader));
+                rawVideoDataSize = (uint)Density.density_decompress_safe_size(planeInfo.DataSize);
               else
-                rawVideoDataSize = GetRawVideoDataSize(videoHeader);
+                rawVideoDataSize = planeInfo.DataSize;
               if (rawVideoDataSize == 0) // unsupported format
                 break;
 
@@ -584,31 +569,23 @@ public class BeamReceiver
                   {
                     if (!jpegInitialized)
                     {
+                      // can't do this in first frame handling code, since with compression level setting enabled the first frame might have been a raw one
                       jpegInitialized = true;
-                      var jpegSubsampling = (int)EncoderSupport.ObsToJpegSubsampling(videoHeader.Format);
-                      if (EncoderSupport.LibJpegTurboV3)
-                        rawVideoDataSize = (uint)TurboJpeg.tj3YUVBufSize((int)videoHeader.Width, 1, (int)videoHeader.Height, jpegSubsampling);
-                      else if (EncoderSupport.LibJpegTurbo)
-                        rawVideoDataSize = (uint)TurboJpeg.tjBufSizeYUV2((int)videoHeader.Width, 1, (int)videoHeader.Height, jpegSubsampling);
-                      else
+                      if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12) // for this case we need an extra buffer and plane info for conversion to NV12, since JPEG decompression always outputs I420
                       {
-                        rawVideoDataSize = 0;
-                        Module.Log($"Error: JPEG library is not available, cannot decompress received video data!", ObsLogLevel.Error);
-                        break;
-                      }
-                      EncoderSupport.GetJpegPlaneSizes(videoHeader.Format, (int)videoHeader.Width, (int)videoHeader.Height, out videoPlaneSizes, out _);
-                      if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12) // for this case we need an extra buffer for conversion to NV12, since JPEG decompression always outputs I420
                         nv12ConversionBuffer = new byte[rawVideoDataSize];
+                        i420PlaneInfo = Beam.GetPlaneInfo(video_format.VIDEO_FORMAT_I420, videoHeader.Width, videoHeader.Height);
+                      }
                     }
 
                     if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12)
                     {
                       // for this case we need to decompress to an intermediate buffer for conversion to NV12, since JPEG decompression always outputs I420
-                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, nv12ConversionBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
-                      EncoderSupport.I420ToNv12(nv12ConversionBuffer, rawDataBuffer, videoPlaneSizes);
+                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, nv12ConversionBuffer, i420PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
+                      EncoderSupport.I420ToNv12(nv12ConversionBuffer, rawDataBuffer, planeInfo, i420PlaneInfo);
                     }
                     else // for I420 decompression no conversion is needed, decompress directly into the final raw data buffer
-                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, videoPlaneSizes, (int)videoHeader.Width, (int)videoHeader.Height);
+                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, planeInfo, (int)videoHeader.Width, (int)videoHeader.Height);
                   }
                   else
                     TurboJpegDecompressToBgra(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);

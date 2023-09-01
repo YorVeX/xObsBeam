@@ -42,7 +42,7 @@ public class Source
   IntPtr ContextPointer;
   ulong CurrentTimestamp;
   int RenderDelayLimit;
-  uint[] _videoPlaneSizes = Array.Empty<uint>();
+  Beam.PlaneInfo _videoPlaneInfo;
   uint _audioPlaneSize;
   #endregion Source instance fields
 
@@ -1025,30 +1025,19 @@ public class Source
       context->Video->width = videoFrame.Header.Width;
       context->Video->height = videoFrame.Header.Height;
       context->Video->full_range = Convert.ToByte(videoFrame.Header.Range == video_range_type.VIDEO_RANGE_FULL);
-      // get the plane sizes for the current frame format and size
-      if ((videoFrame.Header.Compression == Beam.CompressionTypes.Jpeg) && (videoFrame.Header.Format == video_format.VIDEO_FORMAT_I420))
+      for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++) // initialize all linesizes to 0 first
+        context->Video->linesize[i] = 0;
+      _videoPlaneInfo = Beam.GetPlaneInfo(context->Video->format, context->Video->width, context->Video->height);
+      for (int planeIndex = 0; planeIndex < _videoPlaneInfo.Count; planeIndex++)
       {
-        EncoderSupport.GetJpegPlaneSizes(context->Video->format, (int)context->Video->width, (int)context->Video->height, out _videoPlaneSizes, out var jpeglineSize);
-        for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++)
-        {
-          context->Video->linesize[i] = jpeglineSize[i];
-          Module.Log("VideoFrameReceivedEventHandler(): linesize[" + i + "] = " + context->Video->linesize[i], ObsLogLevel.Debug);
-        }
-      }
-      else
-      {
-        for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++)
-        {
-          context->Video->linesize[i] = videoFrame.Header.Linesize[i];
-          Module.Log("VideoFrameReceivedEventHandler(): linesize[" + i + "] = " + context->Video->linesize[i], ObsLogLevel.Debug);
-        }
-        _videoPlaneSizes = Beam.GetPlaneSizes(context->Video->format, context->Video->height, context->Video->linesize);
+        context->Video->linesize[planeIndex] = _videoPlaneInfo.Linesize[planeIndex];
+        Module.Log("VideoFrameReceivedEventHandler(): linesize[" + planeIndex + "] = " + _videoPlaneInfo.Linesize[planeIndex], ObsLogLevel.Debug);
       }
       ObsVideo.video_format_get_parameters_for_format(videoFrame.Header.Colorspace, videoFrame.Header.Range, videoFrame.Header.Format, context->Video->color_matrix, context->Video->color_range_min, context->Video->color_range_max);
       Module.Log("VideoFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
     }
 
-    if (_videoPlaneSizes.Length == 0) // unsupported format
+    if (_videoPlaneInfo.Count == 0) // unsupported format
       return;
 
     if ((RenderDelayLimit > 0) && (videoFrame.RenderDelayAverage > RenderDelayLimit))
@@ -1065,12 +1054,8 @@ public class Source
       fixed (byte* videoData = videoFrame.Data) // temporary pinning is sufficient, since Obs.obs_source_output_video() creates a copy of the data anyway
       {
         // video data in the array is already in the correct order, but the array offsets need to be set correctly according to the plane sizes
-        uint currentOffset = 0;
-        for (int planeIndex = 0; planeIndex < _videoPlaneSizes.Length; planeIndex++)
-        {
-          context->Video->data[planeIndex] = videoData + currentOffset;
-          currentOffset += _videoPlaneSizes[planeIndex];
-        }
+        for (int planeIndex = 0; planeIndex < _videoPlaneInfo.Count; planeIndex++)
+          context->Video->data[planeIndex] = videoData + _videoPlaneInfo.Offsets[planeIndex];
         // Module.Log($"VideoFrameReceivedEventHandler(): Output timestamp {videoFrame.Header.Timestamp}", ObsLogLevel.Debug);
         Obs.obs_source_output_video(context->Source, context->Video);
       }

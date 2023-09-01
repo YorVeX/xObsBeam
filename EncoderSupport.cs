@@ -237,43 +237,18 @@ public static class EncoderSupport
     return (FormatIsYuv(obsVideoFormat)) ? TJCS.TJCS_YCbCr : TJCS.TJCS_RGB;
   }
 
-  public static void GetJpegPlaneSizes(video_format format, int width, int height, out uint[] videoPlaneSizes, out uint[] linesize)
-  {
-    videoPlaneSizes = new uint[Beam.VideoHeader.MAX_AV_PLANES];
-    linesize = new uint[Beam.VideoHeader.MAX_AV_PLANES];
-    var jpegSubsampling = (int)ObsToJpegSubsampling(format);
-    if (LibJpegTurboV3)
-    {
-      for (int i = 0; i < videoPlaneSizes.Length; i++)
-      {
-        videoPlaneSizes[i] = (uint)TurboJpeg.tj3YUVPlaneSize(i, width, 0, height, jpegSubsampling);
-        linesize[i] = (uint)TurboJpeg.tj3YUVPlaneWidth(i, width, jpegSubsampling);
-      }
-    }
-    else if (LibJpegTurbo)
-    {
-      for (int i = 0; i < videoPlaneSizes.Length; i++)
-      {
-        videoPlaneSizes[i] = (uint)TurboJpeg.tjPlaneSizeYUV(i, width, 0, height, jpegSubsampling);
-        linesize[i] = (uint)TurboJpeg.tjPlaneWidth(i, width, jpegSubsampling);
-      }
-    }
-    else
-      Module.Log($"Error: JPEG library is not available, cannot get JPEG plane sizes!", ObsLogLevel.Error);
-  }
-
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  public static unsafe void Nv12ToI420(byte* sourceBuffer, Span<byte> destinationBuffer, uint[] planeSizes)
+  public static unsafe void Nv12ToI420(byte* sourceBuffer, Span<byte> destinationBuffer, Beam.PlaneInfo planeInfoNv12, Beam.PlaneInfo planeInfoI420)
   {
     // copy the Y plane
-    new ReadOnlySpan<byte>(sourceBuffer, (int)planeSizes[0]).CopyTo(destinationBuffer);
+    new ReadOnlySpan<byte>(sourceBuffer, (int)planeInfoNv12.PlaneSizes[0]).CopyTo(destinationBuffer);
 
     // copy and deinterleave the UV plane
-    byte* uvPlane = sourceBuffer + planeSizes[0];
-    int uvPlaneSize = (int)planeSizes[1] / 2;
-    var uPlane = destinationBuffer.Slice((int)planeSizes[0], uvPlaneSize);
-    var vPlane = destinationBuffer.Slice((int)planeSizes[0] + uvPlaneSize, uvPlaneSize);
-    for (int i = 0; i < uvPlaneSize; i++)
+    byte* uvPlane = sourceBuffer + planeInfoNv12.Offsets[1];
+    int chromaPlaneSize = (int)planeInfoI420.PlaneSizes[1];
+    var uPlane = destinationBuffer.Slice((int)planeInfoI420.Offsets[1], (int)planeInfoI420.PlaneSizes[1]);
+    var vPlane = destinationBuffer.Slice((int)planeInfoI420.Offsets[2], (int)planeInfoI420.PlaneSizes[2]);
+    for (int i = 0; i < chromaPlaneSize; i++)
     {
       uPlane[i] = uvPlane[(2 * i) + 0];
       vPlane[i] = uvPlane[(2 * i) + 1];
@@ -281,17 +256,17 @@ public static class EncoderSupport
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  public static void I420ToNv12(Span<byte> sourceBuffer, Span<byte> destinationBuffer, uint[] planeSizes)
+  public static void I420ToNv12(Span<byte> sourceBuffer, Span<byte> destinationBuffer, Beam.PlaneInfo planeInfoNv12, Beam.PlaneInfo planeInfoI420)
   {
     // copy the Y plane
-    sourceBuffer[..(int)planeSizes[0]].CopyTo(destinationBuffer);
+    sourceBuffer[..(int)planeInfoI420.PlaneSizes[0]].CopyTo(destinationBuffer);
 
     // interleave the U and V planes into a single UV plane
-    var uPlane = sourceBuffer.Slice((int)planeSizes[0], (int)planeSizes[1]);
-    var vPlane = sourceBuffer.Slice((int)planeSizes[0] + (int)planeSizes[1], (int)planeSizes[2]);
-    int uvPlaneSize = (int)planeSizes[1] + (int)planeSizes[2];
-    var uvPlane = destinationBuffer.Slice((int)planeSizes[0], uvPlaneSize);
-    var chromaPlaneSize = (int)planeSizes[1]; // in theory ((planeSizes[1] + planeSizes[2]) / 2), but planeSizes[1] == planeSizes[2] for I420
+    var uPlane = sourceBuffer.Slice((int)planeInfoI420.Offsets[1], (int)planeInfoI420.PlaneSizes[1]);
+    var vPlane = sourceBuffer.Slice((int)planeInfoI420.Offsets[2], (int)planeInfoI420.PlaneSizes[2]);
+    int uvPlaneSize = (int)(planeInfoNv12.PlaneSizes[1]);
+    var uvPlane = destinationBuffer.Slice((int)planeInfoNv12.Offsets[1], uvPlaneSize);
+    var chromaPlaneSize = (int)planeInfoI420.PlaneSizes[1]; // in theory ((PlaneSizes[1] + PlaneSizes[2]) / 2), but PlaneSizes[1] == PlaneSizes[2] for I420
     for (int i = 0; i < chromaPlaneSize; i++)
     {
       uvPlane[(2 * i) + 0] = uPlane[i];

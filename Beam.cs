@@ -3,6 +3,7 @@
 
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Runtime.CompilerServices;
 using ObsInterop;
 namespace xObsBeam;
 
@@ -53,100 +54,351 @@ public class Beam
     return reader.Position;
   }
 
-  public static uint[] GetYuvPlaneSizes(video_format format, uint width, uint height)
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  public static uint AlignSize(uint size, int align)
   {
-    uint halfHeight;
-    uint halfwidth;
-    uint[] planeSizes;
+    return (uint)(size + (align - 1)) & (uint)~(align - 1);
+  }
 
-    switch (format)
+  public struct PlaneInfo
+  {
+    public static readonly PlaneInfo Empty = new(0);
+
+    public int Count { get; private set; }
+    public uint[] Offsets { get; private set; }
+    public uint[] Linesize { get; private set; }
+    public uint[] PlaneSizes { get; set; }
+    public uint DataSize { get; set; }
+
+    public PlaneInfo(int count)
     {
-      //TODO: support more YUV formats for JPEG compression
-      case video_format.VIDEO_FORMAT_NV12: // deinterleave and convert to I420
-        halfHeight = (height + 1) / 2;
-        halfwidth = width / 2;
-        planeSizes = new uint[3];
-        planeSizes[0] = (width * height);
-        planeSizes[1] = (halfwidth * halfHeight);
-        planeSizes[2] = (halfwidth * halfHeight);
-        return planeSizes;
-      default: // doesn't need to be deinterleaved or not supported
-        return Array.Empty<uint>();
+      Count = count;
+      Offsets = new uint[count];
+      Linesize = new uint[count];
+      PlaneSizes = new uint[count];
+    }
+
+    public PlaneInfo(int count, uint dataSize)
+    {
+      Count = count;
+      Offsets = new uint[count];
+      Linesize = new uint[count];
+      PlaneSizes = new uint[count];
+      DataSize = dataSize;
     }
   }
 
-  public static unsafe uint[] GetPlaneSizes(video_format format, uint height, uint* linesize)
+  public static unsafe PlaneInfo GetPlaneInfo(video_format format, uint width, uint height)
   {
-    uint halfHeight = 0;
-    uint[] planeSizes;
-    // check https://github.com/obsproject/obs-studio/blob/master/libobs/obs-source.c copy_frame_data() for reference on how the planes are laid out
+    var planeInfo = PlaneInfo.Empty;
+    var alignment = ObsBmem.base_get_alignment();
+    uint halfHeight;
+    uint halfWidth;
+    uint halfArea;
+    uint halfAreaSize;
+    uint cbCrWidth;
+
+    // check https://github.com/obsproject/obs-studio/blob/master/libobs/media-io/video-frame.c video_frame_init() for reference on how offsets and linesizes are calculated
+    // for plane size information see https://github.com/obsproject/obs-studio/blob/master/libobs/obs-source.c copy_frame_data()
+
     switch (format)
     {
       case video_format.VIDEO_FORMAT_I420:
-      case video_format.VIDEO_FORMAT_I010:
+        planeInfo = new PlaneInfo(3, width * height);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        halfWidth = (width + 1) / 2;
         halfHeight = (height + 1) / 2;
-        planeSizes = new uint[3];
-        planeSizes[0] = (linesize[0] * height);
-        planeSizes[1] = (linesize[1] * halfHeight);
-        planeSizes[2] = (linesize[2] * halfHeight);
-        return planeSizes;
+        var quarter_area = halfWidth * halfHeight;
+        planeInfo.DataSize += quarter_area;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[2] = planeInfo.DataSize;
+        planeInfo.DataSize += quarter_area;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width;
+        planeInfo.Linesize[1] = halfWidth;
+        planeInfo.Linesize[2] = halfWidth;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * halfHeight);
+        planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * halfHeight);
+        return planeInfo;
       case video_format.VIDEO_FORMAT_NV12:
-      case video_format.VIDEO_FORMAT_P010:
+        planeInfo = new PlaneInfo(2, width * height);
         halfHeight = (height + 1) / 2;
-        planeSizes = new uint[2];
-        planeSizes[0] = (linesize[0] * height);
-        planeSizes[1] = (linesize[1] * halfHeight);
-        return planeSizes;
-      case video_format.VIDEO_FORMAT_P216:
-      case video_format.VIDEO_FORMAT_P416:
-        planeSizes = new uint[2];
-        planeSizes[0] = (linesize[0] * height);
-        planeSizes[1] = (linesize[1] * height);
-        return planeSizes;
-      case video_format.VIDEO_FORMAT_I444:
-      case video_format.VIDEO_FORMAT_I422:
-      case video_format.VIDEO_FORMAT_I210:
-      case video_format.VIDEO_FORMAT_I412:
-        planeSizes = new uint[3];
-        planeSizes[0] = (linesize[0] * height);
-        planeSizes[1] = (linesize[1] * height);
-        planeSizes[2] = (linesize[2] * height);
-        return planeSizes;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        cbCrWidth = (width + 1) & (uint.MaxValue - 1);
+        planeInfo.DataSize += cbCrWidth * ((height + 1) / 2);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width;
+        planeInfo.Linesize[1] = cbCrWidth;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * halfHeight);
+        return planeInfo;
+      case video_format.VIDEO_FORMAT_Y800:
+        planeInfo = new PlaneInfo(1, width * height);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        return planeInfo;
       case video_format.VIDEO_FORMAT_YVYU:
       case video_format.VIDEO_FORMAT_YUY2:
       case video_format.VIDEO_FORMAT_UYVY:
-      case video_format.VIDEO_FORMAT_NONE:
+        planeInfo = new PlaneInfo(1);
+        var double_width = ((width + 1) & (uint.MaxValue - 1)) * 2;
+        planeInfo.DataSize = double_width * height;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = double_width;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        return planeInfo;
       case video_format.VIDEO_FORMAT_RGBA:
       case video_format.VIDEO_FORMAT_BGRA:
       case video_format.VIDEO_FORMAT_BGRX:
-      case video_format.VIDEO_FORMAT_Y800:
-      case video_format.VIDEO_FORMAT_BGR3:
       case video_format.VIDEO_FORMAT_AYUV:
-      case video_format.VIDEO_FORMAT_V210:
-        planeSizes = new uint[1];
-        planeSizes[0] = (linesize[0] * height);
-        return planeSizes;
+        planeInfo = new PlaneInfo(1, width * height * 4);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width * 4;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        return planeInfo;
+      case video_format.VIDEO_FORMAT_I444:
+        planeInfo = new PlaneInfo(3, width * height);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        planeInfo.DataSize += width * height;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[2] = planeInfo.DataSize;
+        planeInfo.DataSize += width * height;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width;
+        planeInfo.Linesize[1] = width;
+        planeInfo.Linesize[2] = width;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * height);
+        planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * height);
+        return planeInfo;
+      case video_format.VIDEO_FORMAT_I412:
+        planeInfo = new PlaneInfo(3, width * height * 2);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        planeInfo.DataSize += width * height * 2;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[2] = planeInfo.DataSize;
+        planeInfo.DataSize += width * height * 2;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width * 2;
+        planeInfo.Linesize[1] = width * 2;
+        planeInfo.Linesize[2] = width * 2;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * height);
+        planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * height);
+        return planeInfo;
+      case video_format.VIDEO_FORMAT_BGR3:
+        planeInfo = new PlaneInfo(1, width * height * 3);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width * 3;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        return planeInfo;
+      case video_format.VIDEO_FORMAT_I422:
+        planeInfo = new PlaneInfo(1, width * height);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        halfWidth = (width + 1) / 2;
+        halfArea = halfWidth * height;
+        planeInfo.DataSize += halfArea;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[2] = planeInfo.DataSize;
+        planeInfo.DataSize += halfArea;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width;
+        planeInfo.Linesize[1] = halfWidth;
+        planeInfo.Linesize[2] = halfWidth;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * height);
+        planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * height);
+        return planeInfo;
+      case video_format.VIDEO_FORMAT_I210:
+        planeInfo = new PlaneInfo(3, width * height * 2);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        halfWidth = (width + 1) / 2;
+        halfArea = halfWidth * height;
+        halfAreaSize = 2 * halfArea;
+        planeInfo.DataSize += halfAreaSize;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[2] = planeInfo.DataSize;
+        planeInfo.DataSize += halfAreaSize;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width * 2;
+        planeInfo.Linesize[1] = halfWidth * 2;
+        planeInfo.Linesize[2] = halfWidth * 2;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * height);
+        planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * height);
+        return planeInfo;
       case video_format.VIDEO_FORMAT_I40A:
+        planeInfo = new PlaneInfo(4, width * height);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        halfWidth = (width + 1) / 2;
         halfHeight = (height + 1) / 2;
-        planeSizes = new uint[4];
-        planeSizes[0] = (linesize[0] * height);
-        planeSizes[1] = (linesize[1] * halfHeight);
-        planeSizes[2] = (linesize[2] * halfHeight);
-        planeSizes[3] = (linesize[3] * height);
-        return planeSizes;
+        quarter_area = halfWidth * halfHeight;
+        planeInfo.DataSize += quarter_area;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[2] = planeInfo.DataSize;
+        planeInfo.DataSize += quarter_area;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[3] = planeInfo.DataSize;
+        planeInfo.DataSize += width * height;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width;
+        planeInfo.Linesize[1] = halfWidth;
+        planeInfo.Linesize[2] = halfWidth;
+        planeInfo.Linesize[3] = width;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * halfHeight);
+        planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * halfHeight);
+        planeInfo.PlaneSizes[3] = (planeInfo.Linesize[3] * height);
+        return planeInfo;
       case video_format.VIDEO_FORMAT_I42A:
+        planeInfo = new PlaneInfo(4, width * height);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        halfWidth = (width + 1) / 2;
+        halfArea = halfWidth * height;
+        planeInfo.DataSize += halfArea;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[2] = planeInfo.DataSize;
+        planeInfo.DataSize += halfArea;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[3] = planeInfo.DataSize;
+        planeInfo.DataSize += width * height;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width;
+        planeInfo.Linesize[1] = halfWidth;
+        planeInfo.Linesize[2] = halfWidth;
+        planeInfo.Linesize[3] = width;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * height);
+        planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * height);
+        planeInfo.PlaneSizes[3] = (planeInfo.Linesize[3] * height);
+        return planeInfo;
       case video_format.VIDEO_FORMAT_YUVA:
+        planeInfo = new PlaneInfo(4, width * height);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        planeInfo.DataSize += width * height;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[2] = planeInfo.DataSize;
+        planeInfo.DataSize += width * height;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[3] = planeInfo.DataSize;
+        planeInfo.DataSize += width * height;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width;
+        planeInfo.Linesize[1] = width;
+        planeInfo.Linesize[2] = width;
+        planeInfo.Linesize[3] = width;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * height);
+        planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * height);
+        planeInfo.PlaneSizes[3] = (planeInfo.Linesize[3] * height);
+        return planeInfo;
       case video_format.VIDEO_FORMAT_YA2L:
+        planeInfo = new PlaneInfo(4);
+        var ya2lLinesize = width * 2;
+        var planeSize = ya2lLinesize * height;
+        planeInfo.DataSize = planeSize;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        planeInfo.DataSize += planeSize;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[2] = planeInfo.DataSize;
+        planeInfo.DataSize += planeSize;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[3] = planeInfo.DataSize;
+        planeInfo.DataSize += planeSize;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = ya2lLinesize;
+        planeInfo.Linesize[1] = ya2lLinesize;
+        planeInfo.Linesize[2] = ya2lLinesize;
+        planeInfo.Linesize[3] = ya2lLinesize;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * height);
+        planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * height);
+        planeInfo.PlaneSizes[3] = (planeInfo.Linesize[3] * height);
+        return planeInfo;
+      case video_format.VIDEO_FORMAT_I010:
+        planeInfo = new PlaneInfo(3, width * height * 2);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        halfWidth = (width + 1) / 2;
         halfHeight = (height + 1) / 2;
-        planeSizes = new uint[4];
-        planeSizes[0] = (linesize[0] * height);
-        planeSizes[1] = (linesize[1] * height);
-        planeSizes[2] = (linesize[2] * height);
-        planeSizes[3] = (linesize[3] * height);
-        return planeSizes;
+        quarter_area = halfWidth * halfHeight;
+        planeInfo.DataSize += quarter_area * 2;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[2] = planeInfo.DataSize;
+        planeInfo.DataSize += quarter_area * 2;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width * 2;
+        planeInfo.Linesize[1] = halfWidth * 2;
+        planeInfo.Linesize[2] = halfWidth * 2;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * halfHeight);
+        planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * halfHeight);
+        return planeInfo;
+      case video_format.VIDEO_FORMAT_P010:
+        planeInfo = new PlaneInfo(2, width * height * 2);
+        halfHeight = (height + 1) / 2;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        cbCrWidth = (width + 1) & (uint.MaxValue - 1);
+        planeInfo.DataSize += cbCrWidth * ((height + 1) / 2) * 2;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width * 2;
+        planeInfo.Linesize[1] = cbCrWidth * 2;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * halfHeight);
+        return planeInfo;
+      case video_format.VIDEO_FORMAT_P216:
+        planeInfo = new PlaneInfo(2, width * height * 2);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        cbCrWidth = (width + 1) & (uint.MaxValue - 1);
+        planeInfo.DataSize += cbCrWidth * height * 2;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width * 2;
+        planeInfo.Linesize[1] = cbCrWidth * 2;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * height);
+        return planeInfo;
+      case video_format.VIDEO_FORMAT_P416:
+        planeInfo = new PlaneInfo(2, width * height * 2);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Offsets[1] = planeInfo.DataSize;
+        planeInfo.DataSize += width * height * 4;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width * 2;
+        planeInfo.Linesize[1] = width * 4;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * height);
+        return planeInfo;
+      case video_format.VIDEO_FORMAT_V210:
+        planeInfo = new PlaneInfo(1);
+        var adjusted_width = ((width + 5) / 6) * 16;
+        planeInfo.DataSize = adjusted_width * height;
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = adjusted_width;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        return planeInfo;
+      // case video_format.VIDEO_FORMAT_R10L: // not yet, newer OBS version
+      //   planeInfo = new PlaneInfo(1, width * height * 4);
+      //   planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+      //   planeInfo.Linesize[0] = width * 4;
+      //   planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+      //   return planeInfo;
       default:
         Module.Log($"Unsupported video format: {format}", ObsLogLevel.Error);
-        return Array.Empty<uint>();
+        return planeInfo;
     }
   }
 
@@ -171,44 +423,6 @@ public class Beam
         break;
     }
     audioDataSize = audioBytesPerSample * (int)speakers * (int)frames;
-  }
-
-  public static unsafe BeamVideoData CreateEmptyVideoFrame(ulong timestamp, video_format format, uint height, uint* linesize)
-  {
-    var planeSizes = GetPlaneSizes(format, height, linesize);
-    int videoDataSize = 0;
-    for (int planeIndex = 0; planeIndex < planeSizes.Length; planeIndex++)
-      videoDataSize += (int)planeSizes[planeIndex];
-    var header = new VideoHeader()
-    {
-      Format = format,
-      Width = linesize[0],
-      Height = height,
-      Colorspace = video_colorspace.VIDEO_CS_DEFAULT,
-      Range = video_range_type.VIDEO_RANGE_DEFAULT,
-      Timestamp = timestamp,
-      Compression = CompressionTypes.None,
-      Fps = 30,
-      FpsDenominator = 1,
-      DataSize = videoDataSize,
-    };
-    new ReadOnlySpan<uint>(linesize, VideoHeader.MAX_AV_PLANES).CopyTo(new Span<uint>(header.Linesize, VideoHeader.MAX_AV_PLANES));
-    return new BeamVideoData(header, new byte[videoDataSize], timestamp);
-  }
-
-  public static unsafe BeamAudioData CreateEmptyAudioFrame(ulong timestamp, audio_format format, speaker_layout speakers, uint frames, uint sampleRate)
-  {
-    GetAudioDataSize(format, speakers, frames, out int audioDataSize, out _);
-    var header = new AudioHeader()
-    {
-      Format = format,
-      Speakers = speakers,
-      Frames = frames,
-      Timestamp = timestamp,
-      DataSize = audioDataSize,
-      SampleRate = sampleRate,
-    };
-    return new BeamAudioData(header, new byte[audioDataSize], timestamp);
   }
   #endregion helper methods
 
@@ -296,7 +510,6 @@ public class Beam
     public int DataSize;
     public uint Width;
     public uint Height;
-    public fixed uint Linesize[MAX_AV_PLANES];
     public uint Fps;
     public uint FpsDenominator;
     public video_format Format;
@@ -342,12 +555,6 @@ public class Beam
       // read uint height from the next 4 bytes in header
       reader.TryReadLittleEndian(out tempInt);
       Height = (uint)tempInt;
-      // read uint linesize from the next 8 chunks of 4 bytes in header
-      for (int i = 0; i < MAX_AV_PLANES; i++)
-      {
-        reader.TryReadLittleEndian(out tempInt);
-        Linesize[i] = (uint)tempInt;
-      }
       // read uint fps from the next 4 bytes in header
       reader.TryReadLittleEndian(out tempInt);
       Fps = (uint)tempInt;
@@ -387,11 +594,6 @@ public class Beam
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), DataSize); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Width); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Height); headerBytes += 4;
-      for (int i = 0; i < MAX_AV_PLANES; i++)
-      {
-        BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Linesize[i]);
-        headerBytes += 4;
-      }
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Fps); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), FpsDenominator); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Format); headerBytes += 4;
