@@ -472,7 +472,7 @@ public class Source
   public static unsafe sbyte* source_get_name(void* data)
   {
     Module.Log("source_get_name called", ObsLogLevel.Debug);
-    fixed (byte* sourceName = "Beam"u8)
+    fixed (byte* sourceName = "Beam Receiver"u8)
       return (sbyte*)sourceName;
   }
 
@@ -725,7 +725,7 @@ public class Source
     Module.Log("source_get_defaults called", ObsLogLevel.Debug);
     fixed (byte*
       propertyTargetPipeNameId = "pipe_name"u8,
-      propertyTargetPipeNameDefaultText = "BeamSender"u8,
+      propertyTargetPipeNameDefaultText = "Beam Sender"u8,
       propertyTargetHostId = "host"u8,
       propertyTargetHostDefaultText = "127.0.0.1"u8,
       propertyConnectionTypePipeId = "connection_type_pipe"u8,
