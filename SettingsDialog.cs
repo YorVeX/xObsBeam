@@ -501,7 +501,7 @@ public static class SettingsDialog
     fixed (byte*
       propertyEnableId = "enable"u8,
       propertyIdentifierId = "identifier"u8,
-      propertyIdentifierDefaultText = "BeamSender"u8,
+      propertyIdentifierDefaultText = "Beam Sender Output"u8,
       propertyCompressionShowOnlyRecommendedId = "compression_recommended_only"u8,
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
       propertyCompressionQoyLevelId = "compression_qoy_level"u8,

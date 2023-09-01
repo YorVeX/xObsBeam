@@ -123,7 +123,7 @@ public static class Module
     switch (eventName)
     {
       case obs_frontend_event.OBS_FRONTEND_EVENT_FINISHED_LOADING:
-        fixed (byte* menuItemText = "Beam"u8)
+        fixed (byte* menuItemText = "Beam Sender Output"u8)
           ObsFrontendApi.obs_frontend_add_tools_menu_item((sbyte*)menuItemText, &ToolsMenuItemClicked, null);
         if (SettingsDialog.OutputEnabled)
           Output.Start();

@@ -96,8 +96,7 @@ public static class Output
   public static unsafe sbyte* output_get_name(void* data)
   {
     Module.Log("output_get_name called", ObsLogLevel.Debug);
-    var asciiBytes = "Beam Output"u8;
-    fixed (byte* outputName = asciiBytes)
+    fixed (byte* outputName = "Beam Sender Output"u8)
       return (sbyte*)outputName;
   }
 
