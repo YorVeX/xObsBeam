@@ -507,7 +507,6 @@ public static class SettingsDialog
       propertyCompressionQoyLevelId = "compression_qoy_level"u8,
       propertyCompressionDensityLevelId = "compression_density_level"u8,
       propertyCompressionDensityStrengthId = "compression_density_strength"u8,
-      propertyCompressionQoirQualityId = "compression_qoir_quality"u8,
       propertyCompressionQoirLevelId = "compression_qoir_level"u8,
       propertyCompressionJpegQualityId = "compression_jpeg_quality"u8,
       propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
@@ -524,7 +523,6 @@ public static class SettingsDialog
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionShowOnlyRecommendedId, Convert.ToByte(true));
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoiLevelId, 10);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoyLevelId, 10);
-      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoirQualityId, 7);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoirLevelId, 10);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionJpegQualityId, 90);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionJpegLevelId, 10);
@@ -664,7 +662,6 @@ public static class SettingsDialog
       propertyCompressionQoyId = "compression_qoy"u8,
       propertyCompressionQoyLevelId = "compression_qoy_level"u8,
       propertyCompressionQoirId = "compression_qoir"u8,
-      propertyCompressionQoirQualityId = "compression_qoir_quality"u8,
       propertyCompressionQoirLevelId = "compression_qoir_level"u8,
       propertyCompressionLz4Id = "compression_lz4"u8,
       propertyCompressionLz4LevelId = "compression_lz4_level"u8,
