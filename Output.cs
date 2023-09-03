@@ -136,7 +136,7 @@ public static class Output
     _firstFrame = true;
 
     // color format compatibility check
-    var requiredVideoFormatConversion = SettingsDialog.GetRequiredVideoFormatConversion();
+    var requiredVideoFormatConversion = SettingsDialog.Properties.GetRequiredVideoFormatConversion();
     video_scale_info* videoScaleInfo = null;
     if (requiredVideoFormatConversion != video_format.VIDEO_FORMAT_NONE)
     {
@@ -176,10 +176,10 @@ public static class Output
   {
     if (_beamSender.CanStart)
     {
-      if (SettingsDialog.UsePipe)
-        _beamSender.Start(SettingsDialog.Identifier, SettingsDialog.Identifier);
+      if (SettingsDialog.Properties.UsePipe)
+        _beamSender.Start(SettingsDialog.Properties.Identifier, SettingsDialog.Properties.Identifier);
       else
-        _beamSender.Start(SettingsDialog.Identifier, SettingsDialog.NetworkInterfaceAddress);
+        _beamSender.Start(SettingsDialog.Properties.Identifier, SettingsDialog.Properties.NetworkInterfaceAddress);
     }
   }
 

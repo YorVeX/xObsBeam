@@ -106,7 +106,7 @@ public class BeamSender
     _videoHeader = videoHeader;
 
     // cache compression settings
-    if (SettingsDialog.QoirCompression && EncoderSupport.QoirLib)
+    if (SettingsDialog.Properties.QoirCompression && EncoderSupport.QoirLib)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Qoir;
       _videoDataPoolMaxSize = (int)((info->width * info->height * 4)); // this buffer will only be used if compression actually reduced the frame size
@@ -120,12 +120,12 @@ public class BeamSender
       _qoirEncodeOptions->lossiness = 0;
       _qoirEncodeOptions->contextual_malloc_func = &EncoderSupport.QoirMAlloc; // important to use our own memory allocator, so that we can also free the memory later, also it's pooled memory
       _qoirEncodeOptions->contextual_free_func = &EncoderSupport.QoirFree;
-      _compressionThreshold = SettingsDialog.QoirCompressionLevel / 10.0;
+      _compressionThreshold = SettingsDialog.Properties.QoirCompressionLevel / 10.0;
     }
-    else if (SettingsDialog.JpegCompression && EncoderSupport.LibJpegTurbo)
+    else if (SettingsDialog.Properties.JpegCompression && EncoderSupport.LibJpegTurbo)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Jpeg;
-      _jpegCompressionQuality = SettingsDialog.JpegCompressionQuality;
+      _jpegCompressionQuality = SettingsDialog.Properties.JpegCompressionQuality;
       _videoDataPoolMaxSize = (int)_videoPlaneInfo.DataSize;
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
@@ -138,28 +138,28 @@ public class BeamSender
       _jpegYuv = EncoderSupport.FormatIsYuv(format);
       if (format == video_format.VIDEO_FORMAT_NV12) // NV12 is a special case, because it's already in YUV format, but the planes are interleaved
         _i420PlaneInfo = Beam.GetPlaneInfo(video_format.VIDEO_FORMAT_I420, info->width, info->height);
-      _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
+      _compressionThreshold = SettingsDialog.Properties.JpegCompressionLevel / 10.0;
     }
-    else if (SettingsDialog.DensityCompression && EncoderSupport.DensityApi)
+    else if (SettingsDialog.Properties.DensityCompression && EncoderSupport.DensityApi)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Density;
-      _densityAlgorithm = (DENSITY_ALGORITHM)SettingsDialog.DensityCompressionStrength;
+      _densityAlgorithm = (DENSITY_ALGORITHM)SettingsDialog.Properties.DensityCompressionStrength;
       _videoDataPoolMaxSize = (int)Density.density_compress_safe_size((ulong)videoHeader.DataSize);
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
-      _compressionThreshold = SettingsDialog.DensityCompressionLevel / 10.0;
+      _compressionThreshold = SettingsDialog.Properties.DensityCompressionLevel / 10.0;
     }
-    else if (SettingsDialog.QoiCompression)
+    else if (SettingsDialog.Properties.QoiCompression)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Qoi;
       _videoDataPoolMaxSize = (int)((info->width * info->height * 5)); // QOI's theoretical max size for BGRA is 5x the size of the original image
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
-      _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
+      _compressionThreshold = SettingsDialog.Properties.QoiCompressionLevel / 10.0;
     }
-    else if (SettingsDialog.QoyCompression)
+    else if (SettingsDialog.Properties.QoyCompression)
     {
       Qoy.Initialize();
       _videoHeader.Compression = Beam.CompressionTypes.Qoy;
@@ -167,18 +167,18 @@ public class BeamSender
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
-      _compressionThreshold = SettingsDialog.QoyCompressionLevel / 10.0;
+      _compressionThreshold = SettingsDialog.Properties.QoyCompressionLevel / 10.0;
     }
-    else if (SettingsDialog.Lz4Compression)
+    else if (SettingsDialog.Properties.Lz4Compression)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Lz4;
       _videoDataPoolMaxSize = LZ4Codec.MaximumOutputSize((int)_videoPlaneInfo.DataSize);
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
-      _compressionThreshold = SettingsDialog.Lz4CompressionLevel / 10.0;
+      _compressionThreshold = SettingsDialog.Properties.Lz4CompressionLevel / 10.0;
     }
-    _compressionThreadingSync = SettingsDialog.CompressionMainThread;
+    _compressionThreadingSync = SettingsDialog.Properties.CompressionMainThread;
 
     var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoPlaneInfo.DataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
     if (_videoHeader.Compression == Beam.CompressionTypes.None)
@@ -218,7 +218,7 @@ public class BeamSender
     int port = 0;
     while (failCount < 10)
     {
-      port = SettingsDialog.Port;
+      port = SettingsDialog.Properties.Port;
       try
       {
         _listener = new TcpListener(localAddr, port);
@@ -226,7 +226,7 @@ public class BeamSender
       }
       catch (SocketException)
       {
-        if (SettingsDialog.AutomaticPort)
+        if (SettingsDialog.Properties.AutomaticPort)
         {
           failCount++;
           Module.Log($"Failed to start TCP listener for {identifier} on {localAddr}:{port}, attempt {failCount} of 10.", ObsLogLevel.Debug);
@@ -247,7 +247,7 @@ public class BeamSender
       {
         try { _listener.Stop(); } catch { } // listening on the TCP port worked if we got here, so try to stop it again to try the next port
         _discoveryServer.StopServer();
-        if (SettingsDialog.AutomaticPort)
+        if (SettingsDialog.Properties.AutomaticPort)
         {
           failCount++;
           Module.Log($"Failed to start UDP listener for {identifier} on {localAddr}:{port}, attempt {failCount} of 10.", ObsLogLevel.Debug);
