@@ -199,9 +199,12 @@ public static class Output
         _videoInfo->range = videoScaleInfo->range;
         // don't set format, otherwise the info about manual conversions like from NV12 to I420 for JPEG will be lost
       }
+
+      var video = ObsBmem.bzalloc<obs_source_frame>(); // only using this to get the color_matrix, color_range_min and color_range_max fields
+      ObsVideo.video_format_get_parameters_for_format(_videoInfo->colorspace, _videoInfo->range, _videoInfo->format, video->color_matrix, video->color_range_min, video->color_range_max);
       try
       {
-        if (_beamSender.SetVideoParameters(_videoInfo, _conversionVideoFormat, frame->linesize, frame->data))
+        if (_beamSender.SetVideoParameters(_videoInfo->format, _conversionVideoFormat, _videoInfo->width, _videoInfo->height, _videoInfo->fps_num, _videoInfo->fps_den, Convert.ToByte(_videoInfo->range == video_range_type.VIDEO_RANGE_FULL), video->color_matrix, video->color_range_min, video->color_range_max, frame->linesize, frame->data))
           startSenderIfPossible();
       }
       catch (Exception ex)
@@ -209,6 +212,7 @@ public static class Output
         Module.Log($"output_raw_video(): {ex.GetType().Name} in BeamSender initialization: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
         throw;
       }
+      ObsBmem.bfree(video);
     }
 
     _beamSender.SendVideo(frame->timestamp, frame->data.e0);

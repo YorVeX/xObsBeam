@@ -513,8 +513,10 @@ public class Beam
     public uint Fps;
     public uint FpsDenominator;
     public video_format Format;
-    public video_range_type Range;
-    public video_colorspace Colorspace;
+    public byte FullRange;
+    public fixed float ColorMatrix[16];
+    public fixed float ColorRangeMin[3];
+    public fixed float ColorRangeMax[3];
     public ulong Timestamp;
     public int ReceiveDelay;
     public int RenderDelay;
@@ -564,12 +566,26 @@ public class Beam
       // read video_format enum from the next 4 bytes in header
       reader.TryReadLittleEndian(out tempInt);
       Format = (video_format)tempInt;
-      // read video_range_type enum from the next 4 bytes in header
-      reader.TryReadLittleEndian(out tempInt);
-      Range = (video_range_type)tempInt;
-      // read video_colorspace enum from the next 4 bytes in header
-      reader.TryReadLittleEndian(out tempInt);
-      Colorspace = (video_colorspace)tempInt;
+      // read full_range from the next byte in header
+      reader.TryRead(out FullRange);
+      // read float color_range from the next 16 chunks of 4 bytes in header
+      for (int i = 0; i < 16; i++)
+      {
+        reader.TryReadLittleEndian(out tempInt);
+        ColorMatrix[i] = BitConverter.Int32BitsToSingle(tempInt);
+      }
+      // read float min_range from the next 3 chunks of 4 bytes in header
+      for (int i = 0; i < 3; i++)
+      {
+        reader.TryReadLittleEndian(out tempInt);
+        ColorRangeMin[i] = BitConverter.Int32BitsToSingle(tempInt);
+      }
+      // read float max_range from the next 3 chunks of 4 bytes in header
+      for (int i = 0; i < 3; i++)
+      {
+        reader.TryReadLittleEndian(out tempInt);
+        ColorRangeMax[i] = BitConverter.Int32BitsToSingle(tempInt);
+      }
       // read timestamp from the next 8 bytes in header
       reader.TryReadLittleEndian(out long timestamp);
       Timestamp = (ulong)timestamp;
@@ -597,8 +613,22 @@ public class Beam
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Fps); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), FpsDenominator); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Format); headerBytes += 4;
-      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Range); headerBytes += 4;
-      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Colorspace); headerBytes += 4;
+      span[headerBytes] = FullRange; headerBytes += 1;
+      for (int i = 0; i < 16; i++)
+      {
+        BinaryPrimitives.WriteSingleLittleEndian(span.Slice(headerBytes, 4), ColorMatrix[i]);
+        headerBytes += 4;
+      }
+      for (int i = 0; i < 3; i++)
+      {
+        BinaryPrimitives.WriteSingleLittleEndian(span.Slice(headerBytes, 4), ColorRangeMin[i]);
+        headerBytes += 4;
+      }
+      for (int i = 0; i < 3; i++)
+      {
+        BinaryPrimitives.WriteSingleLittleEndian(span.Slice(headerBytes, 4), ColorRangeMax[i]);
+        headerBytes += 4;
+      }
       BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(headerBytes, 8), timestamp); headerBytes += 8;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), receiveDelay); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), renderDelay); headerBytes += 4;

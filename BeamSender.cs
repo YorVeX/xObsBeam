@@ -51,7 +51,7 @@ public class BeamSender
   unsafe qoir_encode_options_struct* _qoirEncodeOptions = null;
   readonly PeerDiscovery _discoveryServer = new();
 
-  public unsafe bool SetVideoParameters(video_output_info* info, video_format conversionVideoFormat, uint* linesize, video_data._data_e__FixedBuffer data)
+  public unsafe bool SetVideoParameters(video_format format, video_format conversionVideoFormat, uint width, uint height, uint fps_num, uint fps_den, byte full_range, float* color_matrix, float* color_range_min, float* color_range_max, uint* linesize, video_data._data_e__FixedBuffer data)
   {
     // reset some variables
     _videoFramesProcessed = 0;
@@ -68,12 +68,11 @@ public class BeamSender
       _qoirEncodeOptions = null;
     }
 
-    var format = info->format;
     if (conversionVideoFormat != video_format.VIDEO_FORMAT_NONE)
       format = conversionVideoFormat;
 
     // get the plane information for the current frame format and size
-    _videoPlaneInfo = Beam.GetPlaneInfo(format, info->width, info->height);
+    _videoPlaneInfo = Beam.GetPlaneInfo(format, width, height);
     if (_videoPlaneInfo.Count == 0) // unsupported format, will also be logged by the GetPlaneInfo() function
       return false;
 
@@ -85,7 +84,7 @@ public class BeamSender
       if (pointerOffset != (IntPtr)data[planeIndex])
       {
         // either GetPlaneInfo() returned wrong information or the video data plane pointers are not contiguous in memory (which we currently rely on)
-        Module.Log($"Video data plane pointer for {info->format} plane {planeIndex} with resolution {info->width}x{info->height} has a difference of {pointerOffset - (IntPtr)data[planeIndex]} ({(IntPtr)data[planeIndex] - (IntPtr)data.e0} instead of {pointerOffset - (IntPtr)data.e0}).", ObsLogLevel.Warning);
+        Module.Log($"Video data plane pointer for {format} plane {planeIndex} with resolution {width}x{height} has a difference of {pointerOffset - (IntPtr)data[planeIndex]} ({(IntPtr)data[planeIndex] - (IntPtr)data.e0} instead of {pointerOffset - (IntPtr)data.e0}).", ObsLogLevel.Warning);
       }
     }
 
@@ -94,22 +93,24 @@ public class BeamSender
     {
       Type = Beam.Type.Video,
       DataSize = (int)_videoPlaneInfo.DataSize,
-      Width = info->width,
-      Height = info->height,
-      Fps = info->fps_num,
-      FpsDenominator = info->fps_den,
+      Width = width,
+      Height = height,
+      Fps = fps_num,
+      FpsDenominator = fps_den,
       Format = format,
-      Range = info->range,
-      Colorspace = info->colorspace,
+      FullRange = full_range,
       Compression = Beam.CompressionTypes.None,
     };
+    new ReadOnlySpan<float>(color_matrix, 16).CopyTo(new Span<float>(videoHeader.ColorMatrix, 16));
+    new ReadOnlySpan<float>(color_range_min, 3).CopyTo(new Span<float>(videoHeader.ColorRangeMin, 3));
+    new ReadOnlySpan<float>(color_range_max, 3).CopyTo(new Span<float>(videoHeader.ColorRangeMax, 3));
     _videoHeader = videoHeader;
 
     // cache compression settings
     if (SettingsDialog.Properties.QoirCompression && EncoderSupport.QoirLib)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Qoir;
-      _videoDataPoolMaxSize = (int)((info->width * info->height * 4)); // this buffer will only be used if compression actually reduced the frame size
+      _videoDataPoolMaxSize = (int)((width * height * 4)); // this buffer will only be used if compression actually reduced the frame size
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
@@ -137,7 +138,7 @@ public class BeamSender
       _jpegColorspace = EncoderSupport.ObsToJpegColorSpace(format);
       _jpegYuv = EncoderSupport.FormatIsYuv(format);
       if (format == video_format.VIDEO_FORMAT_NV12) // NV12 is a special case, because it's already in YUV format, but the planes are interleaved
-        _i420PlaneInfo = Beam.GetPlaneInfo(video_format.VIDEO_FORMAT_I420, info->width, info->height);
+        _i420PlaneInfo = Beam.GetPlaneInfo(video_format.VIDEO_FORMAT_I420, width, height);
       _compressionThreshold = SettingsDialog.Properties.JpegCompressionLevel / 10.0;
     }
     else if (SettingsDialog.Properties.DensityCompression && EncoderSupport.DensityApi)
@@ -153,7 +154,7 @@ public class BeamSender
     else if (SettingsDialog.Properties.QoiCompression)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Qoi;
-      _videoDataPoolMaxSize = (int)((info->width * info->height * 5)); // QOI's theoretical max size for BGRA is 5x the size of the original image
+      _videoDataPoolMaxSize = (int)((width * height * 5)); // QOI's theoretical max size for BGRA is 5x the size of the original image
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
@@ -163,7 +164,7 @@ public class BeamSender
     {
       Qoy.Initialize();
       _videoHeader.Compression = Beam.CompressionTypes.Qoy;
-      _videoDataPoolMaxSize = Qoy.GetMaxSize((int)info->width, (int)info->height);
+      _videoDataPoolMaxSize = Qoy.GetMaxSize((int)width, (int)height);
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
@@ -180,7 +181,7 @@ public class BeamSender
     }
     _compressionThreadingSync = SettingsDialog.Properties.CompressionMainThread;
 
-    var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoPlaneInfo.DataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
+    var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoPlaneInfo.DataSize) * (fps_num / fps_den)) / 1024 / 1024) * 8;
     if (_videoHeader.Compression == Beam.CompressionTypes.None)
       Module.Log($"Video output feed initialized, theoretical uncompressed net bandwidth demand is {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
     else
