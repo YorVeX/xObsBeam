@@ -280,7 +280,7 @@ sealed class BeamSenderClient
 
                 // write audio frame data - need to slice audioFrame.Data, since the arrays we get from the shared ArrayPool are often bigger than what we requested
                 var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(audioFrame.Data)[..audioFrame.Header.DataSize], cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
-                ArrayPool<byte>.Shared.Return(audioFrame.Data); // return audio frame data to the memory pool
+                _audioDataPool.Return(audioFrame.Data); // return audio frame data to the memory pool
                 if (frameCycle >= fps)
                   Module.Log($"<{ClientId}> Sent {headerBytes} + {audioFrame.Header.DataSize} bytes of audio data, queue length: {audioFrameCount} ({_frameTimestampQueue.Count})", ObsLogLevel.Debug);
                 if (writeResult.IsCanceled || writeResult.IsCompleted)
@@ -419,7 +419,7 @@ sealed class BeamSenderClient
     var frame = new Beam.BeamAudioData(_audioHeader, _audioDataPool.Rent(_audioHeader.DataSize), timestamp); // get an audio data memory buffer from the pool, avoiding allocations
     new Span<byte>(audioData, frame.Header.DataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
 
-    _frameTimestampQueue.Enqueue(timestamp); // SendAudio is always called from a sync context, so for audio we can safely add to the queue here
+    _frameTimestampQueue.Enqueue(timestamp); // EnqueueAudio() is always called from a sync context, so we can safely add the timestamps to the queue here and have it in the right order
     _frames.AddOrUpdate(timestamp, frame, (key, oldValue) => frame);
     Interlocked.Increment(ref _audioFrameCount);
     _frameAvailable.Set();
