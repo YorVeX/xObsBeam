@@ -480,6 +480,7 @@ public class Beam
     // used by receivers
     public BeamVideoData(VideoHeader header, byte[] data, DateTime received, int renderDelayAverage)
     {
+      Type = header.Type;
       Header = header;
       Data = data;
       Timestamp = header.Timestamp;
@@ -491,6 +492,7 @@ public class Beam
     // used by senders
     public BeamVideoData(VideoHeader header, byte[] data, ulong timestamp)
     {
+      Type = header.Type;
       Header = header;
       Data = data;
       Timestamp = timestamp;
@@ -507,21 +509,25 @@ public class Beam
     public readonly ulong Timestamp { get; }
     public ulong AdjustedTimestamp { get; set; }
     public DateTime Received { get; }
+    public int RenderDelayAverage { get; }
 
     // used by receivers
-    public BeamAudioData(AudioHeader header, byte[] data, DateTime created)
+    public BeamAudioData(AudioHeader header, byte[] data, DateTime created, int renderDelayAverage)
     {
+      Type = header.Type;
       Header = header;
       Data = data;
       Frames = header.Frames;
       Timestamp = header.Timestamp;
       AdjustedTimestamp = Timestamp;
       Received = created;
+      RenderDelayAverage = renderDelayAverage;
     }
 
     // used by senders
     public BeamAudioData(AudioHeader header, byte[] data, uint frames, int dataSize, ulong timestamp)
     {
+      Type = header.Type;
       Header = header;
       DataSize = dataSize;
       Data = data;
@@ -687,6 +693,8 @@ public class Beam
     public speaker_layout Speakers;
     public uint Frames;
     public ulong Timestamp;
+    public int ReceiveDelay;
+    public int RenderDelay;
 
     public AudioHeader()
     {
@@ -730,6 +738,13 @@ public class Beam
       // read timestamp from the next 8 bytes in header
       reader.TryReadLittleEndian(out long timestamp);
       Timestamp = (ulong)timestamp;
+      if (Type == Type.AudioOnly)
+      {
+        // read int receive delay from the next 4 bytes in header
+        reader.TryReadLittleEndian(out ReceiveDelay);
+        // read int render delay from the next 4 bytes in header
+        reader.TryReadLittleEndian(out RenderDelay);
+      }
 
       // log the values that have been read
       // Module.Log($"Audio DataSize: {DataSize}, SampleRate: {SampleRate}, Frames: {Frames}, Format: {Format}, Speakers: {Speakers}, Timestamp: {Timestamp}", ObsLogLevel.Debug);
@@ -747,6 +762,21 @@ public class Beam
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Format); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Speakers); headerBytes += 4;
       BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(headerBytes, 8), timestamp); headerBytes += 8;
+      return headerBytes;
+    }
+
+    public int WriteTo(Span<byte> span, uint frames, int dataSize, ulong timestamp, int receiveDelay = 0, int renderDelay = 0)
+    {
+      int headerBytes = 0;
+      BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), (uint)Type); headerBytes += 4;
+      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), dataSize); headerBytes += 4;
+      BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), SampleRate); headerBytes += 4;
+      BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), frames); headerBytes += 4;
+      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Format); headerBytes += 4;
+      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Speakers); headerBytes += 4;
+      BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(headerBytes, 8), timestamp); headerBytes += 8;
+      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), receiveDelay); headerBytes += 4;
+      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), renderDelay); headerBytes += 4;
       return headerBytes;
     }
   }

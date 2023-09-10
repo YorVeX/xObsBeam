@@ -38,9 +38,11 @@ public class Source
   #endregion Class fields
 
   #region Source instance fields
+  public bool IsAudioOnly;
   readonly BeamReceiver BeamReceiver = new();
   IntPtr ContextPointer;
-  ulong CurrentTimestamp;
+  ulong CurrentVideoTimestamp;
+  ulong CurrentAudioTimestamp;
   int RenderDelayLimit;
   Beam.VideoPlaneInfo _videoPlaneInfo;
   int _audioBlockSize;
@@ -78,12 +80,13 @@ public class Source
     {
       filterInfo->id = (sbyte*)id;
       filterInfo->type = obs_source_type.OBS_SOURCE_TYPE_FILTER;
-      filterInfo->output_flags = ObsSource.OBS_SOURCE_ASYNC_VIDEO | ObsSource.OBS_SOURCE_CAP_DISABLED;
+      filterInfo->output_flags = ObsSource.OBS_SOURCE_ASYNC_VIDEO | ObsSource.OBS_SOURCE_AUDIO | ObsSource.OBS_SOURCE_CAP_DISABLED;
       filterInfo->get_name = &filter_get_name;
       filterInfo->create = &filter_create;
       filterInfo->destroy = &filter_destroy;
       filterInfo->get_properties = &filter_get_properties;
       filterInfo->filter_video = &filter_video;
+      filterInfo->filter_audio = &filter_audio;
       filterInfo->filter_remove = &filter_remove;
       ObsSource.obs_register_source_s(filterInfo, (nuint)sizeof(obs_source_info));
     }
@@ -447,7 +450,25 @@ public class Source
         filterContext->SourceId = ((Context*)GetSource(parentSource).ContextPointer)->SourceId;
     }
     if (filterContext->SourceId > 0)
-      _sourceList[filterContext->SourceId].CurrentTimestamp = frame->timestamp;
+      _sourceList[filterContext->SourceId].CurrentVideoTimestamp = frame->timestamp;
+    return frame;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe obs_audio_data* filter_audio(void* data, obs_audio_data* frame)
+  {
+    // Module.Log("filter_audio called with timestamp " + frame->timestamp, ObsLogLevel.Debug);
+    var filterContext = (FilterContext*)data;
+    if (filterContext->SourceId == 0)
+    {
+      //TODO: move this initialization to filter_add as soon as an OBS (probably the next after 29.1.3) with this new callback has been released: https://github.com/obsproject/obs-studio/commit/a494cf5ce493b77af682e4c4e2a64302d2ecc393
+      // background: obs_filter_get_parent() is not guaranteed to work in filter_create, but it should be in filter_add, and then we don't need this check on every frame anymore
+      var parentSource = Obs.obs_filter_get_parent(filterContext->FilterSource);
+      if (parentSource != null)
+        filterContext->SourceId = ((Context*)GetSource(parentSource).ContextPointer)->SourceId;
+    }
+    if (filterContext->SourceId > 0)
+      _sourceList[filterContext->SourceId].CurrentAudioTimestamp = frame->timestamp;
     return frame;
   }
 
@@ -464,7 +485,8 @@ public class Source
     }
     if (filterContext->SourceId > 0)
     {
-      _sourceList[filterContext->SourceId].CurrentTimestamp = 0;
+      _sourceList[filterContext->SourceId].CurrentVideoTimestamp = 0;
+      _sourceList[filterContext->SourceId].CurrentAudioTimestamp = 0;
       filterContext->SourceId = 0;
     }
   }
@@ -783,16 +805,19 @@ public class Source
     var thisSource = GetSource(data);
     if (thisSource != null)
     {
-      thisSource.BeamReceiver?.SetLastOutputVideoFrameTimestamp(thisSource.CurrentTimestamp);
+      if (thisSource.IsAudioOnly)
+        thisSource.BeamReceiver?.SetLastOutputFrameTimestamp(thisSource.CurrentAudioTimestamp);
+      else
+        thisSource.BeamReceiver?.SetLastOutputFrameTimestamp(thisSource.CurrentVideoTimestamp);
       if (thisSource.BeamReceiver?.FrameBuffer != null)
       {
         Task.Run(() =>
         {
           foreach (var frame in thisSource.BeamReceiver.FrameBuffer.GetNextFrames(seconds))
           {
-            if (frame.Type == Beam.Type.Video)
+            if (frame.Type is Beam.Type.Video or Beam.Type.VideoOnly)
               thisSource.VideoFrameReceivedEventHandler(thisSource, (Beam.BeamVideoData)frame);
-            else if (frame.Type == Beam.Type.Audio)
+            else if (frame.Type is Beam.Type.Audio or Beam.Type.AudioOnly)
               thisSource.AudioFrameReceivedEventHandler(thisSource, (Beam.BeamAudioData)frame);
           }
         });
@@ -1021,7 +1046,7 @@ public class Source
     // did the frame format or size change?
     if ((context->Video->width != videoFrame.Header.Width) || (context->Video->height != videoFrame.Header.Height) || (context->Video->format != videoFrame.Header.Format) || (context->Video->full_range != videoFrame.Header.FullRange))
     {
-      Module.Log($"VideoFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Video->format} {(Convert.ToBoolean(context->Video->full_range) ? "FULL" : "LIMITED")} {context->Video->width}x{context->Video->height} -> {videoFrame.Header.Format} {(Convert.ToBoolean(videoFrame.Header.FullRange) ? "FULL" : "LIMITED")} {videoFrame.Header.Width}x{videoFrame.Header.Height})", ObsLogLevel.Debug);
+      Module.Log($"VideoFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Video->format} {videoFrame.Type} {(Convert.ToBoolean(context->Video->full_range) ? "FULL" : "LIMITED")} {context->Video->width}x{context->Video->height} -> {videoFrame.Header.Format} {(Convert.ToBoolean(videoFrame.Header.FullRange) ? "FULL" : "LIMITED")} {videoFrame.Header.Width}x{videoFrame.Header.Height})", ObsLogLevel.Debug);
 
       // initialize the frame base settings with the new frame format and size
       context->Video->format = videoFrame.Header.Format;
@@ -1039,6 +1064,7 @@ public class Source
       new ReadOnlySpan<float>(videoFrame.Header.ColorRangeMin, 3).CopyTo(new Span<float>(context->Video->color_range_min, 3));
       new ReadOnlySpan<float>(videoFrame.Header.ColorRangeMax, 3).CopyTo(new Span<float>(context->Video->color_range_max, 3));
       Module.Log("VideoFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
+      IsAudioOnly = false;
     }
 
     if (_videoPlaneInfo.Count == 0) // unsupported format
@@ -1074,7 +1100,7 @@ public class Source
     // did the frame format or size change?
     if ((context->Audio->samples_per_sec != audioFrame.Header.SampleRate) || (context->Audio->speakers != audioFrame.Header.Speakers) || (context->Audio->format != audioFrame.Header.Format))
     {
-      Module.Log($"AudioFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Audio->format} {context->Audio->samples_per_sec} {context->Audio->speakers} {context->Audio->frames} -> {audioFrame.Header.Format} {audioFrame.Header.SampleRate} {audioFrame.Header.Speakers} {audioFrame.Header.Frames})", ObsLogLevel.Debug);
+      Module.Log($"AudioFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Audio->format} {audioFrame.Type} {context->Audio->samples_per_sec} {context->Audio->speakers} {context->Audio->frames} -> {audioFrame.Header.Format} {audioFrame.Header.SampleRate} {audioFrame.Header.Speakers} {audioFrame.Header.Frames})", ObsLogLevel.Debug);
 
       // initialize the frame base settings with the new frame format and size
       context->Audio->samples_per_sec = audioFrame.Header.SampleRate;
@@ -1083,8 +1109,14 @@ public class Source
       // calculate the plane size for the current frame format and size
       Beam.GetAudioPlaneInfo(audioFrame.Header.Format, audioFrame.Header.Speakers, out _audioPlanes, out _audioBlockSize);
       Module.Log("AudioFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
+      IsAudioOnly = (audioFrame.Header.Type == Beam.Type.AudioOnly);
     }
 
+    if (IsAudioOnly)
+    {
+      context->ReceiveDelay = audioFrame.Header.ReceiveDelay;
+      context->RenderDelay = audioFrame.RenderDelayAverage;
+    }
     context->Audio->timestamp = audioFrame.AdjustedTimestamp;
     context->Audio->frames = audioFrame.Header.Frames;
 

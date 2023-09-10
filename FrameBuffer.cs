@@ -76,7 +76,7 @@ public class FrameBuffer
   {
     lock (_frameListLock)
     {
-      if (frame.Type == Beam.Type.Video)
+      if (frame.Type is Beam.Type.Video or Beam.Type.VideoOnly)
       {
         _lastRenderDelay = ((Beam.BeamVideoData)frame).RenderDelayAverage; // need to get this from the newly added frames so that we work with the most recent value
         _videoFrameCount++;
@@ -133,7 +133,7 @@ public class FrameBuffer
       var unusedVideoFrames = new List<Beam.BeamVideoData>();
       foreach (var frame in _frameList)
       {
-        if (frame.Type == Beam.Type.Video)
+        if (frame.Type is Beam.Type.Video or Beam.Type.VideoOnly)
           _arrayPool.Return(((Beam.BeamVideoData)frame).Data); // don't leak those unused frames
       }
       _frameList.Clear();
@@ -215,7 +215,7 @@ public class FrameBuffer
         if (_timestampAdjustment != 0)
           frame.AdjustedTimestamp = (ulong)((long)frame.Timestamp + _timestampAdjustment);
 
-        if (frame.Type == Beam.Type.Video)
+        if (frame.Type is Beam.Type.Video or Beam.Type.VideoOnly)
         {
           if (foundEnoughVideoFrames)
             break;
@@ -240,7 +240,7 @@ public class FrameBuffer
             result.Add(frame);
           }
         }
-        else if (frame.Type == Beam.Type.Audio)
+        else if (frame.Type is Beam.Type.Audio or Beam.Type.AudioOnly)
         {
           debugAudioFrameCount++;
           if (!adjustedFrames && (_lastAudioTimestamp > 0) && ((long)(frame.AdjustedTimestamp - _lastAudioTimestamp) > (long)_maxAudioTimestampDeviation))

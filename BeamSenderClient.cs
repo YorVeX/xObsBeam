@@ -26,7 +26,7 @@ sealed class BeamSenderClient
   Beam.AudioHeader _audioHeader;
   readonly ArrayPool<byte>? _audioDataPool;
   DateTime _lastFrameTime = DateTime.MaxValue;
-  ulong _lastVideoTimestamp;
+  ulong _lastSentTimestamp;
   readonly ManualResetEvent _sendLoopExited = new(false);
 
   public string ClientId { get; } = "";
@@ -61,7 +61,7 @@ sealed class BeamSenderClient
       _stream = _pipeStream;
     else
       throw new InvalidOperationException("No socket or pipe stream available.");
-    _lastVideoTimestamp = 0;
+    _lastSentTimestamp = 0;
     _ = Task.Run(() => SendLoopAsync(PipeWriter.Create(_stream), _cancellationSource.Token));
     _ = Task.Run(() => ReceiveLoopAsync(PipeReader.Create(_stream), _cancellationSource.Token));
   }
@@ -140,7 +140,7 @@ sealed class BeamSenderClient
         _lastFrameTime = DateTime.UtcNow;
         if (receiveTimestampType == Beam.ReceiveTimestampTypes.Receive)
         {
-          var lastSentTimestamp = Interlocked.Read(ref _lastVideoTimestamp);
+          var lastSentTimestamp = Interlocked.Read(ref _lastSentTimestamp);
           if (lastSentTimestamp > timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
           {
             var receiveDelayMs = (lastSentTimestamp - timestamp) / 1_000_000;
@@ -150,7 +150,7 @@ sealed class BeamSenderClient
         }
         else if (receiveTimestampType == Beam.ReceiveTimestampTypes.Render)
         {
-          var lastSentTimestamp = Interlocked.Read(ref _lastVideoTimestamp);
+          var lastSentTimestamp = Interlocked.Read(ref _lastSentTimestamp);
           if (lastSentTimestamp > timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
           {
             var renderDelayMs = (lastSentTimestamp - timestamp) / 1_000_000;
@@ -229,7 +229,7 @@ sealed class BeamSenderClient
                 // write video header data
                 var headerBytes = videoFrame.Header.WriteTo(pipeWriter.GetSpan(Beam.VideoHeader.VideoHeaderDataSize), videoFrame.Timestamp, receiveDelayMs, renderDelayMs);
                 pipeWriter.Advance(headerBytes);
-                Interlocked.Exchange(ref _lastVideoTimestamp, videoFrame.Timestamp);
+                Interlocked.Exchange(ref _lastSentTimestamp, videoFrame.Timestamp);
 
                 // write video frame data - need to slice videoFrame.Data, since the arrays we get from _videoDataPool are often bigger than what we requested
                 var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(videoFrame.Data)[..videoFrame.Header.DataSize], cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
@@ -280,7 +280,14 @@ sealed class BeamSenderClient
               try
               {
                 // write audio header data
-                var headerBytes = audioFrame.Header.WriteTo(pipeWriter.GetSpan(Beam.AudioHeader.AudioHeaderDataSize), audioFrame.Frames, audioFrame.DataSize, audioFrame.Timestamp);
+                int headerBytes;
+                if (_audioHeader.Type == Beam.Type.AudioOnly) // for audio only feeds the delay information is written to the audio instead of the video header
+                {
+                  Interlocked.Exchange(ref _lastSentTimestamp, audioFrame.Timestamp);
+                  headerBytes = audioFrame.Header.WriteTo(pipeWriter.GetSpan(Beam.AudioHeader.AudioHeaderDataSize), audioFrame.Frames, audioFrame.DataSize, audioFrame.Timestamp, (int)Interlocked.Read(ref _receiveDelayMs), (int)Interlocked.Read(ref _renderDelayMs));
+                }
+                else
+                  headerBytes = audioFrame.Header.WriteTo(pipeWriter.GetSpan(Beam.AudioHeader.AudioHeaderDataSize), audioFrame.Frames, audioFrame.DataSize, audioFrame.Timestamp);
                 pipeWriter.Advance(headerBytes);
 
                 // write audio frame data - need to slice audioFrame.Data, since the arrays we get from the shared ArrayPool are often bigger than what we requested

@@ -22,7 +22,7 @@ public static class Output
   static unsafe video_format _conversionVideoFormat = video_format.VIDEO_FORMAT_NONE;
   static ulong _videoFrameCycleCounter;
   static ulong _audioFrameCycleCounter;
-  static readonly BeamSender _beamSender = new();
+  static readonly BeamSender _beamSender = new(Beam.SenderTypes.Output);
   static bool _firstFrame = true;
 
   #region Helper methods
@@ -174,12 +174,12 @@ public static class Output
 
   private static void StartSenderIfPossible()
   {
-    if (_beamSender.CanStart(Beam.SenderTypes.Output))
+    if (_beamSender.CanStart)
     {
       if (SettingsDialog.Properties.UsePipe)
-        _beamSender.Start(Beam.SenderTypes.Output, SettingsDialog.Properties.Identifier, SettingsDialog.Properties.Identifier);
+        _beamSender.Start(SettingsDialog.Properties.Identifier, SettingsDialog.Properties.Identifier);
       else
-        _beamSender.Start(Beam.SenderTypes.Output, SettingsDialog.Properties.Identifier, SettingsDialog.Properties.NetworkInterfaceAddress, SettingsDialog.Properties.Port, SettingsDialog.Properties.AutomaticPort);
+        _beamSender.Start(SettingsDialog.Properties.Identifier, SettingsDialog.Properties.NetworkInterfaceAddress, SettingsDialog.Properties.Port, SettingsDialog.Properties.AutomaticPort);
     }
   }
 

@@ -31,13 +31,14 @@ public class Filter
   public bool IsActive { get; private set; }
   bool _isFirstVideoFrame = true;
   bool _isFirstAudioFrame = true;
-  readonly BeamSender _beamSender = new();
+  readonly BeamSender _beamSender;
   DateTime _lastFrame;
   readonly Beam.SenderTypes _filterType;
   #endregion Instance fields
 
   public unsafe Filter(Context* contextPointer, Beam.SenderTypes filterType)
   {
+    _beamSender = new BeamSender(filterType);
     Module.Log($"{filterType} constructor", ObsLogLevel.Debug);
     _filterType = filterType;
     ContextPointer = contextPointer;
@@ -65,26 +66,26 @@ public class Filter
 
   public void Enable()
   {
-    Module.Log($"{UniquePrefix} {_filterType} Enable(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart(_filterType)}", ObsLogLevel.Debug);
+    Module.Log($"{UniquePrefix} {_filterType} Enable(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart}", ObsLogLevel.Debug);
     IsEnabled = true;
   }
 
   public void Disable()
   {
-    Module.Log($"{UniquePrefix} {_filterType} Disable(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart(_filterType)}", ObsLogLevel.Debug);
+    Module.Log($"{UniquePrefix} {_filterType} Disable(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart}", ObsLogLevel.Debug);
     IsEnabled = false;
     StopSender();
   }
 
   private void StartSenderIfPossible()
   {
-    Module.Log($"{UniquePrefix} {_filterType} StartSenderIfPossible(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart(_filterType)}", ObsLogLevel.Debug);
-    if (_beamSender.CanStart(_filterType))
+    Module.Log($"{UniquePrefix} {_filterType} StartSenderIfPossible(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart}", ObsLogLevel.Debug);
+    if (_beamSender.CanStart)
     {
       if (Properties.UsePipe)
-        _beamSender.Start(_filterType, Properties.Identifier, Properties.Identifier);
+        _beamSender.Start(Properties.Identifier, Properties.Identifier);
       else
-        _beamSender.Start(_filterType, Properties.Identifier, Properties.NetworkInterfaceAddress, Properties.Port, Properties.AutomaticPort);
+        _beamSender.Start(Properties.Identifier, Properties.NetworkInterfaceAddress, Properties.Port, Properties.AutomaticPort);
       IsActive = true;
     }
   }
@@ -163,6 +164,7 @@ public class Filter
     if (!IsEnabled)
       return;
 
+    _lastFrame = DateTime.UtcNow;
     if (_isFirstAudioFrame) // this is the first frame since the last output (re)start, get audio info
     {
       _isFirstAudioFrame = false;
@@ -240,17 +242,30 @@ public class Filter
       sourceInfo.filter_video = &filter_video;
       ObsSource.obs_register_source_s(&sourceInfo, (nuint)sizeof(obs_source_info));
     }
+    sourceInfo = new obs_source_info();
+    fixed (byte* id = "Beam Receiver Filter Audio"u8)
+    {
+      sourceInfo.id = (sbyte*)id;
+      sourceInfo.type = obs_source_type.OBS_SOURCE_TYPE_FILTER;
+      sourceInfo.output_flags = ObsSource.OBS_SOURCE_AUDIO;
+      sourceInfo.get_name = &filter_audio_get_name;
+      sourceInfo.create = &filter_create_audio;
+      sourceInfo.filter_remove = &filter_remove;
+      sourceInfo.destroy = &filter_destroy;
+      sourceInfo.get_defaults = &filter_get_defaults_audio;
+      sourceInfo.get_properties = &filter_get_properties;
+      sourceInfo.update = &filter_update;
+      sourceInfo.save = &filter_save;
+      sourceInfo.video_tick = &filter_video_tick;
+      sourceInfo.filter_audio = &filter_audio;
+      ObsSource.obs_register_source_s(&sourceInfo, (nuint)sizeof(obs_source_info));
+    }
   }
 
   private static unsafe Filter GetFilter(void* data)
   {
     var context = (Context*)data;
     return _filterList[(*context).FilterId];
-  }
-
-  private static unsafe Filter GetFilter(obs_data* settings)
-  {
-    return _filterList.First(x => ((x.Value.ContextPointer)->Settings == settings)).Value;
   }
   #endregion Helper methods
 
@@ -268,6 +283,14 @@ public class Filter
   {
     Module.Log("filter_video_get_name called", ObsLogLevel.Debug);
     fixed (byte* filterName = "Beam Receiver Filter (Video only)"u8)
+      return (sbyte*)filterName;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe sbyte* filter_audio_get_name(void* data)
+  {
+    Module.Log("filter_audio_get_name called", ObsLogLevel.Debug);
+    fixed (byte* filterName = "Beam Receiver Filter (Audio only)"u8)
       return (sbyte*)filterName;
   }
 
@@ -299,6 +322,23 @@ public class Filter
     context->ParentSource = null; // has to be detected later from specific callbacks
 
     var thisFilter = new Filter(context, Beam.SenderTypes.FilterVideo);
+    _filterList.TryAdd(context->FilterId, thisFilter);
+    thisFilter.ContextPointer = context;
+
+    return context;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void* filter_create_audio(obs_data* settings, obs_source* source)
+  {
+    Module.Log("filter_create_audio called", ObsLogLevel.Debug);
+    Context* context = (Context*)Marshal.AllocHGlobal(sizeof(Context));
+    context->FilterId = ++_filterCount;
+    context->Settings = settings;
+    context->Source = source;
+    context->ParentSource = null; // has to be detected later from specific callbacks
+
+    var thisFilter = new Filter(context, Beam.SenderTypes.FilterAudio);
     _filterList.TryAdd(context->FilterId, thisFilter);
     thisFilter.ContextPointer = context;
 
@@ -342,6 +382,13 @@ public class Filter
   {
     Module.Log("filter_get_defaults_video called");
     BeamSenderProperties.settings_get_defaults(Beam.SenderTypes.FilterVideo, settings);
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void filter_get_defaults_audio(obs_data* settings)
+  {
+    Module.Log("filter_get_defaults_audio called");
+    BeamSenderProperties.settings_get_defaults(Beam.SenderTypes.FilterAudio, settings);
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]

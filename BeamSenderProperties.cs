@@ -553,12 +553,12 @@ public class BeamSenderProperties
     {
       if (propertiesType == Beam.SenderTypes.Output)
       {
-        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(false));
+        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(false)); // an active output blocks several OBS settings, enabling this should be a conscious decision by the user
         ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierOutputDefaultText);
       }
       else
       {
-        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(true));
+        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(true)); // a filter is not blocking anything and disabling it should be rarely necessary, so it can be enabled by default
         if (propertiesType == Beam.SenderTypes.FilterAudioVideo)
           ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierFilterAvDefaultText);
         else if (propertiesType == Beam.SenderTypes.FilterVideo)

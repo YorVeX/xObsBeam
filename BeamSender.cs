@@ -31,7 +31,7 @@ public class BeamSender
   int _videoDataPoolMaxSize;
   private int _videoFramesProcessed;
   private int _videoFramesCompressed;
-  Beam.SenderTypes _senderType;
+  readonly Beam.SenderTypes _senderType;
   Beam.VideoHeader _videoHeader;
   Beam.AudioHeader _audioHeader;
   Beam.VideoPlaneInfo _videoPlaneInfo;
@@ -51,6 +51,11 @@ public class BeamSender
   bool _compressionThreadingSync = true;
   unsafe qoir_encode_options_struct* _qoirEncodeOptions = null;
   readonly PeerDiscovery _discoveryServer = new();
+
+  public BeamSender(Beam.SenderTypes senderType)
+  {
+    _senderType = senderType;
+  }
 
   public unsafe bool SetVideoParameters(BeamSenderProperties properties, video_format format, video_format conversionVideoFormat, uint width, uint height, uint fps_num, uint fps_den, byte full_range, float* color_matrix, float* color_range_min, float* color_range_max, uint* linesize, video_data._data_e__FixedBuffer data)
   {
@@ -206,27 +211,30 @@ public class BeamSender
       Speakers = speakers,
       Frames = frames,
     };
+    Module.Log($"{_audioHeader.Type} output feed initialized with {_audioPlanes} audio planes and a block size of {_audioBlockSize} bytes.", ObsLogLevel.Debug);
   }
 
-  public bool CanStart(Beam.SenderTypes senderType)
+  public bool CanStart
   {
-    if (senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo)
-      return ((_videoPlaneInfo.DataSize > 0) && (_audioBlockSize > 0));
-    if (senderType == Beam.SenderTypes.FilterVideo)
-      return (_videoPlaneInfo.DataSize > 0);
-    if (senderType == Beam.SenderTypes.FilterAudio)
-      return (_audioBlockSize > 0);
-    return false;
+    get
+    {
+      if (_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo)
+        return ((_videoPlaneInfo.DataSize > 0) && (_audioBlockSize > 0));
+      if (_senderType == Beam.SenderTypes.FilterVideo)
+        return (_videoPlaneInfo.DataSize > 0);
+      if (_senderType == Beam.SenderTypes.FilterAudio)
+        return (_audioBlockSize > 0);
+      return false;
+    }
   }
 
-  public async void Start(Beam.SenderTypes senderType, string identifier, IPAddress localAddr, int port, bool automaticPort)
+  public async void Start(string identifier, IPAddress localAddr, int port, bool automaticPort)
   {
-    if ((senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterVideo) && (_videoPlaneInfo.DataSize == 0))
+    if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterVideo) && (_videoPlaneInfo.DataSize == 0))
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
-    if ((senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterAudio) && (_audioBlockSize == 0))
+    if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterAudio) && (_audioBlockSize == 0))
       throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
 
-    _senderType = senderType;
     int failCount = 0;
     while (failCount < 10)
     {
@@ -320,14 +328,13 @@ public class BeamSender
     Module.Log($"Listener stopped.", ObsLogLevel.Info);
   }
 
-  public async void Start(Beam.SenderTypes senderType, string identifier, string pipeName)
+  public async void Start(string identifier, string pipeName)
   {
-    if ((senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterVideo) && (_videoPlaneInfo.DataSize == 0))
+    if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterVideo) && (_videoPlaneInfo.DataSize == 0))
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
-    if ((senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterAudio) && (_audioBlockSize == 0))
+    if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterAudio) && (_audioBlockSize == 0))
       throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
 
-    _senderType = senderType;
     _pipeName = pipeName;
 
     var pipeStream = new NamedPipeServerStream(_pipeName, PipeDirection.InOut, 10, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
