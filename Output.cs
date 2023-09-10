@@ -22,7 +22,7 @@ public static class Output
   static unsafe video_format _conversionVideoFormat = video_format.VIDEO_FORMAT_NONE;
   static ulong _videoFrameCycleCounter;
   static ulong _audioFrameCycleCounter;
-  static readonly BeamSender _beamSender = new();
+  static readonly BeamSender _beamSender = new(Beam.SenderTypes.Output);
   static bool _firstFrame = true;
 
   #region Helper methods
@@ -96,8 +96,7 @@ public static class Output
   public static unsafe sbyte* output_get_name(void* data)
   {
     Module.Log("output_get_name called", ObsLogLevel.Debug);
-    var asciiBytes = "Beam Output"u8;
-    fixed (byte* outputName = asciiBytes)
+    fixed (byte* outputName = "Beam Sender Output"u8)
       return (sbyte*)outputName;
   }
 
@@ -137,7 +136,7 @@ public static class Output
     _firstFrame = true;
 
     // color format compatibility check
-    var requiredVideoFormatConversion = SettingsDialog.GetRequiredVideoFormatConversion();
+    var requiredVideoFormatConversion = SettingsDialog.Properties.GetRequiredVideoFormatConversion();
     video_scale_info* videoScaleInfo = null;
     if (requiredVideoFormatConversion != video_format.VIDEO_FORMAT_NONE)
     {
@@ -173,14 +172,14 @@ public static class Output
     _conversionVideoFormat = video_format.VIDEO_FORMAT_NONE;
   }
 
-  private static void startSenderIfPossible()
+  private static void StartSenderIfPossible()
   {
     if (_beamSender.CanStart)
     {
-      if (SettingsDialog.UsePipe)
-        _beamSender.Start(SettingsDialog.Identifier, SettingsDialog.Identifier);
+      if (SettingsDialog.Properties.UsePipe)
+        _beamSender.Start(SettingsDialog.Properties.Identifier, SettingsDialog.Properties.Identifier);
       else
-        _beamSender.Start(SettingsDialog.Identifier, SettingsDialog.NetworkInterfaceAddress);
+        _beamSender.Start(SettingsDialog.Properties.Identifier, SettingsDialog.Properties.NetworkInterfaceAddress, SettingsDialog.Properties.Port, SettingsDialog.Properties.AutomaticPort);
     }
   }
 
@@ -200,16 +199,20 @@ public static class Output
         _videoInfo->range = videoScaleInfo->range;
         // don't set format, otherwise the info about manual conversions like from NV12 to I420 for JPEG will be lost
       }
+
+      var video = ObsBmem.bzalloc<obs_source_frame>(); // only using this to store the color_matrix, color_range_min and color_range_max fields
+      ObsVideo.video_format_get_parameters_for_format(_videoInfo->colorspace, _videoInfo->range, _videoInfo->format, video->color_matrix, video->color_range_min, video->color_range_max);
       try
       {
-        if (_beamSender.SetVideoParameters(_videoInfo, _conversionVideoFormat, frame->linesize, frame->data))
-          startSenderIfPossible();
+        if (_beamSender.SetVideoParameters(SettingsDialog.Properties, _videoInfo->format, _conversionVideoFormat, _videoInfo->width, _videoInfo->height, _videoInfo->fps_num, _videoInfo->fps_den, Convert.ToByte(_videoInfo->range == video_range_type.VIDEO_RANGE_FULL), video->color_matrix, video->color_range_min, video->color_range_max, frame->linesize, frame->data))
+          StartSenderIfPossible();
       }
       catch (Exception ex)
       {
         Module.Log($"output_raw_video(): {ex.GetType().Name} in BeamSender initialization: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
         throw;
       }
+      ObsBmem.bfree(video);
     }
 
     _beamSender.SendVideo(frame->timestamp, frame->data.e0);
@@ -230,8 +233,8 @@ public static class Output
       _audioInfo = ObsAudio.audio_output_get_info(Obs.obs_output_audio(_outputData.Output));
       try
       {
-        _beamSender.SetAudioParameters(_audioInfo, frames->frames);
-        startSenderIfPossible();
+        _beamSender.SetAudioParameters(_audioInfo->format, _audioInfo->speakers, _audioInfo->samples_per_sec, frames->frames);
+        StartSenderIfPossible();
       }
       catch (Exception ex)
       {
@@ -240,7 +243,7 @@ public static class Output
       }
     }
 
-    _beamSender.SendAudio(frames->timestamp, frames->data.e0);
+    _beamSender.SendAudio(frames->timestamp, frames->frames, frames->data.e0);
     _audioFrameCycleCounter++;
     if ((_audioFrameCycleCounter > 5) && (_audioFrameCycleCounter > Obs.obs_get_active_fps())) // do this only roughly once per second
     {

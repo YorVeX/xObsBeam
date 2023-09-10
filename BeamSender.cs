@@ -31,12 +31,13 @@ public class BeamSender
   int _videoDataPoolMaxSize;
   private int _videoFramesProcessed;
   private int _videoFramesCompressed;
+  readonly Beam.SenderTypes _senderType;
   Beam.VideoHeader _videoHeader;
   Beam.AudioHeader _audioHeader;
-  Beam.PlaneInfo _videoPlaneInfo;
-  Beam.PlaneInfo _i420PlaneInfo;
-  int _audioDataSize;
-  int _audioBytesPerSample;
+  Beam.VideoPlaneInfo _videoPlaneInfo;
+  Beam.VideoPlaneInfo _i420PlaneInfo;
+  int _audioPlanes;
+  int _audioBlockSize;
 
   // cached compression settings
   int _jpegCompressionQuality = 90;
@@ -51,7 +52,12 @@ public class BeamSender
   unsafe qoir_encode_options_struct* _qoirEncodeOptions = null;
   readonly PeerDiscovery _discoveryServer = new();
 
-  public unsafe bool SetVideoParameters(video_output_info* info, video_format conversionVideoFormat, uint* linesize, video_data._data_e__FixedBuffer data)
+  public BeamSender(Beam.SenderTypes senderType)
+  {
+    _senderType = senderType;
+  }
+
+  public unsafe bool SetVideoParameters(BeamSenderProperties properties, video_format format, video_format conversionVideoFormat, uint width, uint height, uint fps_num, uint fps_den, byte full_range, float* color_matrix, float* color_range_min, float* color_range_max, uint* linesize, video_data._data_e__FixedBuffer data)
   {
     // reset some variables
     _videoFramesProcessed = 0;
@@ -68,12 +74,11 @@ public class BeamSender
       _qoirEncodeOptions = null;
     }
 
-    var format = info->format;
     if (conversionVideoFormat != video_format.VIDEO_FORMAT_NONE)
       format = conversionVideoFormat;
 
     // get the plane information for the current frame format and size
-    _videoPlaneInfo = Beam.GetPlaneInfo(format, info->width, info->height);
+    _videoPlaneInfo = Beam.GetVideoPlaneInfo(format, width, height);
     if (_videoPlaneInfo.Count == 0) // unsupported format, will also be logged by the GetPlaneInfo() function
       return false;
 
@@ -85,31 +90,33 @@ public class BeamSender
       if (pointerOffset != (IntPtr)data[planeIndex])
       {
         // either GetPlaneInfo() returned wrong information or the video data plane pointers are not contiguous in memory (which we currently rely on)
-        Module.Log($"Video data plane pointer for {info->format} plane {planeIndex} with resolution {info->width}x{info->height} has a difference of {pointerOffset - (IntPtr)data[planeIndex]} ({(IntPtr)data[planeIndex] - (IntPtr)data.e0} instead of {pointerOffset - (IntPtr)data.e0}).", ObsLogLevel.Warning);
+        Module.Log($"Video data plane pointer for {format} plane {planeIndex} with resolution {width}x{height} has a difference of {pointerOffset - (IntPtr)data[planeIndex]} ({(IntPtr)data[planeIndex] - (IntPtr)data.e0} instead of {pointerOffset - (IntPtr)data.e0}).", ObsLogLevel.Warning);
       }
     }
 
     // create the video header with current frame base info as a template for every frame - in most cases only the timestamp changes so that this instance can be reused without copies of it being created
     var videoHeader = new Beam.VideoHeader()
     {
-      Type = Beam.Type.Video,
+      Type = (_senderType == Beam.SenderTypes.FilterVideo ? Beam.Type.VideoOnly : Beam.Type.Video),
       DataSize = (int)_videoPlaneInfo.DataSize,
-      Width = info->width,
-      Height = info->height,
-      Fps = info->fps_num,
-      FpsDenominator = info->fps_den,
+      Width = width,
+      Height = height,
+      Fps = fps_num,
+      FpsDenominator = fps_den,
       Format = format,
-      Range = info->range,
-      Colorspace = info->colorspace,
+      FullRange = full_range,
       Compression = Beam.CompressionTypes.None,
     };
+    new ReadOnlySpan<float>(color_matrix, 16).CopyTo(new Span<float>(videoHeader.ColorMatrix, 16));
+    new ReadOnlySpan<float>(color_range_min, 3).CopyTo(new Span<float>(videoHeader.ColorRangeMin, 3));
+    new ReadOnlySpan<float>(color_range_max, 3).CopyTo(new Span<float>(videoHeader.ColorRangeMax, 3));
     _videoHeader = videoHeader;
 
     // cache compression settings
-    if (SettingsDialog.QoirCompression && EncoderSupport.QoirLib)
+    if (properties.QoirCompression && EncoderSupport.QoirLib)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Qoir;
-      _videoDataPoolMaxSize = (int)((info->width * info->height * 4)); // this buffer will only be used if compression actually reduced the frame size
+      _videoDataPoolMaxSize = (int)((width * height * 4)); // this buffer will only be used if compression actually reduced the frame size
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
@@ -120,12 +127,12 @@ public class BeamSender
       _qoirEncodeOptions->lossiness = 0;
       _qoirEncodeOptions->contextual_malloc_func = &EncoderSupport.QoirMAlloc; // important to use our own memory allocator, so that we can also free the memory later, also it's pooled memory
       _qoirEncodeOptions->contextual_free_func = &EncoderSupport.QoirFree;
-      _compressionThreshold = SettingsDialog.QoirCompressionLevel / 10.0;
+      _compressionThreshold = properties.QoirCompressionLevel / 10.0;
     }
-    else if (SettingsDialog.JpegCompression && EncoderSupport.LibJpegTurbo)
+    else if (properties.JpegCompression && EncoderSupport.LibJpegTurbo)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Jpeg;
-      _jpegCompressionQuality = SettingsDialog.JpegCompressionQuality;
+      _jpegCompressionQuality = properties.JpegCompressionQuality;
       _videoDataPoolMaxSize = (int)_videoPlaneInfo.DataSize;
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
@@ -137,50 +144,50 @@ public class BeamSender
       _jpegColorspace = EncoderSupport.ObsToJpegColorSpace(format);
       _jpegYuv = EncoderSupport.FormatIsYuv(format);
       if (format == video_format.VIDEO_FORMAT_NV12) // NV12 is a special case, because it's already in YUV format, but the planes are interleaved
-        _i420PlaneInfo = Beam.GetPlaneInfo(video_format.VIDEO_FORMAT_I420, info->width, info->height);
-      _compressionThreshold = SettingsDialog.JpegCompressionLevel / 10.0;
+        _i420PlaneInfo = Beam.GetVideoPlaneInfo(video_format.VIDEO_FORMAT_I420, width, height);
+      _compressionThreshold = properties.JpegCompressionLevel / 10.0;
     }
-    else if (SettingsDialog.DensityCompression && EncoderSupport.DensityApi)
+    else if (properties.DensityCompression && EncoderSupport.DensityApi)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Density;
-      _densityAlgorithm = (DENSITY_ALGORITHM)SettingsDialog.DensityCompressionStrength;
+      _densityAlgorithm = (DENSITY_ALGORITHM)properties.DensityCompressionStrength;
       _videoDataPoolMaxSize = (int)Density.density_compress_safe_size((ulong)videoHeader.DataSize);
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
-      _compressionThreshold = SettingsDialog.DensityCompressionLevel / 10.0;
+      _compressionThreshold = properties.DensityCompressionLevel / 10.0;
     }
-    else if (SettingsDialog.QoiCompression)
+    else if (properties.QoiCompression)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Qoi;
-      _videoDataPoolMaxSize = (int)((info->width * info->height * 5)); // QOI's theoretical max size for BGRA is 5x the size of the original image
+      _videoDataPoolMaxSize = (int)((width * height * 5)); // QOI's theoretical max size for BGRA is 5x the size of the original image
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
-      _compressionThreshold = SettingsDialog.QoiCompressionLevel / 10.0;
+      _compressionThreshold = properties.QoiCompressionLevel / 10.0;
     }
-    else if (SettingsDialog.QoyCompression)
+    else if (properties.QoyCompression)
     {
       Qoy.Initialize();
       _videoHeader.Compression = Beam.CompressionTypes.Qoy;
-      _videoDataPoolMaxSize = Qoy.GetMaxSize((int)info->width, (int)info->height);
+      _videoDataPoolMaxSize = Qoy.GetMaxSize((int)width, (int)height);
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
-      _compressionThreshold = SettingsDialog.QoyCompressionLevel / 10.0;
+      _compressionThreshold = properties.QoyCompressionLevel / 10.0;
     }
-    else if (SettingsDialog.Lz4Compression)
+    else if (properties.Lz4Compression)
     {
       _videoHeader.Compression = Beam.CompressionTypes.Lz4;
       _videoDataPoolMaxSize = LZ4Codec.MaximumOutputSize((int)_videoPlaneInfo.DataSize);
       if (_videoDataPoolMaxSize > 2147483591) // maximum byte array size
         _videoDataPoolMaxSize = 2147483591;
       _videoDataPool = ArrayPool<byte>.Create(_videoDataPoolMaxSize, MaxFrameQueueSize);
-      _compressionThreshold = SettingsDialog.Lz4CompressionLevel / 10.0;
+      _compressionThreshold = properties.Lz4CompressionLevel / 10.0;
     }
-    _compressionThreadingSync = SettingsDialog.CompressionMainThread;
+    _compressionThreadingSync = properties.CompressionMainThread;
 
-    var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoPlaneInfo.DataSize) * (info->fps_num / info->fps_den)) / 1024 / 1024) * 8;
+    var videoBandwidthMbps = (((Beam.VideoHeader.VideoHeaderDataSize + _videoPlaneInfo.DataSize) * (fps_num / fps_den)) / 1024 / 1024) * 8;
     if (_videoHeader.Compression == Beam.CompressionTypes.None)
       Module.Log($"Video output feed initialized, theoretical uncompressed net bandwidth demand is {videoBandwidthMbps} Mpbs.", ObsLogLevel.Info);
     else
@@ -191,34 +198,46 @@ public class BeamSender
     return true;
   }
 
-  public unsafe void SetAudioParameters(audio_output_info* info, uint frames)
+  public unsafe void SetAudioParameters(audio_format format, speaker_layout speakers, uint samples_per_sec, uint frames)
   {
-    Beam.GetAudioDataSize(info->format, info->speakers, frames, out _audioDataSize, out _audioBytesPerSample);
+    Beam.GetAudioPlaneInfo(format, speakers, out _audioPlanes, out _audioBlockSize);
+    int audioDataSize = Beam.GetTotalAudioSize(format, speakers, frames);
     _audioHeader = new Beam.AudioHeader()
     {
-      Type = Beam.Type.Audio,
-      DataSize = _audioDataSize,
-      Format = info->format,
-      SampleRate = info->samples_per_sec,
-      Speakers = info->speakers,
+      Type = (_senderType == Beam.SenderTypes.FilterAudio ? Beam.Type.AudioOnly : Beam.Type.Audio),
+      DataSize = (audioDataSize * 2), // for filters there is some variance in the number of frames and therefore in the total data size, so we double it to be on the safe side (this field is used to determine the pool size)
+      Format = format,
+      SampleRate = samples_per_sec,
+      Speakers = speakers,
       Frames = frames,
     };
+    Module.Log($"{_audioHeader.Type} output feed initialized with {_audioPlanes} audio planes and a block size of {_audioBlockSize} bytes.", ObsLogLevel.Debug);
   }
 
-  public bool CanStart => ((_videoPlaneInfo.DataSize > 0) && (_audioDataSize > 0));
-
-  public async void Start(string identifier, IPAddress localAddr)
+  public bool CanStart
   {
-    if (_videoPlaneInfo.DataSize == 0)
+    get
+    {
+      if (_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo)
+        return ((_videoPlaneInfo.DataSize > 0) && (_audioBlockSize > 0));
+      if (_senderType == Beam.SenderTypes.FilterVideo)
+        return (_videoPlaneInfo.DataSize > 0);
+      if (_senderType == Beam.SenderTypes.FilterAudio)
+        return (_audioBlockSize > 0);
+      return false;
+    }
+  }
+
+  public async void Start(string identifier, IPAddress localAddr, int port, bool automaticPort)
+  {
+    if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterVideo) && (_videoPlaneInfo.DataSize == 0))
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
-    if (_audioDataSize == 0)
+    if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterAudio) && (_audioBlockSize == 0))
       throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
 
     int failCount = 0;
-    int port = 0;
     while (failCount < 10)
     {
-      port = SettingsDialog.Port;
       try
       {
         _listener = new TcpListener(localAddr, port);
@@ -226,7 +245,7 @@ public class BeamSender
       }
       catch (SocketException)
       {
-        if (SettingsDialog.AutomaticPort)
+        if (automaticPort)
         {
           failCount++;
           Module.Log($"Failed to start TCP listener for {identifier} on {localAddr}:{port}, attempt {failCount} of 10.", ObsLogLevel.Debug);
@@ -240,14 +259,14 @@ public class BeamSender
       }
       try
       {
-        _discoveryServer.StartServer(localAddr, port, PeerDiscovery.ServiceTypes.Output, identifier);
+        _discoveryServer.StartServer(localAddr, port, _senderType, identifier);
         break; // if we got here without exception the port is good
       }
       catch (SocketException)
       {
         try { _listener.Stop(); } catch { } // listening on the TCP port worked if we got here, so try to stop it again to try the next port
         _discoveryServer.StopServer();
-        if (SettingsDialog.AutomaticPort)
+        if (automaticPort)
         {
           failCount++;
           Module.Log($"Failed to start UDP listener for {identifier} on {localAddr}:{port}, attempt {failCount} of 10.", ObsLogLevel.Debug);
@@ -311,15 +330,15 @@ public class BeamSender
 
   public async void Start(string identifier, string pipeName)
   {
-    if (_videoPlaneInfo.DataSize == 0)
+    if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterVideo) && (_videoPlaneInfo.DataSize == 0))
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
-    if (_audioDataSize == 0)
+    if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterAudio) && (_audioBlockSize == 0))
       throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
 
     _pipeName = pipeName;
 
     var pipeStream = new NamedPipeServerStream(_pipeName, PipeDirection.InOut, 10, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-    _discoveryServer.StartServer(PeerDiscovery.ServiceTypes.Output, identifier);
+    _discoveryServer.StartServer(_senderType, identifier);
 
     Module.Log($"Listening on {_pipeName}.", ObsLogLevel.Info);
 
@@ -377,7 +396,8 @@ public class BeamSender
       _listenCancellationSource.Cancel();
       foreach (var client in _clients.Values)
         client.Disconnect(); // this will block for up to 1000 ms per client to try and get a clean disconnect
-      _audioDataSize = 0;
+      _audioPlanes = 0;
+      _audioBlockSize = 0;
       _discoveryServer.StopServer();
 
       Module.Log($"Stopped BeamSender.", ObsLogLevel.Debug);
@@ -619,11 +639,14 @@ public class BeamSender
     }
   }
 
-  public unsafe void SendAudio(ulong timestamp, byte* data)
+  public unsafe void SendAudio(ulong timestamp, uint frames, byte* data)
   {
+    // calulate the data size based on the frame count (stable for outputs, but for filters it can vary for every call)
+    int audioDataSize = _audioBlockSize * (int)frames;
+
     // send the audio data to all currently connected clients
     foreach (var client in _clients.Values)
-      client.EnqueueAudio(timestamp, data);
+      client.EnqueueAudio(timestamp, frames, data, audioDataSize);
   }
 
   #region Event handlers

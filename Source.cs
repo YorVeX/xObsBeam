@@ -38,12 +38,15 @@ public class Source
   #endregion Class fields
 
   #region Source instance fields
+  public bool IsAudioOnly;
   readonly BeamReceiver BeamReceiver = new();
   IntPtr ContextPointer;
-  ulong CurrentTimestamp;
+  ulong CurrentVideoTimestamp;
+  ulong CurrentAudioTimestamp;
   int RenderDelayLimit;
-  Beam.PlaneInfo _videoPlaneInfo;
-  uint _audioPlaneSize;
+  Beam.VideoPlaneInfo _videoPlaneInfo;
+  int _audioBlockSize;
+  int _audioPlanes;
   #endregion Source instance fields
 
   #region Helper methods
@@ -77,12 +80,13 @@ public class Source
     {
       filterInfo->id = (sbyte*)id;
       filterInfo->type = obs_source_type.OBS_SOURCE_TYPE_FILTER;
-      filterInfo->output_flags = ObsSource.OBS_SOURCE_ASYNC_VIDEO | ObsSource.OBS_SOURCE_CAP_DISABLED;
+      filterInfo->output_flags = ObsSource.OBS_SOURCE_ASYNC_VIDEO | ObsSource.OBS_SOURCE_AUDIO | ObsSource.OBS_SOURCE_CAP_DISABLED;
       filterInfo->get_name = &filter_get_name;
       filterInfo->create = &filter_create;
       filterInfo->destroy = &filter_destroy;
       filterInfo->get_properties = &filter_get_properties;
       filterInfo->filter_video = &filter_video;
+      filterInfo->filter_audio = &filter_audio;
       filterInfo->filter_remove = &filter_remove;
       ObsSource.obs_register_source_s(filterInfo, (nuint)sizeof(obs_source_info));
     }
@@ -169,6 +173,8 @@ public class Source
       context->Audio->format = audio_format.AUDIO_FORMAT_FLOAT;
       context->Audio->frames = 0;
       Obs.obs_source_output_audio(context->Source, context->Audio);
+      _audioBlockSize = 0;
+      _audioPlanes = 0;
 
       var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
       var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
@@ -444,7 +450,25 @@ public class Source
         filterContext->SourceId = ((Context*)GetSource(parentSource).ContextPointer)->SourceId;
     }
     if (filterContext->SourceId > 0)
-      _sourceList[filterContext->SourceId].CurrentTimestamp = frame->timestamp;
+      _sourceList[filterContext->SourceId].CurrentVideoTimestamp = frame->timestamp;
+    return frame;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe obs_audio_data* filter_audio(void* data, obs_audio_data* frame)
+  {
+    // Module.Log("filter_audio called with timestamp " + frame->timestamp, ObsLogLevel.Debug);
+    var filterContext = (FilterContext*)data;
+    if (filterContext->SourceId == 0)
+    {
+      //TODO: move this initialization to filter_add as soon as an OBS (probably the next after 29.1.3) with this new callback has been released: https://github.com/obsproject/obs-studio/commit/a494cf5ce493b77af682e4c4e2a64302d2ecc393
+      // background: obs_filter_get_parent() is not guaranteed to work in filter_create, but it should be in filter_add, and then we don't need this check on every frame anymore
+      var parentSource = Obs.obs_filter_get_parent(filterContext->FilterSource);
+      if (parentSource != null)
+        filterContext->SourceId = ((Context*)GetSource(parentSource).ContextPointer)->SourceId;
+    }
+    if (filterContext->SourceId > 0)
+      _sourceList[filterContext->SourceId].CurrentAudioTimestamp = frame->timestamp;
     return frame;
   }
 
@@ -461,7 +485,8 @@ public class Source
     }
     if (filterContext->SourceId > 0)
     {
-      _sourceList[filterContext->SourceId].CurrentTimestamp = 0;
+      _sourceList[filterContext->SourceId].CurrentVideoTimestamp = 0;
+      _sourceList[filterContext->SourceId].CurrentAudioTimestamp = 0;
       filterContext->SourceId = 0;
     }
   }
@@ -472,7 +497,7 @@ public class Source
   public static unsafe sbyte* source_get_name(void* data)
   {
     Module.Log("source_get_name called", ObsLogLevel.Debug);
-    fixed (byte* sourceName = "Beam"u8)
+    fixed (byte* sourceName = "Beam Receiver"u8)
       return (sbyte*)sourceName;
   }
 
@@ -725,7 +750,7 @@ public class Source
     Module.Log("source_get_defaults called", ObsLogLevel.Debug);
     fixed (byte*
       propertyTargetPipeNameId = "pipe_name"u8,
-      propertyTargetPipeNameDefaultText = "BeamSender"u8,
+      propertyTargetPipeNameDefaultText = "Beam Sender"u8,
       propertyTargetHostId = "host"u8,
       propertyTargetHostDefaultText = "127.0.0.1"u8,
       propertyConnectionTypePipeId = "connection_type_pipe"u8,
@@ -780,16 +805,19 @@ public class Source
     var thisSource = GetSource(data);
     if (thisSource != null)
     {
-      thisSource.BeamReceiver?.SetLastOutputVideoFrameTimestamp(thisSource.CurrentTimestamp);
+      if (thisSource.IsAudioOnly)
+        thisSource.BeamReceiver?.SetLastOutputFrameTimestamp(thisSource.CurrentAudioTimestamp);
+      else
+        thisSource.BeamReceiver?.SetLastOutputFrameTimestamp(thisSource.CurrentVideoTimestamp);
       if (thisSource.BeamReceiver?.FrameBuffer != null)
       {
         Task.Run(() =>
         {
           foreach (var frame in thisSource.BeamReceiver.FrameBuffer.GetNextFrames(seconds))
           {
-            if (frame.Type == Beam.Type.Video)
+            if (frame.Type is Beam.Type.Video or Beam.Type.VideoOnly)
               thisSource.VideoFrameReceivedEventHandler(thisSource, (Beam.BeamVideoData)frame);
-            else if (frame.Type == Beam.Type.Audio)
+            else if (frame.Type is Beam.Type.Audio or Beam.Type.AudioOnly)
               thisSource.AudioFrameReceivedEventHandler(thisSource, (Beam.BeamAudioData)frame);
           }
         });
@@ -1016,25 +1044,27 @@ public class Source
     var context = (Context*)ContextPointer;
 
     // did the frame format or size change?
-    if ((context->Video->width != videoFrame.Header.Width) || (context->Video->height != videoFrame.Header.Height) || (context->Video->format != videoFrame.Header.Format) || (context->Video->full_range != Convert.ToByte(videoFrame.Header.Range == video_range_type.VIDEO_RANGE_FULL)))
+    if ((context->Video->width != videoFrame.Header.Width) || (context->Video->height != videoFrame.Header.Height) || (context->Video->format != videoFrame.Header.Format) || (context->Video->full_range != videoFrame.Header.FullRange))
     {
-      Module.Log($"VideoFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Video->format} {(Convert.ToBoolean(context->Video->full_range) ? "FULL" : "LIMITED")} {context->Video->width}x{context->Video->height} -> {videoFrame.Header.Format} {((videoFrame.Header.Range == video_range_type.VIDEO_RANGE_FULL) ? "FULL" : "LIMITED")} {videoFrame.Header.Width}x{videoFrame.Header.Height})", ObsLogLevel.Debug);
+      Module.Log($"VideoFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Video->format} {videoFrame.Type} {(Convert.ToBoolean(context->Video->full_range) ? "FULL" : "LIMITED")} {context->Video->width}x{context->Video->height} -> {videoFrame.Header.Format} {(Convert.ToBoolean(videoFrame.Header.FullRange) ? "FULL" : "LIMITED")} {videoFrame.Header.Width}x{videoFrame.Header.Height})", ObsLogLevel.Debug);
 
       // initialize the frame base settings with the new frame format and size
       context->Video->format = videoFrame.Header.Format;
       context->Video->width = videoFrame.Header.Width;
       context->Video->height = videoFrame.Header.Height;
-      context->Video->full_range = Convert.ToByte(videoFrame.Header.Range == video_range_type.VIDEO_RANGE_FULL);
-      for (int i = 0; i < Beam.VideoHeader.MAX_AV_PLANES; i++) // initialize all linesizes to 0 first
-        context->Video->linesize[i] = 0;
-      _videoPlaneInfo = Beam.GetPlaneInfo(context->Video->format, context->Video->width, context->Video->height);
+      context->Video->full_range = videoFrame.Header.FullRange;
+      new Span<uint>(context->Video->linesize, Beam.VideoHeader.MAX_AV_PLANES).Clear(); // initialize all linesizes to 0 first
+      _videoPlaneInfo = Beam.GetVideoPlaneInfo(context->Video->format, context->Video->width, context->Video->height);
       for (int planeIndex = 0; planeIndex < _videoPlaneInfo.Count; planeIndex++)
       {
         context->Video->linesize[planeIndex] = _videoPlaneInfo.Linesize[planeIndex];
         Module.Log("VideoFrameReceivedEventHandler(): linesize[" + planeIndex + "] = " + _videoPlaneInfo.Linesize[planeIndex], ObsLogLevel.Debug);
       }
-      ObsVideo.video_format_get_parameters_for_format(videoFrame.Header.Colorspace, videoFrame.Header.Range, videoFrame.Header.Format, context->Video->color_matrix, context->Video->color_range_min, context->Video->color_range_max);
+      new ReadOnlySpan<float>(videoFrame.Header.ColorMatrix, 16).CopyTo(new Span<float>(context->Video->color_matrix, 16));
+      new ReadOnlySpan<float>(videoFrame.Header.ColorRangeMin, 3).CopyTo(new Span<float>(context->Video->color_range_min, 3));
+      new ReadOnlySpan<float>(videoFrame.Header.ColorRangeMax, 3).CopyTo(new Span<float>(context->Video->color_range_max, 3));
       Module.Log("VideoFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
+      IsAudioOnly = false;
     }
 
     if (_videoPlaneInfo.Count == 0) // unsupported format
@@ -1068,31 +1098,36 @@ public class Source
     var context = (Context*)ContextPointer;
 
     // did the frame format or size change?
-    if ((context->Audio->samples_per_sec != audioFrame.Header.SampleRate) || (context->Audio->frames != audioFrame.Header.Frames) || (context->Audio->speakers != audioFrame.Header.Speakers) || (context->Audio->format != audioFrame.Header.Format))
+    if ((context->Audio->samples_per_sec != audioFrame.Header.SampleRate) || (context->Audio->speakers != audioFrame.Header.Speakers) || (context->Audio->format != audioFrame.Header.Format))
     {
-      Module.Log($"AudioFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Audio->format} {context->Audio->samples_per_sec} {context->Audio->speakers} {context->Audio->frames} -> {audioFrame.Header.Format} {audioFrame.Header.SampleRate} {audioFrame.Header.Speakers} {audioFrame.Header.Frames})", ObsLogLevel.Debug);
+      Module.Log($"AudioFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Audio->format} {audioFrame.Type} {context->Audio->samples_per_sec} {context->Audio->speakers} {context->Audio->frames} -> {audioFrame.Header.Format} {audioFrame.Header.SampleRate} {audioFrame.Header.Speakers} {audioFrame.Header.Frames})", ObsLogLevel.Debug);
 
       // initialize the frame base settings with the new frame format and size
       context->Audio->samples_per_sec = audioFrame.Header.SampleRate;
       context->Audio->speakers = audioFrame.Header.Speakers;
       context->Audio->format = audioFrame.Header.Format;
-      context->Audio->frames = audioFrame.Header.Frames;
       // calculate the plane size for the current frame format and size
-      Beam.GetAudioDataSize(audioFrame.Header.Format, audioFrame.Header.Speakers, audioFrame.Header.Frames, out _, out int audioBytesPerSample);
-      _audioPlaneSize = (uint)audioBytesPerSample * audioFrame.Header.Frames;
+      Beam.GetAudioPlaneInfo(audioFrame.Header.Format, audioFrame.Header.Speakers, out _audioPlanes, out _audioBlockSize);
       Module.Log("AudioFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
+      IsAudioOnly = (audioFrame.Header.Type == Beam.Type.AudioOnly);
     }
 
+    if (IsAudioOnly)
+    {
+      context->ReceiveDelay = audioFrame.Header.ReceiveDelay;
+      context->RenderDelay = audioFrame.RenderDelayAverage;
+    }
     context->Audio->timestamp = audioFrame.AdjustedTimestamp;
+    context->Audio->frames = audioFrame.Header.Frames;
 
     fixed (byte* audioData = audioFrame.Data) // temporary pinning is sufficient, since Obs.obs_source_output_audio() creates a copy of the data anyway
     {
-      // audio data in the array is already in the correct order, but the array offsets need to be set correctly according to the plane sizes
-      uint currentOffset = 0;
-      for (int speakerIndex = 0; speakerIndex < (int)audioFrame.Header.Speakers; speakerIndex++)
+      int currentOffset = 0;
+      // audio data in the array is already in the correct order, but the array offsets need to be set correctly according to the plane/channel layout
+      for (int planeIndex = 0; planeIndex < _audioPlanes; planeIndex++)
       {
-        context->Audio->data[speakerIndex] = audioData + currentOffset;
-        currentOffset += _audioPlaneSize;
+        context->Audio->data[planeIndex] = audioData + currentOffset;
+        currentOffset += _audioBlockSize;
       }
       // Module.Log($"AudioFrameReceivedEventHandler(): Output timestamp {audioFrame.Header.Timestamp}", ObsLogLevel.Debug);
       Obs.obs_source_output_audio(context->Source, context->Audio);
