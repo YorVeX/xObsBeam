@@ -22,9 +22,9 @@ sealed class BeamSenderClient
   long _videoFrameCount = -1;
   long _audioFrameCount = -1;
   readonly CancellationTokenSource _cancellationSource = new();
-  readonly ArrayPool<byte> _videoDataPool;
+  readonly ArrayPool<byte>? _videoDataPool;
   Beam.AudioHeader _audioHeader;
-  readonly ArrayPool<byte> _audioDataPool;
+  readonly ArrayPool<byte>? _audioDataPool;
   DateTime _lastFrameTime = DateTime.MaxValue;
   ulong _lastVideoTimestamp;
   readonly ManualResetEvent _sendLoopExited = new(false);
@@ -44,9 +44,11 @@ sealed class BeamSenderClient
   public BeamSenderClient(string clientId, NamedPipeServerStream pipeStream, Beam.VideoHeader videoHeader, Beam.AudioHeader audioHeader)
   {
     ClientId = clientId;
-    _videoDataPool = ArrayPool<byte>.Create(videoHeader.DataSize, BeamSender.MaxFrameQueueSize);
+    if (videoHeader.DataSize > 0)
+      _videoDataPool = ArrayPool<byte>.Create(videoHeader.DataSize, BeamSender.MaxFrameQueueSize);
     _audioHeader = audioHeader;
-    _audioDataPool = ArrayPool<byte>.Create(audioHeader.DataSize, BeamSender.MaxFrameQueueSize * 2);
+    if (audioHeader.DataSize > 0)
+      _audioDataPool = ArrayPool<byte>.Create(audioHeader.DataSize, BeamSender.MaxFrameQueueSize * 2);
     Module.Log($"<{ClientId}> New client connected.", ObsLogLevel.Info);
     _pipeStream = pipeStream;
   }
@@ -231,7 +233,7 @@ sealed class BeamSenderClient
 
                 // write video frame data - need to slice videoFrame.Data, since the arrays we get from _videoDataPool are often bigger than what we requested
                 var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(videoFrame.Data)[..videoFrame.Header.DataSize], cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
-                _videoDataPool.Return(videoFrame.Data); // return video frame data to the memory pool
+                _videoDataPool!.Return(videoFrame.Data); // return video frame data to the memory pool
 
                 totalBytes += (ulong)headerBytes + (ulong)videoFrame.Header.DataSize;
                 if (frameCycle >= fps)
@@ -283,7 +285,7 @@ sealed class BeamSenderClient
 
                 // write audio frame data - need to slice audioFrame.Data, since the arrays we get from the shared ArrayPool are often bigger than what we requested
                 var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(audioFrame.Data)[..audioFrame.DataSize], cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
-                _audioDataPool.Return(audioFrame.Data); // return audio frame data to the memory pool
+                _audioDataPool!.Return(audioFrame.Data); // return audio frame data to the memory pool
                 if (frameCycle >= fps)
                   Module.Log($"<{ClientId}> Sent {headerBytes} + {audioFrame.DataSize} bytes of audio data, queue length: {audioFrameCount} ({_frameTimestampQueue.Count})", ObsLogLevel.Debug);
                 if (writeResult.IsCanceled || writeResult.IsCompleted)
@@ -382,7 +384,7 @@ sealed class BeamSenderClient
     else if (videoFrameCount > 2)
       Module.Log($"<{ClientId}> Warning: Send queue size {videoFrameCount} ({_frameTimestampQueue.Count}) at video frame {timestamp}.", ObsLogLevel.Warning);
 
-    var frame = new Beam.BeamVideoData(videoHeader, _videoDataPool.Rent(videoHeader.DataSize), timestamp);
+    var frame = new Beam.BeamVideoData(videoHeader, _videoDataPool!.Rent(videoHeader.DataSize), timestamp);
     videoData.AsSpan(0, videoHeader.DataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
     _frames.AddOrUpdate(timestamp, frame, (key, oldValue) => frame);
     _frameAvailable.Set();
@@ -410,7 +412,7 @@ sealed class BeamSenderClient
     else if (videoFrameCount > 2)
       Module.Log($"<{ClientId}> Warning: Send queue size {videoFrameCount} ({_frameTimestampQueue.Count}) at video frame {timestamp}.", ObsLogLevel.Warning);
 
-    var frame = new Beam.BeamVideoData(videoHeader, _videoDataPool.Rent(videoHeader.DataSize), timestamp);
+    var frame = new Beam.BeamVideoData(videoHeader, _videoDataPool!.Rent(videoHeader.DataSize), timestamp);
     new Span<byte>(videoData, frame.Header.DataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
     _frames.AddOrUpdate(timestamp, frame, (key, oldValue) => frame);
     _frameAvailable.Set();
@@ -419,7 +421,7 @@ sealed class BeamSenderClient
 
   public unsafe void EnqueueAudio(ulong timestamp, uint frames, byte* audioData, int dataSize)
   {
-    var frame = new Beam.BeamAudioData(_audioHeader, _audioDataPool.Rent(dataSize), frames, dataSize, timestamp); // get an audio data memory buffer from the pool, avoiding allocations
+    var frame = new Beam.BeamAudioData(_audioHeader, _audioDataPool!.Rent(dataSize), frames, dataSize, timestamp); // get an audio data memory buffer from the pool, avoiding allocations
     new Span<byte>(audioData, dataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
 
     _frameTimestampQueue.Enqueue(timestamp); // EnqueueAudio() is always called from a sync context, so we can safely add the timestamps to the queue here and have it in the right order

@@ -174,7 +174,7 @@ public static class Output
 
   private static void StartSenderIfPossible()
   {
-    if (_beamSender.CanStart)
+    if (_beamSender.CanStart(Beam.SenderTypes.Output))
     {
       if (SettingsDialog.Properties.UsePipe)
         _beamSender.Start(Beam.SenderTypes.Output, SettingsDialog.Properties.Identifier, SettingsDialog.Properties.Identifier);

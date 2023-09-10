@@ -534,7 +534,9 @@ public class Beam
   {
     Undefined = 0,
     Video = 1,
-    Audio = 2
+    Audio = 2,
+    VideoOnly = 3,
+    AudioOnly = 4,
   }
 
   public unsafe struct VideoHeader

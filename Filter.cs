@@ -33,13 +33,15 @@ public class Filter
   bool _isFirstAudioFrame = true;
   readonly BeamSender _beamSender = new();
   DateTime _lastFrame;
+  readonly Beam.SenderTypes _filterType;
   #endregion Instance fields
 
-  public unsafe Filter(Context* contextPointer)
+  public unsafe Filter(Context* contextPointer, Beam.SenderTypes filterType)
   {
-    Module.Log("Filter constructor", ObsLogLevel.Debug);
+    Module.Log($"{filterType} constructor", ObsLogLevel.Debug);
+    _filterType = filterType;
     ContextPointer = contextPointer;
-    Properties = new BeamSenderProperties(Beam.SenderTypes.FilterAudioVideo, this, ContextPointer->Source, ContextPointer->Settings);
+    Properties = new BeamSenderProperties(filterType, this, ContextPointer->Source, ContextPointer->Settings);
     IsEnabled = Properties.Enabled;
   }
 
@@ -63,33 +65,33 @@ public class Filter
 
   public void Enable()
   {
-    Module.Log($"{UniquePrefix} Filter Enable(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart}", ObsLogLevel.Debug);
+    Module.Log($"{UniquePrefix} {_filterType} Enable(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart(_filterType)}", ObsLogLevel.Debug);
     IsEnabled = true;
   }
 
   public void Disable()
   {
-    Module.Log($"{UniquePrefix} Filter Disable(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart}", ObsLogLevel.Debug);
+    Module.Log($"{UniquePrefix} {_filterType} Disable(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart(_filterType)}", ObsLogLevel.Debug);
     IsEnabled = false;
     StopSender();
   }
 
   private void StartSenderIfPossible()
   {
-    Module.Log($"{UniquePrefix} Filter StartSenderIfPossible(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart}", ObsLogLevel.Debug);
-    if (_beamSender.CanStart)
+    Module.Log($"{UniquePrefix} {_filterType} StartSenderIfPossible(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart(_filterType)}", ObsLogLevel.Debug);
+    if (_beamSender.CanStart(_filterType))
     {
       if (Properties.UsePipe)
-        _beamSender.Start(Beam.SenderTypes.FilterAudioVideo, Properties.Identifier, Properties.Identifier);
+        _beamSender.Start(_filterType, Properties.Identifier, Properties.Identifier);
       else
-        _beamSender.Start(Beam.SenderTypes.FilterAudioVideo, Properties.Identifier, Properties.NetworkInterfaceAddress, Properties.Port, Properties.AutomaticPort);
+        _beamSender.Start(_filterType, Properties.Identifier, Properties.NetworkInterfaceAddress, Properties.Port, Properties.AutomaticPort);
       IsActive = true;
     }
   }
 
   private void StopSender()
   {
-    Module.Log($"{UniquePrefix} Filter StopSender(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart}", ObsLogLevel.Debug);
+    Module.Log($"{UniquePrefix} {_filterType} StopSender(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart}", ObsLogLevel.Debug);
     if (IsActive)
     {
       _beamSender.Stop();
@@ -103,7 +105,7 @@ public class Filter
   {
     if (IsActive && (DateTime.UtcNow.Subtract(_lastFrame).TotalMilliseconds >= 500) && (seconds < 0.5f)) // the (seconds < 0.5f) check makes sure OBS wasn't just lagging for a short time
     {
-      Module.Log($"{UniquePrefix} Filter has not received frame data for a while, stopping sender.", ObsLogLevel.Info);
+      Module.Log($"{UniquePrefix} {_filterType} has not received frame data for a while, stopping sender.", ObsLogLevel.Info);
       StopSender();
     }
   }
@@ -131,7 +133,7 @@ public class Filter
       var requiredVideoFormatConversion = SettingsDialog.Properties.GetRequiredVideoFormatConversion(frame->format);
       if (requiredVideoFormatConversion != video_format.VIDEO_FORMAT_NONE)
       {
-        Module.Log($"{UniquePrefix} Filter data has unsupported format {frame->format} (need {requiredVideoFormatConversion}).", ObsLogLevel.Error);
+        Module.Log($"{UniquePrefix} {_filterType} data has unsupported format {frame->format} (need {requiredVideoFormatConversion}).", ObsLogLevel.Error);
         return;
       }
 
@@ -145,7 +147,7 @@ public class Filter
         }
         catch (Exception ex)
         {
-          Module.Log($"{UniquePrefix} ProcessVideo(): {ex.GetType().Name} in BeamSender initialization: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
+          Module.Log($"{UniquePrefix} {_filterType} ProcessVideo(): {ex.GetType().Name} in BeamSender initialization: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
           throw;
         }
       }
@@ -187,7 +189,7 @@ public class Filter
         }
         catch (Exception ex)
         {
-          Module.Log($"{UniquePrefix} ProcessAudio(): {ex.GetType().Name} in BeamSender initialization: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
+          Module.Log($"{UniquePrefix} {_filterType} ProcessAudio(): {ex.GetType().Name} in BeamSender initialization: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
           throw;
         }
       }
@@ -208,7 +210,7 @@ public class Filter
       sourceInfo.type = obs_source_type.OBS_SOURCE_TYPE_FILTER;
       sourceInfo.output_flags = ObsSource.OBS_SOURCE_ASYNC_VIDEO | ObsSource.OBS_SOURCE_AUDIO;
       sourceInfo.get_name = &filter_av_get_name;
-      sourceInfo.create = &filter_create;
+      sourceInfo.create = &filter_create_av;
       sourceInfo.filter_remove = &filter_remove;
       sourceInfo.destroy = &filter_destroy;
       sourceInfo.get_defaults = &filter_get_defaults_av;
@@ -218,6 +220,24 @@ public class Filter
       sourceInfo.video_tick = &filter_video_tick;
       sourceInfo.filter_video = &filter_video;
       sourceInfo.filter_audio = &filter_audio;
+      ObsSource.obs_register_source_s(&sourceInfo, (nuint)sizeof(obs_source_info));
+    }
+    sourceInfo = new obs_source_info();
+    fixed (byte* id = "Beam Receiver Filter Video"u8)
+    {
+      sourceInfo.id = (sbyte*)id;
+      sourceInfo.type = obs_source_type.OBS_SOURCE_TYPE_FILTER;
+      sourceInfo.output_flags = ObsSource.OBS_SOURCE_ASYNC_VIDEO;
+      sourceInfo.get_name = &filter_video_get_name;
+      sourceInfo.create = &filter_create_video;
+      sourceInfo.filter_remove = &filter_remove;
+      sourceInfo.destroy = &filter_destroy;
+      sourceInfo.get_defaults = &filter_get_defaults_video;
+      sourceInfo.get_properties = &filter_get_properties;
+      sourceInfo.update = &filter_update;
+      sourceInfo.save = &filter_save;
+      sourceInfo.video_tick = &filter_video_tick;
+      sourceInfo.filter_video = &filter_video;
       ObsSource.obs_register_source_s(&sourceInfo, (nuint)sizeof(obs_source_info));
     }
   }
@@ -238,22 +258,47 @@ public class Filter
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe sbyte* filter_av_get_name(void* data)
   {
-    Module.Log("filter_get_name called", ObsLogLevel.Debug);
+    Module.Log("filter_av_get_name called", ObsLogLevel.Debug);
     fixed (byte* filterName = "Beam Receiver Filter (Audio/Video)"u8)
       return (sbyte*)filterName;
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-  public static unsafe void* filter_create(obs_data* settings, obs_source* source)
+  public static unsafe sbyte* filter_video_get_name(void* data)
   {
-    Module.Log("filter_create called", ObsLogLevel.Debug);
+    Module.Log("filter_video_get_name called", ObsLogLevel.Debug);
+    fixed (byte* filterName = "Beam Receiver Filter (Video only)"u8)
+      return (sbyte*)filterName;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void* filter_create_av(obs_data* settings, obs_source* source)
+  {
+    Module.Log("filter_create_av called", ObsLogLevel.Debug);
     Context* context = (Context*)Marshal.AllocHGlobal(sizeof(Context));
     context->FilterId = ++_filterCount;
     context->Settings = settings;
     context->Source = source;
     context->ParentSource = null; // has to be detected later from specific callbacks
 
-    var thisFilter = new Filter(context);
+    var thisFilter = new Filter(context, Beam.SenderTypes.FilterAudioVideo);
+    _filterList.TryAdd(context->FilterId, thisFilter);
+    thisFilter.ContextPointer = context;
+
+    return context;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void* filter_create_video(obs_data* settings, obs_source* source)
+  {
+    Module.Log("filter_create_video called", ObsLogLevel.Debug);
+    Context* context = (Context*)Marshal.AllocHGlobal(sizeof(Context));
+    context->FilterId = ++_filterCount;
+    context->Settings = settings;
+    context->Source = source;
+    context->ParentSource = null; // has to be detected later from specific callbacks
+
+    var thisFilter = new Filter(context, Beam.SenderTypes.FilterVideo);
     _filterList.TryAdd(context->FilterId, thisFilter);
     thisFilter.ContextPointer = context;
 
@@ -288,8 +333,15 @@ public class Filter
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe void filter_get_defaults_av(obs_data* settings)
   {
-    Module.Log("filter_get_defaults called");
+    Module.Log("filter_get_defaults_av called");
     BeamSenderProperties.settings_get_defaults(Beam.SenderTypes.FilterAudioVideo, settings);
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void filter_get_defaults_video(obs_data* settings)
+  {
+    Module.Log("filter_get_defaults_video called");
+    BeamSenderProperties.settings_get_defaults(Beam.SenderTypes.FilterVideo, settings);
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]

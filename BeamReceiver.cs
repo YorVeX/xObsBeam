@@ -432,7 +432,7 @@ public class BeamReceiver
         frameReceivedTime = DateTime.UtcNow;
 
         var beamType = Beam.GetBeamType(readResult.Buffer);
-        if (beamType == Beam.Type.Video)
+        if (beamType is Beam.Type.Video or Beam.Type.VideoOnly)
         {
           // read and validate header information
           pipeReader.AdvanceTo(videoHeader.FromSequence(readResult.Buffer), readResult.Buffer.End);
@@ -614,7 +614,7 @@ public class BeamReceiver
           if (logCycle++ >= senderFps)
             logCycle = 0;
         }
-        else if (beamType == Beam.Type.Audio)
+        else if (beamType is Beam.Type.Audio or Beam.Type.AudioOnly)
         {
           // read and validate header information
           pipeReader.AdvanceTo(audioHeader.FromSequence(readResult.Buffer), readResult.Buffer.End);

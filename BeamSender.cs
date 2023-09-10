@@ -92,7 +92,7 @@ public class BeamSender
     // create the video header with current frame base info as a template for every frame - in most cases only the timestamp changes so that this instance can be reused without copies of it being created
     var videoHeader = new Beam.VideoHeader()
     {
-      Type = Beam.Type.Video,
+      Type = (_senderType == Beam.SenderTypes.FilterVideo ? Beam.Type.VideoOnly : Beam.Type.Video),
       DataSize = (int)_videoPlaneInfo.DataSize,
       Width = width,
       Height = height,
@@ -199,7 +199,7 @@ public class BeamSender
     int audioDataSize = Beam.GetTotalAudioSize(format, speakers, frames);
     _audioHeader = new Beam.AudioHeader()
     {
-      Type = Beam.Type.Audio,
+      Type = (_senderType == Beam.SenderTypes.FilterAudio ? Beam.Type.AudioOnly : Beam.Type.Audio),
       DataSize = (audioDataSize * 2), // for filters there is some variance in the number of frames and therefore in the total data size, so we double it to be on the safe side (this field is used to determine the pool size)
       Format = format,
       SampleRate = samples_per_sec,
@@ -208,13 +208,22 @@ public class BeamSender
     };
   }
 
-  public bool CanStart => ((_videoPlaneInfo.DataSize > 0) && (_audioBlockSize > 0));
+  public bool CanStart(Beam.SenderTypes senderType)
+  {
+    if (senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo)
+      return ((_videoPlaneInfo.DataSize > 0) && (_audioBlockSize > 0));
+    if (senderType == Beam.SenderTypes.FilterVideo)
+      return (_videoPlaneInfo.DataSize > 0);
+    if (senderType == Beam.SenderTypes.FilterAudio)
+      return (_audioBlockSize > 0);
+    return false;
+  }
 
   public async void Start(Beam.SenderTypes senderType, string identifier, IPAddress localAddr, int port, bool automaticPort)
   {
-    if (_videoPlaneInfo.DataSize == 0)
+    if ((senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterVideo) && (_videoPlaneInfo.DataSize == 0))
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
-    if (_audioBlockSize == 0)
+    if ((senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterAudio) && (_audioBlockSize == 0))
       throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
 
     _senderType = senderType;
@@ -313,9 +322,9 @@ public class BeamSender
 
   public async void Start(Beam.SenderTypes senderType, string identifier, string pipeName)
   {
-    if (_videoPlaneInfo.DataSize == 0)
+    if ((senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterVideo) && (_videoPlaneInfo.DataSize == 0))
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
-    if (_audioBlockSize == 0)
+    if ((senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterAudio) && (_audioBlockSize == 0))
       throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
 
     _senderType = senderType;
