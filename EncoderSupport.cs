@@ -238,7 +238,7 @@ public static class EncoderSupport
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  public static unsafe void Nv12ToI420(byte* sourceBuffer, Span<byte> destinationBuffer, Beam.PlaneInfo planeInfoNv12, Beam.PlaneInfo planeInfoI420)
+  public static unsafe void Nv12ToI420(byte* sourceBuffer, Span<byte> destinationBuffer, Beam.VideoPlaneInfo planeInfoNv12, Beam.VideoPlaneInfo planeInfoI420)
   {
     // copy the Y plane
     new ReadOnlySpan<byte>(sourceBuffer, (int)planeInfoNv12.PlaneSizes[0]).CopyTo(destinationBuffer);
@@ -256,7 +256,7 @@ public static class EncoderSupport
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  public static void I420ToNv12(Span<byte> sourceBuffer, Span<byte> destinationBuffer, Beam.PlaneInfo planeInfoNv12, Beam.PlaneInfo planeInfoI420)
+  public static void I420ToNv12(Span<byte> sourceBuffer, Span<byte> destinationBuffer, Beam.VideoPlaneInfo planeInfoNv12, Beam.VideoPlaneInfo planeInfoI420)
   {
     // copy the Y plane
     sourceBuffer[..(int)planeInfoI420.PlaneSizes[0]].CopyTo(destinationBuffer);

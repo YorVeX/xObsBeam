@@ -10,6 +10,15 @@ namespace xObsBeam;
 public class Beam
 {
 
+  public enum SenderTypes
+  {
+    None,
+    Output,
+    FilterAudioVideo,
+    FilterAudio,
+    FilterVideo,
+  }
+
   public enum CompressionTypes : int
   {
     None = 0,
@@ -60,9 +69,9 @@ public class Beam
     return (uint)(size + (align - 1)) & (uint)~(align - 1);
   }
 
-  public struct PlaneInfo
+  public struct VideoPlaneInfo
   {
-    public static readonly PlaneInfo Empty = new(0);
+    public static readonly VideoPlaneInfo Empty = new(0);
 
     public int Count { get; private set; }
     public uint[] Offsets { get; private set; }
@@ -70,7 +79,7 @@ public class Beam
     public uint[] PlaneSizes { get; set; }
     public uint DataSize { get; set; }
 
-    public PlaneInfo(int count)
+    public VideoPlaneInfo(int count)
     {
       Count = count;
       Offsets = new uint[count];
@@ -78,7 +87,7 @@ public class Beam
       PlaneSizes = new uint[count];
     }
 
-    public PlaneInfo(int count, uint dataSize)
+    public VideoPlaneInfo(int count, uint dataSize)
     {
       Count = count;
       Offsets = new uint[count];
@@ -88,9 +97,9 @@ public class Beam
     }
   }
 
-  public static unsafe PlaneInfo GetPlaneInfo(video_format format, uint width, uint height)
+  public static unsafe VideoPlaneInfo GetVideoPlaneInfo(video_format format, uint width, uint height)
   {
-    var planeInfo = PlaneInfo.Empty;
+    var planeInfo = VideoPlaneInfo.Empty;
     var alignment = ObsBmem.base_get_alignment();
     uint halfHeight;
     uint halfWidth;
@@ -104,7 +113,7 @@ public class Beam
     switch (format)
     {
       case video_format.VIDEO_FORMAT_I420:
-        planeInfo = new PlaneInfo(3, width * height);
+        planeInfo = new VideoPlaneInfo(3, width * height);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
         halfWidth = (width + 1) / 2;
@@ -123,7 +132,7 @@ public class Beam
         planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * halfHeight);
         return planeInfo;
       case video_format.VIDEO_FORMAT_NV12:
-        planeInfo = new PlaneInfo(2, width * height);
+        planeInfo = new VideoPlaneInfo(2, width * height);
         halfHeight = (height + 1) / 2;
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
@@ -136,7 +145,7 @@ public class Beam
         planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * halfHeight);
         return planeInfo;
       case video_format.VIDEO_FORMAT_Y800:
-        planeInfo = new PlaneInfo(1, width * height);
+        planeInfo = new VideoPlaneInfo(1, width * height);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Linesize[0] = width;
         planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
@@ -144,7 +153,7 @@ public class Beam
       case video_format.VIDEO_FORMAT_YVYU:
       case video_format.VIDEO_FORMAT_YUY2:
       case video_format.VIDEO_FORMAT_UYVY:
-        planeInfo = new PlaneInfo(1);
+        planeInfo = new VideoPlaneInfo(1);
         var double_width = ((width + 1) & (uint.MaxValue - 1)) * 2;
         planeInfo.DataSize = double_width * height;
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
@@ -155,13 +164,13 @@ public class Beam
       case video_format.VIDEO_FORMAT_BGRA:
       case video_format.VIDEO_FORMAT_BGRX:
       case video_format.VIDEO_FORMAT_AYUV:
-        planeInfo = new PlaneInfo(1, width * height * 4);
+        planeInfo = new VideoPlaneInfo(1, width * height * 4);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Linesize[0] = width * 4;
         planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_I444:
-        planeInfo = new PlaneInfo(3, width * height);
+        planeInfo = new VideoPlaneInfo(3, width * height);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
         planeInfo.DataSize += width * height;
@@ -177,7 +186,7 @@ public class Beam
         planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_I412:
-        planeInfo = new PlaneInfo(3, width * height * 2);
+        planeInfo = new VideoPlaneInfo(3, width * height * 2);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
         planeInfo.DataSize += width * height * 2;
@@ -193,13 +202,13 @@ public class Beam
         planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_BGR3:
-        planeInfo = new PlaneInfo(1, width * height * 3);
+        planeInfo = new VideoPlaneInfo(1, width * height * 3);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Linesize[0] = width * 3;
         planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_I422:
-        planeInfo = new PlaneInfo(1, width * height);
+        planeInfo = new VideoPlaneInfo(1, width * height);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
         halfWidth = (width + 1) / 2;
@@ -217,7 +226,7 @@ public class Beam
         planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_I210:
-        planeInfo = new PlaneInfo(3, width * height * 2);
+        planeInfo = new VideoPlaneInfo(3, width * height * 2);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
         halfWidth = (width + 1) / 2;
@@ -236,7 +245,7 @@ public class Beam
         planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_I40A:
-        planeInfo = new PlaneInfo(4, width * height);
+        planeInfo = new VideoPlaneInfo(4, width * height);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
         halfWidth = (width + 1) / 2;
@@ -260,7 +269,7 @@ public class Beam
         planeInfo.PlaneSizes[3] = (planeInfo.Linesize[3] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_I42A:
-        planeInfo = new PlaneInfo(4, width * height);
+        planeInfo = new VideoPlaneInfo(4, width * height);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
         halfWidth = (width + 1) / 2;
@@ -283,7 +292,7 @@ public class Beam
         planeInfo.PlaneSizes[3] = (planeInfo.Linesize[3] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_YUVA:
-        planeInfo = new PlaneInfo(4, width * height);
+        planeInfo = new VideoPlaneInfo(4, width * height);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
         planeInfo.DataSize += width * height;
@@ -304,7 +313,7 @@ public class Beam
         planeInfo.PlaneSizes[3] = (planeInfo.Linesize[3] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_YA2L:
-        planeInfo = new PlaneInfo(4);
+        planeInfo = new VideoPlaneInfo(4);
         var ya2lLinesize = width * 2;
         var planeSize = ya2lLinesize * height;
         planeInfo.DataSize = planeSize;
@@ -328,7 +337,7 @@ public class Beam
         planeInfo.PlaneSizes[3] = (planeInfo.Linesize[3] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_I010:
-        planeInfo = new PlaneInfo(3, width * height * 2);
+        planeInfo = new VideoPlaneInfo(3, width * height * 2);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
         halfWidth = (width + 1) / 2;
@@ -347,7 +356,7 @@ public class Beam
         planeInfo.PlaneSizes[2] = (planeInfo.Linesize[2] * halfHeight);
         return planeInfo;
       case video_format.VIDEO_FORMAT_P010:
-        planeInfo = new PlaneInfo(2, width * height * 2);
+        planeInfo = new VideoPlaneInfo(2, width * height * 2);
         halfHeight = (height + 1) / 2;
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
@@ -360,7 +369,7 @@ public class Beam
         planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * halfHeight);
         return planeInfo;
       case video_format.VIDEO_FORMAT_P216:
-        planeInfo = new PlaneInfo(2, width * height * 2);
+        planeInfo = new VideoPlaneInfo(2, width * height * 2);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
         cbCrWidth = (width + 1) & (uint.MaxValue - 1);
@@ -372,7 +381,7 @@ public class Beam
         planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_P416:
-        planeInfo = new PlaneInfo(2, width * height * 2);
+        planeInfo = new VideoPlaneInfo(2, width * height * 2);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
         planeInfo.DataSize += width * height * 4;
@@ -383,7 +392,7 @@ public class Beam
         planeInfo.PlaneSizes[1] = (planeInfo.Linesize[1] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_V210:
-        planeInfo = new PlaneInfo(1);
+        planeInfo = new VideoPlaneInfo(1);
         var adjusted_width = ((width + 5) / 6) * 16;
         planeInfo.DataSize = adjusted_width * height;
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
@@ -402,27 +411,51 @@ public class Beam
     }
   }
 
-  public static unsafe void GetAudioDataSize(audio_format format, speaker_layout speakers, uint frames, out int audioDataSize, out int audioBytesPerSample)
+  // check https://github.com/obsproject/obs-studio/blob/master/libobs/media-io/audio-io.h for reference of these functions in OBS
+  public static unsafe int GetAudioBytesPerChannel(audio_format format)
   {
-    audioBytesPerSample = 0;
+    var audioBytesPerChannel = 0;
     switch (format)
     {
       case audio_format.AUDIO_FORMAT_U8BIT:
       case audio_format.AUDIO_FORMAT_U8BIT_PLANAR:
-        audioBytesPerSample = 1;
+        audioBytesPerChannel = 1;
         break;
       case audio_format.AUDIO_FORMAT_16BIT:
       case audio_format.AUDIO_FORMAT_16BIT_PLANAR:
-        audioBytesPerSample = 2;
+        audioBytesPerChannel = 2;
         break;
       case audio_format.AUDIO_FORMAT_FLOAT:
       case audio_format.AUDIO_FORMAT_FLOAT_PLANAR:
       case audio_format.AUDIO_FORMAT_32BIT:
       case audio_format.AUDIO_FORMAT_32BIT_PLANAR:
-        audioBytesPerSample = 4;
+        audioBytesPerChannel = 4;
         break;
     }
-    audioDataSize = audioBytesPerSample * (int)speakers * (int)frames;
+    return audioBytesPerChannel;
+  }
+
+  public static unsafe bool IsAudioPlanar(audio_format format)
+  {
+    return format switch
+    {
+      audio_format.AUDIO_FORMAT_U8BIT or audio_format.AUDIO_FORMAT_16BIT or audio_format.AUDIO_FORMAT_32BIT or audio_format.AUDIO_FORMAT_FLOAT => false,
+      audio_format.AUDIO_FORMAT_U8BIT_PLANAR or audio_format.AUDIO_FORMAT_FLOAT_PLANAR or audio_format.AUDIO_FORMAT_16BIT_PLANAR or audio_format.AUDIO_FORMAT_32BIT_PLANAR => true,
+      audio_format.AUDIO_FORMAT_UNKNOWN => false,
+      _ => false,
+    };
+  }
+
+  public static unsafe int GetTotalAudioSize(audio_format format, speaker_layout speakers, uint frames)
+  {
+    return (int)speakers * GetAudioBytesPerChannel(format) * (int)frames;
+  }
+
+  public static unsafe void GetAudioPlaneInfo(audio_format format, speaker_layout speakers, out int audioPlanes, out int audioBlockSize)
+  {
+    bool planar = IsAudioPlanar(format);
+    audioPlanes = (planar ? (int)speakers : 1);
+    audioBlockSize = (planar ? 1 : (int)speakers) * GetAudioBytesPerChannel(format);
   }
   #endregion helper methods
 
@@ -469,6 +502,8 @@ public class Beam
     public Type Type { get; set; } = Type.Audio;
     public AudioHeader Header;
     public readonly byte[] Data;
+    public readonly uint Frames { get; }
+    public readonly int DataSize { get; }
     public readonly ulong Timestamp { get; }
     public ulong AdjustedTimestamp { get; set; }
     public DateTime Received { get; }
@@ -478,16 +513,19 @@ public class Beam
     {
       Header = header;
       Data = data;
+      Frames = header.Frames;
       Timestamp = header.Timestamp;
       AdjustedTimestamp = Timestamp;
       Received = created;
     }
 
     // used by senders
-    public BeamAudioData(AudioHeader header, byte[] data, ulong timestamp)
+    public BeamAudioData(AudioHeader header, byte[] data, uint frames, int dataSize, ulong timestamp)
     {
       Header = header;
+      DataSize = dataSize;
       Data = data;
+      Frames = frames;
       Timestamp = timestamp;
     }
   }
@@ -697,13 +735,13 @@ public class Beam
       return reader.Position;
     }
 
-    public int WriteTo(Span<byte> span, ulong timestamp)
+    public int WriteTo(Span<byte> span, uint frames, int dataSize, ulong timestamp)
     {
       int headerBytes = 0;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), (uint)Type); headerBytes += 4;
-      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), DataSize); headerBytes += 4;
+      BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), dataSize); headerBytes += 4;
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), SampleRate); headerBytes += 4;
-      BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), Frames); headerBytes += 4;
+      BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(headerBytes, 4), frames); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Format); headerBytes += 4;
       BinaryPrimitives.WriteInt32LittleEndian(span.Slice(headerBytes, 4), (int)Speakers); headerBytes += 4;
       BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(headerBytes, 8), timestamp); headerBytes += 8;

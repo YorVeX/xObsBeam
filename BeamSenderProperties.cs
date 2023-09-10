@@ -14,40 +14,44 @@ namespace xObsBeam;
 public class BeamSenderProperties
 {
 
-  public enum PropertiesTypes
-  {
-    None,
-    Output,
-    FilterAudioVideo,
-    FilterAudio,
-    FilterVideo,
-  }
-
-  public static BeamSenderProperties Empty => new(PropertiesTypes.None);
+  public static BeamSenderProperties Empty => new(Beam.SenderTypes.None);
 
   unsafe struct Context
   {
     public uint PropertiesId;
     public obs_data* Settings;
-    public obs_source* Source;
+    public obs_source* Source; // for outputs this is the dummy source used for settings management, for filters it's the filter itself
     public obs_properties* Properties;
   }
 
   bool _initialized;
   readonly Random _random = new();
 
-  #region Class fields
+  #region Class fields and helper functions
   static uint _propertiesCount;
   static readonly ConcurrentDictionary<uint, BeamSenderProperties> _propertiesList = new();
-  #endregion Class fields
 
+  private static unsafe BeamSenderProperties GetProperties(obs_properties* properties)
+  {
+    return _propertiesList.First(x => ((x.Value.ContextPointer)->Properties == properties)).Value;
+  }
+  #endregion Class fields and helper functions
+
+  #region Instance fields
   readonly unsafe Context* ContextPointer;
-  public unsafe obs_properties* Properties;
-  readonly PropertiesTypes PropertiesType;
+  readonly List<string> _initializedEventHandlers = new();
+  unsafe obs_properties* Properties;
+  readonly Beam.SenderTypes PropertiesType;
+  bool NeedSenderRestart;
+  readonly string UniquePrefix;
+  #endregion Instance fields
+
+  #region Public properties
+  public unsafe Filter? Filter { get; private set; }
   public unsafe obs_source* Source { get => ContextPointer->Source; set => ContextPointer->Source = value; }
   public unsafe obs_data* Settings { get => ContextPointer->Settings; set => ContextPointer->Settings = value; }
 
-  public unsafe bool OutputEnabled
+  public unsafe bool Enabled
   {
     get
     {
@@ -197,7 +201,7 @@ public class BeamSenderProperties
             return ip.Address;
         }
       }
-      Module.Log($"Didn't find configured network interface \"{configuredNetworkInterfaceName}\", falling back to loopback interface.", ObsLogLevel.Error);
+      Module.Log($"{UniquePrefix} Didn't find configured network interface \"{configuredNetworkInterfaceName}\", falling back to loopback interface.", ObsLogLevel.Error);
       return IPAddress.Loopback;
     }
   }
@@ -224,10 +228,15 @@ public class BeamSenderProperties
       }
     }
   }
+  #endregion Public properties
 
-  public unsafe BeamSenderProperties(PropertiesTypes propertiesType, obs_source* source, obs_data* settings)
+  #region Instance methods
+  public unsafe BeamSenderProperties(Beam.SenderTypes propertiesType, Filter filter, obs_source* source, obs_data* settings)
   {
+    Initialize(settings);
+    UniquePrefix = filter.UniquePrefix;
     PropertiesType = propertiesType;
+    Filter = filter;
     Context* context = (Context*)Marshal.AllocHGlobal(sizeof(Context)); ;
     context->PropertiesId = ++_propertiesCount;
     context->Source = source;
@@ -237,9 +246,10 @@ public class BeamSenderProperties
     ContextPointer = context;
   }
 
-  public unsafe BeamSenderProperties(PropertiesTypes propertiesType)
+  public unsafe BeamSenderProperties(Beam.SenderTypes propertiesType)
   {
     PropertiesType = propertiesType;
+    UniquePrefix = PropertiesType.ToString();
     Context* context = (Context*)Marshal.AllocHGlobal(sizeof(Context)); ;
     context->PropertiesId = ++_propertiesCount;
 
@@ -252,33 +262,32 @@ public class BeamSenderProperties
     Marshal.FreeHGlobal((IntPtr)ContextPointer);
   }
 
-  public static unsafe BeamSenderProperties GetProperties(obs_source* source)
+  private unsafe void Initialize(obs_data* settings)
   {
-    return _propertiesList.First(x => ((x.Value.ContextPointer)->Source == source)).Value;
+    // compression settings use global variables that need to be initialized - for an output this is called from settings_update during OBS startup, for filters from the constructor
+    if (!_initialized)
+    {
+      _initialized = true;
+      UpdateCompressionSettings(settings);
+    }
   }
-
-  private static unsafe BeamSenderProperties GetProperties(void* data)
-  {
-    var context = (Context*)data;
-    return _propertiesList[(*context).PropertiesId];
-  }
-
-  private static unsafe BeamSenderProperties GetProperties(obs_properties* properties)
-  {
-    return _propertiesList.First(x => ((x.Value.ContextPointer)->Properties == properties)).Value;
-  }
+  #endregion Instance methods
 
 #pragma warning disable IDE1006
-
+  #region Callbacks
   public unsafe obs_properties* settings_get_properties(void* data)
   {
+    // NeedSenderRestart = false; // settings have been freshly opened, reset this
+    _initializedEventHandlers.Clear(); // settings have been freshly opened, reset this
     var properties = ObsProperties.obs_properties_create();
     ObsProperties.obs_properties_set_flags(properties, ObsProperties.OBS_PROPERTIES_DEFER_UPDATE);
 
     fixed (byte*
       propertyEnableId = "enable"u8,
-      propertyEnableCaption = Module.ObsText("EnableOutputCaption"),
-      propertyEnableText = Module.ObsText("EnableOutputText"),
+      propertyEnableOutputCaption = Module.ObsText("EnableOutputCaption"),
+      propertyEnableOutputText = Module.ObsText("EnableOutputText"),
+      propertyEnableFilterCaption = Module.ObsText("EnableFilterCaption"),
+      propertyEnableFilterText = Module.ObsText("EnableFilterText"),
       propertyIdentifierId = "identifier"u8,
       propertyIdentifierCaption = Module.ObsText("IdentifierCaption"),
       propertyIdentifierText = Module.ObsText("IdentifierText"),
@@ -353,12 +362,24 @@ public class BeamSenderProperties
       propertyConnectionTypeSocketText = Module.ObsText("ConnectionTypeSocketText")
     )
     {
-      // enable or disable the output
-      if (PropertiesType == PropertiesTypes.Output)
-        ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableCaption), (sbyte*)propertyEnableText);
+      // enable or disable the output...
+      obs_property* enableProperty;
+      if (PropertiesType == Beam.SenderTypes.Output)
+      {
+        enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableOutputCaption);
+        ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableOutputText);
+      }
+      else // ...or filter
+      {
+        enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableFilterCaption);
+        ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableFilterText);
+      }
+      ObsProperties.obs_property_set_modified_callback(enableProperty, &EnableChangedEventHandler);
 
       // identifier configuration text box
-      ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierCaption, obs_text_type.OBS_TEXT_DEFAULT), (sbyte*)propertyIdentifierText);
+      var identifierProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierCaption, obs_text_type.OBS_TEXT_DEFAULT);
+      ObsProperties.obs_property_set_long_description(identifierProperty, (sbyte*)propertyIdentifierText);
+      ObsProperties.obs_property_set_modified_callback(identifierProperty, &IdentifierSettingChangedEventHandler);
 
       // compression group
       var compressionGroup = ObsProperties.obs_properties_create();
@@ -386,6 +407,7 @@ public class BeamSenderProperties
       // JPEG compression quality
       var compressionJpegQualityProperty = ObsProperties.obs_properties_add_int_slider(compressionJpegGroup, (sbyte*)propertyCompressionJpegQualityId, (sbyte*)propertyCompressionJpegQualityCaption, 1, 100, 1);
       ObsProperties.obs_property_set_long_description(compressionJpegQualityProperty, (sbyte*)propertyCompressionJpegQualityText);
+      ObsProperties.obs_property_set_modified_callback(compressionJpegQualityProperty, &CompressionJpegQualitySettingChangedEventHandler);
 
       // QOI compression options group
       var compressionQoiGroup = ObsProperties.obs_properties_create();
@@ -448,7 +470,9 @@ public class BeamSenderProperties
       ObsProperties.obs_property_text_set_info_type(compressionFormatWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
 
       // compress from OBS render thread option
-      ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_bool(compressionGroup, (sbyte*)propertyCompressionMainThreadId, (sbyte*)propertyCompressionMainThreadCaption), (sbyte*)propertyCompressionMainThreadText);
+      var compressionMainThreadProperty = ObsProperties.obs_properties_add_bool(compressionGroup, (sbyte*)propertyCompressionMainThreadId, (sbyte*)propertyCompressionMainThreadCaption);
+      ObsProperties.obs_property_set_long_description(compressionMainThreadProperty, (sbyte*)propertyCompressionMainThreadText);
+      ObsProperties.obs_property_set_modified_callback(compressionMainThreadProperty, &CompressionMainThreadChangedEventHandler);
 
       // connection type selection group
       var connectionTypeGroup = ObsProperties.obs_properties_create();
@@ -464,10 +488,10 @@ public class BeamSenderProperties
       ObsProperties.obs_property_set_modified_callback(connectionTypeSocketProperty, &ConnectionTypeSocketChangedEventHandler);
 
       // network interface selection
-      var networkInterfacesList = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyNetworkInterfaceListId, (sbyte*)propertyNetworkInterfaceListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
-      ObsProperties.obs_property_set_long_description(networkInterfacesList, (sbyte*)propertyNetworkInterfaceListText);
+      var networkInterfacesListProperty = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyNetworkInterfaceListId, (sbyte*)propertyNetworkInterfaceListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
+      ObsProperties.obs_property_set_long_description(networkInterfacesListProperty, (sbyte*)propertyNetworkInterfaceListText);
       fixed (byte* networkInterfaceAnyListItem = "Any: 0.0.0.0"u8)
-        ObsProperties.obs_property_list_add_string(networkInterfacesList, (sbyte*)networkInterfaceAnyListItem, (sbyte*)networkInterfaceAnyListItem);
+        ObsProperties.obs_property_list_add_string(networkInterfacesListProperty, (sbyte*)networkInterfaceAnyListItem, (sbyte*)networkInterfaceAnyListItem);
       foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
       {
         if (networkInterface.OperationalStatus == OperationalStatus.Up)
@@ -477,18 +501,19 @@ public class BeamSenderProperties
             if (ip.Address.AddressFamily != AddressFamily.InterNetwork)
               continue;
             string networkInterfaceDisplayName = networkInterface.Name + ": " + ip.Address + " / " + ip.IPv4Mask;
-            Module.Log($"Found network interface: {networkInterfaceDisplayName}", ObsLogLevel.Debug);
+            Module.Log($"{UniquePrefix} Found network interface: {networkInterfaceDisplayName}", ObsLogLevel.Debug);
             fixed (byte* networkInterfaceListItem = Encoding.UTF8.GetBytes(networkInterfaceDisplayName))
-              ObsProperties.obs_property_list_add_string(networkInterfacesList, (sbyte*)networkInterfaceListItem, (sbyte*)networkInterfaceListItem);
+              ObsProperties.obs_property_list_add_string(networkInterfacesListProperty, (sbyte*)networkInterfaceListItem, (sbyte*)networkInterfaceListItem);
           }
         }
       }
+      ObsProperties.obs_property_set_modified_callback(networkInterfacesListProperty, &NetworkInterfaceChangedEventHandler);
 
       // listen port configuration
       var automaticListenPortProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyAutomaticListenPortId, (sbyte*)propertyAutomaticListenPortCaption);
       ObsProperties.obs_property_set_long_description(automaticListenPortProperty, (sbyte*)propertyAutomaticListenPortText);
-      ObsProperties.obs_property_set_modified_callback(automaticListenPortProperty, &AutomaticListenPortEnabledChangedEventHandler);
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_int(properties, (sbyte*)propertyListenPortId, (sbyte*)propertyListenPortCaption, 1024, 65535, 1), (sbyte*)propertyListenPortText);
+      ObsProperties.obs_property_set_modified_callback(automaticListenPortProperty, &AutomaticListenPortEnabledChangedEventHandler);
 
     }
     Properties = properties;
@@ -497,9 +522,9 @@ public class BeamSenderProperties
     return properties;
   }
 
-  public static unsafe void settings_get_defaults(PropertiesTypes propertiesType, obs_data* settings)
+  public static unsafe void settings_get_defaults(Beam.SenderTypes propertiesType, obs_data* settings)
   {
-    Module.Log("settings_get_defaults called", ObsLogLevel.Debug);
+    Module.Log($"{propertiesType} settings_get_defaults called", ObsLogLevel.Debug);
     fixed (byte*
       propertyEnableId = "enable"u8,
       propertyIdentifierId = "identifier"u8,
@@ -521,11 +546,16 @@ public class BeamSenderProperties
       propertyListenPortId = "listen_port"u8
     )
     {
-      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(false));
-      if (propertiesType == PropertiesTypes.Output)
+      if (propertiesType == Beam.SenderTypes.Output)
+      {
+        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(false));
         ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierOutputDefaultText);
-      else if (propertiesType == PropertiesTypes.FilterAudioVideo)
+      }
+      else if (propertiesType == Beam.SenderTypes.FilterAudioVideo)
+      {
+        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(true));
         ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierFilterAvDefaultText);
+      }
 
       ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionShowOnlyRecommendedId, Convert.ToByte(true));
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoiLevelId, 10);
@@ -544,92 +574,20 @@ public class BeamSenderProperties
     }
   }
 
-  public unsafe void settings_update(void* data, obs_data* settings)
+  public unsafe void settings_update(obs_data* settings)
   {
-    Module.Log("settings_update called", ObsLogLevel.Debug);
-
-    if (!_initialized)
-    {
-      _initialized = true;
-      // compression settings use global variables that need to be initialized
-      UpdateCompressionSettings(settings);
-    }
-
-    fixed (byte* propertyEnableId = "enable"u8)
-    {
-      var isEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId));
-      if (Output.IsReady)
-      {
-        if (Output.IsActive || !isEnabled) // need to stop the output to apply settings changes
-        {
-          Output.Stop();
-          if (isEnabled) // a bit of delay is necessary if the output was started before
-            Task.Delay(1000).ContinueWith((t) => Output.Start());
-        }
-        else if (isEnabled)
-          Output.Start();
-      }
-    }
+    Module.Log($"{UniquePrefix} settings_update called", ObsLogLevel.Debug);
+    Initialize(settings);
+    RestartSenderIfNecessary(settings);
   }
+
+  public unsafe void settings_save(obs_data* settings)
+  {
+    Module.Log($"{UniquePrefix} settings_save called", ObsLogLevel.Debug);
+    RestartSenderIfNecessary(settings);
+  }
+  #endregion Callbacks
 #pragma warning restore IDE1006
-
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-  public static unsafe byte AutomaticListenPortEnabledChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-  {
-    fixed (byte*
-      propertyEnableId = "enable"u8,
-      propertyAutomaticListenPortId = "auto_listen_port"u8,
-      propertyListenPortId = "listen_port"u8
-    )
-    {
-      var automaticListenPort = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyAutomaticListenPortId));
-      Module.Log($"Automatic listen port enabled: {automaticListenPort}", ObsLogLevel.Debug);
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!automaticListenPort));
-      return Convert.ToByte(true);
-    }
-  }
-
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-  public static unsafe byte ConnectionTypePipeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-  {
-    fixed (byte*
-      propertyConnectionTypePipeId = "connection_type_pipe"u8,
-      propertyConnectionTypeSocketId = "connection_type_socket"u8,
-      propertyNetworkInterfaceListId = "network_interface_list"u8,
-      propertyAutomaticListenPortId = "auto_listen_port"u8,
-      propertyListenPortId = "listen_port"u8
-    )
-    {
-      var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(!connectionTypePipe));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyAutomaticListenPortId), Convert.ToByte(!connectionTypePipe));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe));
-      Module.Log("Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
-      return Convert.ToByte(true);
-    }
-  }
-
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-  public static unsafe byte ConnectionTypeSocketChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-  {
-    fixed (byte*
-      propertyConnectionTypePipeId = "connection_type_pipe"u8,
-      propertyConnectionTypeSocketId = "connection_type_socket"u8,
-      propertyNetworkInterfaceListId = "network_interface_list"u8,
-      propertyAutomaticListenPortId = "auto_listen_port"u8,
-      propertyListenPortId = "listen_port"u8
-    )
-    {
-      var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(connectionTypePipe));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyAutomaticListenPortId), Convert.ToByte(!connectionTypePipe));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe));
-      Module.Log("Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
-      return Convert.ToByte(true);
-    }
-  }
 
   public bool NativeVideoFormatSupport(Beam.CompressionTypes compressionType, video_format videoFormat)
   {
@@ -654,6 +612,67 @@ public class BeamSenderProperties
     }
     ObsBmem.bfree(obsVideoInfo);
     return requiredVideoFormat;
+  }
+
+  public unsafe video_format GetRequiredVideoFormatConversion(video_format currentFormat)
+  {
+    video_format requiredVideoFormat = video_format.VIDEO_FORMAT_NONE;
+    if (RequireVideoFormats == null)
+      return requiredVideoFormat;
+
+    // some compression algorithms can only work with specific color formats
+    if (!RequireVideoFormats.Contains(currentFormat)) // is a specific format required that is not the currently configured format?
+      requiredVideoFormat = RequireVideoFormats[0]; // the first item on the list is always the preferred format
+
+    return requiredVideoFormat;
+  }
+
+  #region Event handler helper functions
+  private unsafe void RestartSenderIfNecessary(obs_data* settings)
+  {
+    if (!NeedSenderRestart)
+      return;
+    fixed (byte* propertyEnableId = "enable"u8)
+    {
+      var isEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId));
+      if (PropertiesType == Beam.SenderTypes.Output)
+      {
+        if (Output.IsReady)
+        {
+          if (Output.IsActive || !isEnabled) // need to stop the output to apply settings changes
+          {
+            Output.Stop();
+            if (isEnabled) // a bit of delay is necessary if the output was started before
+              Task.Delay(1000).ContinueWith((t) => Output.Start());
+          }
+          else if (isEnabled)
+            Output.Start();
+        }
+      }
+      else if (Filter != null)
+      {
+        if (Filter.IsActive || !isEnabled) // need to stop the filter to apply settings changes
+        {
+          Filter.Disable();
+          if (isEnabled) // a bit of delay is necessary if the filter was started before
+            Task.Delay(1000).ContinueWith((t) => Filter.Enable());
+        }
+        else if (isEnabled)
+          Filter.Enable();
+      }
+    }
+    NeedSenderRestart = false;
+  }
+
+  private void EventHandlerNeedSenderRestartCheck(string eventHandlerName)
+  {
+    if (_initializedEventHandlers.Contains(eventHandlerName)) // this is not the init call, something actually changed, therefore a restart is necessary
+    {
+      NeedSenderRestart = true;
+      Module.Log($"{UniquePrefix} Sender restart requested from {eventHandlerName}.", ObsLogLevel.Debug);
+    }
+    else // this is just the init call after opening the settings, the setting didn't actually change, therefore no restart is necessary
+      _initializedEventHandlers.Add(eventHandlerName);
   }
 
   private unsafe void UpdateCompressionSettings(obs_data* settings)
@@ -876,11 +895,121 @@ public class BeamSenderProperties
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(QoiCompression || QoyCompression || QoirCompression || JpegCompression || Lz4Compression || DensityCompression));
     }
   }
+  #endregion Event handler helper functions
+
+  #region Event handlers
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte EnableChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte* propertyEnableId = "enable"u8)
+    {
+      var isEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId));
+      var senderProperties = GetProperties(properties);
+      senderProperties.EventHandlerNeedSenderRestartCheck("EnableChangedEventHandler");
+      senderProperties.RestartSenderIfNecessary(settings);
+    }
+    return Convert.ToByte(false);
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte AutomaticListenPortEnabledChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte*
+      propertyAutomaticListenPortId = "auto_listen_port"u8,
+      propertyListenPortId = "listen_port"u8
+    )
+    {
+      var automaticListenPort = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyAutomaticListenPortId));
+      var senderProperties = GetProperties(properties);
+      Module.Log($"{senderProperties.UniquePrefix} Automatic listen port enabled: {automaticListenPort}", ObsLogLevel.Debug);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!automaticListenPort));
+      senderProperties.EventHandlerNeedSenderRestartCheck("AutomaticListenPortEnabledChangedEventHandler");
+      return Convert.ToByte(true);
+    }
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte ConnectionTypePipeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte*
+      propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyConnectionTypeSocketId = "connection_type_socket"u8,
+      propertyNetworkInterfaceListId = "network_interface_list"u8,
+      propertyAutomaticListenPortId = "auto_listen_port"u8,
+      propertyListenPortId = "listen_port"u8
+    )
+    {
+      var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
+      ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyAutomaticListenPortId), Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe));
+      var senderProperties = GetProperties(properties);
+      Module.Log($"{senderProperties.UniquePrefix} Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
+      senderProperties.EventHandlerNeedSenderRestartCheck("ConnectionTypePipeChangedEventHandler");
+      return Convert.ToByte(true);
+    }
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte ConnectionTypeSocketChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte*
+      propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyConnectionTypeSocketId = "connection_type_socket"u8,
+      propertyNetworkInterfaceListId = "network_interface_list"u8,
+      propertyAutomaticListenPortId = "auto_listen_port"u8,
+      propertyListenPortId = "listen_port"u8
+    )
+    {
+      var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
+      ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyAutomaticListenPortId), Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe));
+      var senderProperties = GetProperties(properties);
+      Module.Log($"{senderProperties.UniquePrefix} Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
+      senderProperties.EventHandlerNeedSenderRestartCheck("ConnectionTypeSocketChangedEventHandler");
+      return Convert.ToByte(true);
+    }
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte NetworkInterfaceChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    GetProperties(properties).EventHandlerNeedSenderRestartCheck("NetworkInterfaceChangedEventHandler");
+    return Convert.ToByte(true);
+  }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte CompressionSettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
-    GetProperties(properties).UpdateCompressionSettings(settings);
+    string propertyName = Marshal.PtrToStringUTF8((IntPtr)ObsProperties.obs_property_name(prop))!;
+    var senderProperties = GetProperties(properties);
+    senderProperties.UpdateCompressionSettings(settings);
+    senderProperties.EventHandlerNeedSenderRestartCheck("CompressionSettingChangedEventHandler: " + propertyName);
     return Convert.ToByte(true);
   }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte CompressionJpegQualitySettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    GetProperties(properties).EventHandlerNeedSenderRestartCheck("CompressionJpegQualitySettingChangedEventHandler");
+    return Convert.ToByte(false);
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte CompressionMainThreadChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    GetProperties(properties).EventHandlerNeedSenderRestartCheck("CompressionMainThreadChangedEventHandler");
+    return Convert.ToByte(false);
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte IdentifierSettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    GetProperties(properties).EventHandlerNeedSenderRestartCheck("IdentifierSettingChangedEventHandler");
+    return Convert.ToByte(false);
+  }
+  #endregion Event handlers
 }

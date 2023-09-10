@@ -42,8 +42,9 @@ public class Source
   IntPtr ContextPointer;
   ulong CurrentTimestamp;
   int RenderDelayLimit;
-  Beam.PlaneInfo _videoPlaneInfo;
-  uint _audioPlaneSize;
+  Beam.VideoPlaneInfo _videoPlaneInfo;
+  int _audioBlockSize;
+  int _audioPlanes;
   #endregion Source instance fields
 
   #region Helper methods
@@ -169,6 +170,8 @@ public class Source
       context->Audio->format = audio_format.AUDIO_FORMAT_FLOAT;
       context->Audio->frames = 0;
       Obs.obs_source_output_audio(context->Source, context->Audio);
+      _audioBlockSize = 0;
+      _audioPlanes = 0;
 
       var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
       var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
@@ -1026,7 +1029,7 @@ public class Source
       context->Video->height = videoFrame.Header.Height;
       context->Video->full_range = videoFrame.Header.FullRange;
       new Span<uint>(context->Video->linesize, Beam.VideoHeader.MAX_AV_PLANES).Clear(); // initialize all linesizes to 0 first
-      _videoPlaneInfo = Beam.GetPlaneInfo(context->Video->format, context->Video->width, context->Video->height);
+      _videoPlaneInfo = Beam.GetVideoPlaneInfo(context->Video->format, context->Video->width, context->Video->height);
       for (int planeIndex = 0; planeIndex < _videoPlaneInfo.Count; planeIndex++)
       {
         context->Video->linesize[planeIndex] = _videoPlaneInfo.Linesize[planeIndex];
@@ -1069,7 +1072,7 @@ public class Source
     var context = (Context*)ContextPointer;
 
     // did the frame format or size change?
-    if ((context->Audio->samples_per_sec != audioFrame.Header.SampleRate) || (context->Audio->frames != audioFrame.Header.Frames) || (context->Audio->speakers != audioFrame.Header.Speakers) || (context->Audio->format != audioFrame.Header.Format))
+    if ((context->Audio->samples_per_sec != audioFrame.Header.SampleRate) || (context->Audio->speakers != audioFrame.Header.Speakers) || (context->Audio->format != audioFrame.Header.Format))
     {
       Module.Log($"AudioFrameReceivedEventHandler(): Frame format or size changed, reinitializing ({context->Audio->format} {context->Audio->samples_per_sec} {context->Audio->speakers} {context->Audio->frames} -> {audioFrame.Header.Format} {audioFrame.Header.SampleRate} {audioFrame.Header.Speakers} {audioFrame.Header.Frames})", ObsLogLevel.Debug);
 
@@ -1077,23 +1080,22 @@ public class Source
       context->Audio->samples_per_sec = audioFrame.Header.SampleRate;
       context->Audio->speakers = audioFrame.Header.Speakers;
       context->Audio->format = audioFrame.Header.Format;
-      context->Audio->frames = audioFrame.Header.Frames;
       // calculate the plane size for the current frame format and size
-      Beam.GetAudioDataSize(audioFrame.Header.Format, audioFrame.Header.Speakers, audioFrame.Header.Frames, out _, out int audioBytesPerSample);
-      _audioPlaneSize = (uint)audioBytesPerSample * audioFrame.Header.Frames;
+      Beam.GetAudioPlaneInfo(audioFrame.Header.Format, audioFrame.Header.Speakers, out _audioPlanes, out _audioBlockSize);
       Module.Log("AudioFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
     }
 
     context->Audio->timestamp = audioFrame.AdjustedTimestamp;
+    context->Audio->frames = audioFrame.Header.Frames;
 
     fixed (byte* audioData = audioFrame.Data) // temporary pinning is sufficient, since Obs.obs_source_output_audio() creates a copy of the data anyway
     {
-      // audio data in the array is already in the correct order, but the array offsets need to be set correctly according to the plane sizes
-      uint currentOffset = 0;
-      for (int speakerIndex = 0; speakerIndex < (int)audioFrame.Header.Speakers; speakerIndex++)
+      int currentOffset = 0;
+      // audio data in the array is already in the correct order, but the array offsets need to be set correctly according to the plane/channel layout
+      for (int planeIndex = 0; planeIndex < _audioPlanes; planeIndex++)
       {
-        context->Audio->data[speakerIndex] = audioData + currentOffset;
-        currentOffset += _audioPlaneSize;
+        context->Audio->data[planeIndex] = audioData + currentOffset;
+        currentOffset += _audioBlockSize;
       }
       // Module.Log($"AudioFrameReceivedEventHandler(): Output timestamp {audioFrame.Header.Timestamp}", ObsLogLevel.Debug);
       Obs.obs_source_output_audio(context->Source, context->Audio);

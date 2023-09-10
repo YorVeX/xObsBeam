@@ -172,14 +172,14 @@ public static class Output
     _conversionVideoFormat = video_format.VIDEO_FORMAT_NONE;
   }
 
-  private static void startSenderIfPossible()
+  private static void StartSenderIfPossible()
   {
     if (_beamSender.CanStart)
     {
       if (SettingsDialog.Properties.UsePipe)
-        _beamSender.Start(SettingsDialog.Properties.Identifier, SettingsDialog.Properties.Identifier);
+        _beamSender.Start(Beam.SenderTypes.Output, SettingsDialog.Properties.Identifier, SettingsDialog.Properties.Identifier);
       else
-        _beamSender.Start(SettingsDialog.Properties.Identifier, SettingsDialog.Properties.NetworkInterfaceAddress);
+        _beamSender.Start(Beam.SenderTypes.Output, SettingsDialog.Properties.Identifier, SettingsDialog.Properties.NetworkInterfaceAddress, SettingsDialog.Properties.Port, SettingsDialog.Properties.AutomaticPort);
     }
   }
 
@@ -200,12 +200,12 @@ public static class Output
         // don't set format, otherwise the info about manual conversions like from NV12 to I420 for JPEG will be lost
       }
 
-      var video = ObsBmem.bzalloc<obs_source_frame>(); // only using this to get the color_matrix, color_range_min and color_range_max fields
+      var video = ObsBmem.bzalloc<obs_source_frame>(); // only using this to store the color_matrix, color_range_min and color_range_max fields
       ObsVideo.video_format_get_parameters_for_format(_videoInfo->colorspace, _videoInfo->range, _videoInfo->format, video->color_matrix, video->color_range_min, video->color_range_max);
       try
       {
-        if (_beamSender.SetVideoParameters(_videoInfo->format, _conversionVideoFormat, _videoInfo->width, _videoInfo->height, _videoInfo->fps_num, _videoInfo->fps_den, Convert.ToByte(_videoInfo->range == video_range_type.VIDEO_RANGE_FULL), video->color_matrix, video->color_range_min, video->color_range_max, frame->linesize, frame->data))
-          startSenderIfPossible();
+        if (_beamSender.SetVideoParameters(SettingsDialog.Properties, _videoInfo->format, _conversionVideoFormat, _videoInfo->width, _videoInfo->height, _videoInfo->fps_num, _videoInfo->fps_den, Convert.ToByte(_videoInfo->range == video_range_type.VIDEO_RANGE_FULL), video->color_matrix, video->color_range_min, video->color_range_max, frame->linesize, frame->data))
+          StartSenderIfPossible();
       }
       catch (Exception ex)
       {
@@ -233,8 +233,8 @@ public static class Output
       _audioInfo = ObsAudio.audio_output_get_info(Obs.obs_output_audio(_outputData.Output));
       try
       {
-        _beamSender.SetAudioParameters(_audioInfo, frames->frames);
-        startSenderIfPossible();
+        _beamSender.SetAudioParameters(_audioInfo->format, _audioInfo->speakers, _audioInfo->samples_per_sec, frames->frames);
+        StartSenderIfPossible();
       }
       catch (Exception ex)
       {
@@ -243,7 +243,7 @@ public static class Output
       }
     }
 
-    _beamSender.SendAudio(frames->timestamp, frames->data.e0);
+    _beamSender.SendAudio(frames->timestamp, frames->frames, frames->data.e0);
     _audioFrameCycleCounter++;
     if ((_audioFrameCycleCounter > 5) && (_audioFrameCycleCounter > Obs.obs_get_active_fps())) // do this only roughly once per second
     {

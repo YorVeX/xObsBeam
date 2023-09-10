@@ -125,7 +125,7 @@ public static class Module
       case obs_frontend_event.OBS_FRONTEND_EVENT_FINISHED_LOADING:
         fixed (byte* menuItemText = "Beam Sender Output"u8)
           ObsFrontendApi.obs_frontend_add_tools_menu_item((sbyte*)menuItemText, &ToolsMenuItemClicked, null);
-        if (SettingsDialog.Properties.OutputEnabled)
+        if (SettingsDialog.Properties.Enabled)
           Output.Start();
         break;
       case obs_frontend_event.OBS_FRONTEND_EVENT_EXIT:
@@ -198,6 +198,7 @@ public static class Module
     ObsFrontendApi.obs_frontend_add_event_callback(&FrontendEvent, null);
 
     Source.Register();
+    Filter.Register();
 
     Version version = thisAssembly.GetName().Version!;
     Log($"Version {version.Major}.{version.Minor}.{version.Build} loaded (built with .NET {Environment.Version}).", ObsLogLevel.Info);

@@ -278,7 +278,7 @@ public class BeamReceiver
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private unsafe void TurboJpegDecompressToYuv(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, Beam.PlaneInfo planeInfo, int width, int height)
+  private unsafe void TurboJpegDecompressToYuv(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, Beam.VideoPlaneInfo planeInfo, int width, int height)
   {
     fixed (byte* jpegBuf = receivedFrameData, dstBuf = rawDataBuffer)
     {
@@ -389,10 +389,10 @@ public class BeamReceiver
 
     int videoHeaderSize = Beam.VideoHeader.VideoHeaderDataSize;
     uint rawVideoDataSize = 0;
-    Beam.PlaneInfo planeInfo = Beam.PlaneInfo.Empty;
+    Beam.VideoPlaneInfo planeInfo = Beam.VideoPlaneInfo.Empty;
     bool jpegInitialized = false;
     byte[] nv12ConversionBuffer = Array.Empty<byte>();
-    Beam.PlaneInfo i420PlaneInfo = Beam.PlaneInfo.Empty;
+    Beam.VideoPlaneInfo i420PlaneInfo = Beam.VideoPlaneInfo.Empty;
 
     double senderFps = 30;
     uint logCycle = 0;
@@ -505,7 +505,7 @@ public class BeamReceiver
               renderDelayAveragingFrameCount = (int)(senderFps / 2);
               renderDelays = new int[renderDelayAveragingFrameCount];
 
-              planeInfo = Beam.GetPlaneInfo(videoHeader.Format, videoHeader.Width, videoHeader.Height);
+              planeInfo = Beam.GetVideoPlaneInfo(videoHeader.Format, videoHeader.Width, videoHeader.Height);
 
               if (videoHeader.Compression == Beam.CompressionTypes.Density)
                 rawVideoDataSize = (uint)Density.density_decompress_safe_size(planeInfo.DataSize);
@@ -574,7 +574,7 @@ public class BeamReceiver
                       if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12) // for this case we need an extra buffer and plane info for conversion to NV12, since JPEG decompression always outputs I420
                       {
                         nv12ConversionBuffer = new byte[rawVideoDataSize];
-                        i420PlaneInfo = Beam.GetPlaneInfo(video_format.VIDEO_FORMAT_I420, videoHeader.Width, videoHeader.Height);
+                        i420PlaneInfo = Beam.GetVideoPlaneInfo(video_format.VIDEO_FORMAT_I420, videoHeader.Width, videoHeader.Height);
                       }
                     }
 

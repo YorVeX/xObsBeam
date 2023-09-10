@@ -26,6 +26,7 @@ sealed class BeamSenderClient
   Beam.AudioHeader _audioHeader;
   readonly ArrayPool<byte> _audioDataPool;
   DateTime _lastFrameTime = DateTime.MaxValue;
+  ulong _lastVideoTimestamp;
   readonly ManualResetEvent _sendLoopExited = new(false);
 
   public string ClientId { get; } = "";
@@ -58,6 +59,7 @@ sealed class BeamSenderClient
       _stream = _pipeStream;
     else
       throw new InvalidOperationException("No socket or pipe stream available.");
+    _lastVideoTimestamp = 0;
     _ = Task.Run(() => SendLoopAsync(PipeWriter.Create(_stream), _cancellationSource.Token));
     _ = Task.Run(() => ReceiveLoopAsync(PipeReader.Create(_stream), _cancellationSource.Token));
   }
@@ -136,20 +138,20 @@ sealed class BeamSenderClient
         _lastFrameTime = DateTime.UtcNow;
         if (receiveTimestampType == Beam.ReceiveTimestampTypes.Receive)
         {
-          var obsFrameTime = ObsInterop.Obs.obs_get_video_frame_time();
-          if (obsFrameTime > timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
+          var lastSentTimestamp = Interlocked.Read(ref _lastVideoTimestamp);
+          if (lastSentTimestamp > timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
           {
-            var receiveDelayMs = (ObsInterop.Obs.obs_get_video_frame_time() - timestamp) / 1_000_000;
+            var receiveDelayMs = (lastSentTimestamp - timestamp) / 1_000_000;
             // Module.Log($"<{ClientId}> Receiver received video frame {timestamp} with a delay of {receiveDelayMs} ms", ObsLogLevel.Debug);
             Interlocked.Exchange(ref _receiveDelayMs, (long)receiveDelayMs);
           }
         }
         else if (receiveTimestampType == Beam.ReceiveTimestampTypes.Render)
         {
-          var obsFrameTime = ObsInterop.Obs.obs_get_video_frame_time();
-          if (obsFrameTime > timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
+          var lastSentTimestamp = Interlocked.Read(ref _lastVideoTimestamp);
+          if (lastSentTimestamp > timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
           {
-            var renderDelayMs = (ObsInterop.Obs.obs_get_video_frame_time() - timestamp) / 1_000_000;
+            var renderDelayMs = (lastSentTimestamp - timestamp) / 1_000_000;
             // Module.Log($"<{ClientId}> Receiver rendered video frame {timestamp} with a delay of {renderDelayMs} ms", ObsLogLevel.Debug);
             Interlocked.Exchange(ref _renderDelayMs, (long)renderDelayMs);
           }
@@ -225,6 +227,7 @@ sealed class BeamSenderClient
                 // write video header data
                 var headerBytes = videoFrame.Header.WriteTo(pipeWriter.GetSpan(Beam.VideoHeader.VideoHeaderDataSize), videoFrame.Timestamp, receiveDelayMs, renderDelayMs);
                 pipeWriter.Advance(headerBytes);
+                Interlocked.Exchange(ref _lastVideoTimestamp, videoFrame.Timestamp);
 
                 // write video frame data - need to slice videoFrame.Data, since the arrays we get from _videoDataPool are often bigger than what we requested
                 var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(videoFrame.Data)[..videoFrame.Header.DataSize], cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
@@ -275,14 +278,14 @@ sealed class BeamSenderClient
               try
               {
                 // write audio header data
-                var headerBytes = audioFrame.Header.WriteTo(pipeWriter.GetSpan(Beam.AudioHeader.AudioHeaderDataSize), audioFrame.Timestamp);
+                var headerBytes = audioFrame.Header.WriteTo(pipeWriter.GetSpan(Beam.AudioHeader.AudioHeaderDataSize), audioFrame.Frames, audioFrame.DataSize, audioFrame.Timestamp);
                 pipeWriter.Advance(headerBytes);
 
                 // write audio frame data - need to slice audioFrame.Data, since the arrays we get from the shared ArrayPool are often bigger than what we requested
-                var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(audioFrame.Data)[..audioFrame.Header.DataSize], cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
+                var writeResult = await pipeWriter.WriteAsync(new ReadOnlyMemory<byte>(audioFrame.Data)[..audioFrame.DataSize], cancellationToken); // implicitly calls _pipeWriter.Advance and _pipeWriter.FlushAsync
                 _audioDataPool.Return(audioFrame.Data); // return audio frame data to the memory pool
                 if (frameCycle >= fps)
-                  Module.Log($"<{ClientId}> Sent {headerBytes} + {audioFrame.Header.DataSize} bytes of audio data, queue length: {audioFrameCount} ({_frameTimestampQueue.Count})", ObsLogLevel.Debug);
+                  Module.Log($"<{ClientId}> Sent {headerBytes} + {audioFrame.DataSize} bytes of audio data, queue length: {audioFrameCount} ({_frameTimestampQueue.Count})", ObsLogLevel.Debug);
                 if (writeResult.IsCanceled || writeResult.IsCompleted)
                 {
                   if (writeResult.IsCanceled)
@@ -414,10 +417,10 @@ sealed class BeamSenderClient
     return true;
   }
 
-  public unsafe void EnqueueAudio(ulong timestamp, byte* audioData)
+  public unsafe void EnqueueAudio(ulong timestamp, uint frames, byte* audioData, int dataSize)
   {
-    var frame = new Beam.BeamAudioData(_audioHeader, _audioDataPool.Rent(_audioHeader.DataSize), timestamp); // get an audio data memory buffer from the pool, avoiding allocations
-    new Span<byte>(audioData, frame.Header.DataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
+    var frame = new Beam.BeamAudioData(_audioHeader, _audioDataPool.Rent(dataSize), frames, dataSize, timestamp); // get an audio data memory buffer from the pool, avoiding allocations
+    new Span<byte>(audioData, dataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
 
     _frameTimestampQueue.Enqueue(timestamp); // EnqueueAudio() is always called from a sync context, so we can safely add the timestamps to the queue here and have it in the right order
     _frames.AddOrUpdate(timestamp, frame, (key, oldValue) => frame);

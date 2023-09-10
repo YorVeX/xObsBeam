@@ -13,7 +13,7 @@ public static class SettingsDialog
   static unsafe obs_data* _settings;
   static unsafe obs_source* _source;
 
-  public static BeamSenderProperties Properties { get; private set; } = new(BeamSenderProperties.PropertiesTypes.Output);
+  public static BeamSenderProperties Properties { get; private set; } = new(Beam.SenderTypes.Output);
 
   public static unsafe void Register()
   {
@@ -27,6 +27,7 @@ public static class SettingsDialog
       sourceInfo.create = &settings_create;
       sourceInfo.destroy = &settings_destroy;
       sourceInfo.update = &settings_update;
+      sourceInfo.save = &settings_save;
       sourceInfo.get_defaults = &settings_get_defaults;
       sourceInfo.get_properties = &settings_get_properties;
       ObsSource.obs_register_source_s(&sourceInfo, (nuint)sizeof(obs_source_info));
@@ -100,16 +101,21 @@ public static class SettingsDialog
   public static unsafe void settings_get_defaults(obs_data* settings)
   {
     Module.Log("settings_get_defaults called", ObsLogLevel.Debug);
-    BeamSenderProperties.settings_get_defaults(BeamSenderProperties.PropertiesTypes.Output, settings);
+    BeamSenderProperties.settings_get_defaults(Beam.SenderTypes.Output, settings);
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe void settings_update(void* data, obs_data* settings)
   {
     Module.Log("settings_update called", ObsLogLevel.Debug);
-    Properties.settings_update(data, settings);
+    Properties.settings_update(settings);
   }
 
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void settings_save(void* data, obs_data* settings)
+  {
+    Module.Log("settings_save called", ObsLogLevel.Debug);
+  }
 #pragma warning restore IDE1006
 
 }
