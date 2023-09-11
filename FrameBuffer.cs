@@ -168,7 +168,7 @@ public class FrameBuffer
       if (_rampUp)
         return Array.Empty<Beam.IBeamData>(); // still in ramp-up phase, don't return anything yet
 
-      if (_frameList.Count < VideoFrameBufferCount)
+      if (_frameList.Count < (VideoFrameBufferCount - 1))
         Module.Log($"Warning: Frame buffer below target: {_frameList.Count}/{VideoFrameBufferCount}", ObsLogLevel.Warning);
 
       var currentVideoTimestampStep = (ulong)(videoFrameFrequencySeconds * 1000000000);
