@@ -805,22 +805,34 @@ public class Source
     var thisSource = GetSource(data);
     if (thisSource != null)
     {
-      if (thisSource.IsAudioOnly)
-        thisSource.BeamReceiver?.SetLastOutputFrameTimestamp(thisSource.CurrentAudioTimestamp);
-      else
-        thisSource.BeamReceiver?.SetLastOutputFrameTimestamp(thisSource.CurrentVideoTimestamp);
-      if (thisSource.BeamReceiver?.FrameBuffer != null)
+      if (thisSource.IsAudioOnly || (thisSource.BeamReceiver?.AudioBuffer != null))
       {
-        Task.Run(() =>
+        thisSource.BeamReceiver?.SetLastOutputFrameTimestamp(thisSource.CurrentAudioTimestamp);
+        if (thisSource.BeamReceiver?.AudioBuffer != null)
         {
-          foreach (var frame in thisSource.BeamReceiver.FrameBuffer.GetNextFrames(seconds))
+          Task.Run(() =>
           {
-            if (frame.Type is Beam.Type.Video or Beam.Type.VideoOnly)
-              thisSource.VideoFrameReceivedEventHandler(thisSource, (Beam.BeamVideoData)frame);
-            else if (frame.Type is Beam.Type.Audio or Beam.Type.AudioOnly)
-              thisSource.AudioFrameReceivedEventHandler(thisSource, (Beam.BeamAudioData)frame);
-          }
-        });
+            foreach (var frame in thisSource.BeamReceiver.AudioBuffer.GetNextFrames(seconds))
+              thisSource.AudioFrameReceivedEventHandler(thisSource, frame);
+          });
+        }
+      }
+      else
+      {
+        thisSource.BeamReceiver?.SetLastOutputFrameTimestamp(thisSource.CurrentVideoTimestamp);
+        if (thisSource.BeamReceiver?.FrameBuffer != null)
+        {
+          Task.Run(() =>
+          {
+            foreach (var frame in thisSource.BeamReceiver.FrameBuffer.GetNextFrames(seconds))
+            {
+              if (frame.Type is Beam.Type.Video or Beam.Type.VideoOnly)
+                thisSource.VideoFrameReceivedEventHandler(thisSource, (Beam.BeamVideoData)frame);
+              else if (frame.Type is Beam.Type.Audio or Beam.Type.AudioOnly)
+                thisSource.AudioFrameReceivedEventHandler(thisSource, (Beam.BeamAudioData)frame);
+            }
+          });
+        }
       }
     }
   }
@@ -1109,7 +1121,7 @@ public class Source
       // calculate the plane size for the current frame format and size
       Beam.GetAudioPlaneInfo(audioFrame.Header.Format, audioFrame.Header.Speakers, out _audioPlanes, out _audioBlockSize);
       Module.Log("AudioFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
-      IsAudioOnly = (audioFrame.Header.Type == Beam.Type.AudioOnly);
+      IsAudioOnly = (audioFrame.Type == Beam.Type.AudioOnly);
     }
 
     if (IsAudioOnly)
@@ -1117,20 +1129,28 @@ public class Source
       context->ReceiveDelay = audioFrame.Header.ReceiveDelay;
       context->RenderDelay = audioFrame.RenderDelayAverage;
     }
-    context->Audio->timestamp = audioFrame.AdjustedTimestamp;
-    context->Audio->frames = audioFrame.Header.Frames;
-
-    fixed (byte* audioData = audioFrame.Data) // temporary pinning is sufficient, since Obs.obs_source_output_audio() creates a copy of the data anyway
+    if ((RenderDelayLimit > 0) && (audioFrame.RenderDelayAverage > RenderDelayLimit))
     {
-      int currentOffset = 0;
-      // audio data in the array is already in the correct order, but the array offsets need to be set correctly according to the plane/channel layout
-      for (int planeIndex = 0; planeIndex < _audioPlanes; planeIndex++)
+      Task.Run(BeamReceiver.Disconnect);
+      Module.Log($"Render delay limit of {RenderDelayLimit} ms exceeded ({audioFrame.RenderDelayAverage} ms), reconnecting.", ObsLogLevel.Warning);
+    }
+    else
+    {
+      context->Audio->timestamp = audioFrame.AdjustedTimestamp;
+      context->Audio->frames = audioFrame.Header.Frames;
+
+      fixed (byte* audioData = audioFrame.Data) // temporary pinning is sufficient, since Obs.obs_source_output_audio() creates a copy of the data anyway
       {
-        context->Audio->data[planeIndex] = audioData + currentOffset;
-        currentOffset += _audioBlockSize;
+        int currentOffset = 0;
+        // audio data in the array is already in the correct order, but the array offsets need to be set correctly according to the plane/channel layout
+        for (int planeIndex = 0; planeIndex < _audioPlanes; planeIndex++)
+        {
+          context->Audio->data[planeIndex] = audioData + currentOffset;
+          currentOffset += _audioBlockSize;
+        }
+        // Module.Log($"AudioFrameReceivedEventHandler(): Output timestamp {audioFrame.Header.Timestamp}", ObsLogLevel.Debug);
+        Obs.obs_source_output_audio(context->Source, context->Audio);
       }
-      // Module.Log($"AudioFrameReceivedEventHandler(): Output timestamp {audioFrame.Header.Timestamp}", ObsLogLevel.Debug);
-      Obs.obs_source_output_audio(context->Source, context->Audio);
     }
 
     return;

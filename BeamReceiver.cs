@@ -35,6 +35,7 @@ public class BeamReceiver
   public ArrayPool<byte> RawDataBufferPool { get; private set; } = ArrayPool<byte>.Create();
 
   public FrameBuffer? FrameBuffer { get; private set; }
+  public AudioBuffer? AudioBuffer { get; private set; }
 
   uint _width;
   public uint Width
@@ -502,6 +503,7 @@ public class BeamReceiver
             if (sizeChanged || firstVideoFrame) // re-allocate the arrays matching the new necessary size
             {
               firstVideoFrame = false;
+              AudioBuffer = null;
 
               renderDelayAveragingFrameCount = (int)(senderFps / 2);
               renderDelays = new int[renderDelayAveragingFrameCount];
@@ -659,6 +661,7 @@ public class BeamReceiver
             if (firstAudioFrame)
             {
               firstAudioFrame = false;
+              FrameBuffer = null;
 
               senderFps = (1 / ((1 / (double)audioHeader.SampleRate) * audioHeader.Frames));
 
@@ -666,18 +669,17 @@ public class BeamReceiver
               renderDelayAveragingFrameCount = (int)(senderFps / 2);
               renderDelays = new int[renderDelayAveragingFrameCount];
 
-              //TODO: enable frame buffer for audio-only feeds - currently doesn't work, since the frame buffer is video frame centric (not even ramp-up is finished without video frames)
               // initialize frame buffer
-              // if (FrameBufferTimeMs > 0)
-              // {
-              //   FrameBuffer = new FrameBuffer(FrameBufferTimeMs, FrameBufferFixedDelay, senderFps, senderFps, RawDataBufferPool);
-              //   Module.Log($"Buffering {FrameBuffer.VideoFrameBufferCount} audio frames based on a frame buffer time of {FrameBuffer.FrameBufferTimeMs} ms for {senderFps:F} sender FPS (local: {localFps:F} FPS).", ObsLogLevel.Info);
-              // }
-              // else
-              // {
-              FrameBuffer = null;
-              Module.Log("Frame buffering disabled.", ObsLogLevel.Info);
-              // }
+              if (FrameBufferTimeMs > 0)
+              {
+                AudioBuffer = new AudioBuffer(FrameBufferTimeMs, FrameBufferFixedDelay, senderFps);
+                Module.Log($"Buffering {AudioBuffer.AudioFrameBufferCount} audio frames based on a frame buffer time of {AudioBuffer.FrameBufferTimeMs} ms for {senderFps:F} sender audio FPS.", ObsLogLevel.Info);
+              }
+              else
+              {
+                AudioBuffer = null;
+                Module.Log("Audio frame buffering disabled.", ObsLogLevel.Info);
+              }
             }
 
             // average render delay calculation
@@ -719,10 +721,10 @@ public class BeamReceiver
             // process the frame
             if ((!firstVideoFrame || (beamType == Beam.Type.AudioOnly)) && (_frameTimestampOffset > 0)) // Beam treats video frames as a kind of header in several ways, ignore audio frames that were received before the first video frame (unless it's an audio-only feed)
             {
-              if (FrameBuffer == null)
+              if (AudioBuffer == null)
                 OnAudioFrameReceived(new Beam.BeamAudioData(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray(), frameReceivedTime, renderDelayAverage));
               else
-                FrameBuffer.ProcessFrame(new Beam.BeamAudioData(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray(), frameReceivedTime, renderDelayAverage));
+                AudioBuffer.ProcessFrame(new Beam.BeamAudioData(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray(), frameReceivedTime, renderDelayAverage));
             }
 
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
@@ -730,7 +732,6 @@ public class BeamReceiver
 
             if (logCycle >= senderFps)
               Module.Log($"Audio data: Expected {audioHeader.DataSize} bytes, received {receiveLength} bytes", ObsLogLevel.Debug);
-
           }
         }
         else
@@ -744,6 +745,8 @@ public class BeamReceiver
         {
           if (FrameBuffer != null)
             lastRenderedFrameTimestamp = FrameBuffer.GetOriginalVideoTimestamp(lastRenderedFrameTimestamp) + _frameTimestampOffset;
+          else if (AudioBuffer != null)
+            lastRenderedFrameTimestamp = AudioBuffer.GetOriginalAudioTimestamp(lastRenderedFrameTimestamp) + _frameTimestampOffset;
           else
             lastRenderedFrameTimestamp += _frameTimestampOffset;
           pipeWriter.GetSpan(sizeof(byte))[0] = (byte)Beam.ReceiveTimestampTypes.Render;
