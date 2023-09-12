@@ -208,7 +208,7 @@ public class Beam
         planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
         return planeInfo;
       case video_format.VIDEO_FORMAT_I422:
-        planeInfo = new VideoPlaneInfo(1, width * height);
+        planeInfo = new VideoPlaneInfo(3, width * height);
         planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
         planeInfo.Offsets[1] = planeInfo.DataSize;
         halfWidth = (width + 1) / 2;
