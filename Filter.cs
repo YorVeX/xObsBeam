@@ -131,7 +131,7 @@ public class Filter
           _parentSourceName = Marshal.PtrToStringUTF8((IntPtr)Obs.obs_source_get_name(ContextPointer->ParentSource))!;
       }
 
-      var requiredVideoFormatConversion = SettingsDialog.Properties.GetRequiredVideoFormatConversion(frame->format);
+      var requiredVideoFormatConversion = Properties.GetRequiredVideoFormatConversion(frame->format);
       if (requiredVideoFormatConversion != video_format.VIDEO_FORMAT_NONE)
       {
         Module.Log($"{UniquePrefix} {_filterType} data has unsupported format {frame->format} (need {requiredVideoFormatConversion}).", ObsLogLevel.Error);
