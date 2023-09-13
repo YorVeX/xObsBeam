@@ -33,6 +33,7 @@ public class Filter
   bool _isFirstAudioFrame = true;
   readonly BeamSender _beamSender;
   DateTime _lastFrame;
+  DateTime _startRequested = DateTime.MinValue;
   readonly Beam.SenderTypes _filterType;
   #endregion Instance fields
 
@@ -80,8 +81,10 @@ public class Filter
   private void StartSenderIfPossible()
   {
     Module.Log($"{UniquePrefix} {_filterType} StartSenderIfPossible(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart}", ObsLogLevel.Debug);
+    _startRequested = DateTime.UtcNow;
     if (_beamSender.CanStart)
     {
+      _startRequested = DateTime.MinValue;
       if (Properties.UsePipe)
         _beamSender.Start(Properties.Identifier, Properties.Identifier);
       else
@@ -108,6 +111,11 @@ public class Filter
     {
       Module.Log($"{UniquePrefix} {_filterType} has not received frame data for a while, stopping sender.", ObsLogLevel.Info);
       StopSender();
+    }
+    else if ((_startRequested != DateTime.MinValue) && (DateTime.UtcNow.Subtract(_startRequested).TotalMilliseconds >= 1000))
+    {
+      Module.Log($"{UniquePrefix} {_filterType} sender start is taking too long, make sure the source you're applying this filter to is providing both audio and video data, otherwise use the filters for video only or audio only.", ObsLogLevel.Warning);
+      _startRequested = DateTime.MinValue;
     }
   }
 
