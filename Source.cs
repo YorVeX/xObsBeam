@@ -356,7 +356,7 @@ public class Source
           ObsProperties.obs_property_list_add_string(peerDiscoveryAvailableSocketFeedsList, (sbyte*)noFeedsListItem, (sbyte*)noFeedsListItem);
 
         // was a pipe peer previously configured that wasn't discovered anymore this time?
-        if (!foundExactPreviousPipePeer && (previousPipeFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) && (previousPipeFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
+        if (!foundExactPreviousPipePeer && !string.IsNullOrEmpty(previousPipeFeedsListSelectionValue) && (previousPipeFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) && (previousPipeFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
         {
           // then make this transparent by adding this as a disabled list item
           fixed (byte* listItemName = Encoding.UTF8.GetBytes(previousPipeFeedsListSelectionName), listItemValue = Encoding.UTF8.GetBytes(previousPipeFeedsListSelectionValue))
@@ -365,7 +365,7 @@ public class Source
         }
 
         // was a socket peer previously configured that wasn't discovered anymore this time?
-        if (!foundExactPreviousSocketPeer && (previousSocketFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) && (previousSocketFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
+        if (!foundExactPreviousSocketPeer && !string.IsNullOrEmpty(previousSocketFeedsListSelectionValue) && (previousSocketFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) && (previousSocketFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
         {
           // then make this transparent by adding this as a disabled list item
           fixed (byte* listItemName = Encoding.UTF8.GetBytes(previousSocketFeedsListSelectionName), listItemValue = Encoding.UTF8.GetBytes(previousSocketFeedsListSelectionValue))
