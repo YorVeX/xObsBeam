@@ -100,7 +100,7 @@ public class PeerDiscovery
   public void StartServer(IPAddress serviceAddress, int servicePort, Beam.SenderTypes serviceType, string serviceIdentifier)
   {
     _serviceAddress = serviceAddress;
-    Module.Log("Peer Discovery server: Starting...", ObsLogLevel.Debug);
+    Module.Log($"Peer Discovery server: Starting for {serviceType} \"{serviceIdentifier}\" on {serviceAddress}:{servicePort}...", ObsLogLevel.Debug);
     if (_udpIsListening)
       StopServer();
     _serverPeer.IP = _serviceAddress.ToString();
@@ -115,13 +115,13 @@ public class PeerDiscovery
     _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
     _udpIsListening = true;
     Task.Run(UdpServerReceiveLoop);
-    Module.Log("Peer Discovery server: Started and entered receive loop.", ObsLogLevel.Debug);
+    Module.Log($"Peer Discovery server: Started and entered receive loop for {serviceType} \"{serviceIdentifier}\" on {serviceAddress}:{servicePort}.", ObsLogLevel.Debug);
   }
 
   public void StartServer(Beam.SenderTypes serviceType, string serviceIdentifier)
   {
     _serviceAddress = IPAddress.Loopback;
-    Module.Log("Peer Discovery server: Starting...", ObsLogLevel.Debug);
+    Module.Log($"Peer Discovery server: Starting for {serviceType} \"{serviceIdentifier}\"...", ObsLogLevel.Debug);
     if (_udpIsListening)
       StopServer();
     _serverPeer.IP = serviceIdentifier;
@@ -136,7 +136,7 @@ public class PeerDiscovery
     _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
     _udpIsListening = true;
     Task.Run(UdpServerReceiveLoop);
-    Module.Log("Peer Discovery server: Started and entered receive loop.", ObsLogLevel.Debug);
+    Module.Log($"Peer Discovery server: Started and entered receive loop for {serviceType} \"{serviceIdentifier}\".", ObsLogLevel.Debug);
   }
 
   public void StopServer()
@@ -159,7 +159,7 @@ public class PeerDiscovery
         byte[] data = _udpServer.Receive(ref senderEndPoint);
         string queryMessage = Encoding.UTF8.GetString(data);
         var queryItems = queryMessage.Split(StringSeparator, StringSplitOptions.TrimEntries);
-        Module.Log("Peer Discovery server: Received query: " + queryMessage, ObsLogLevel.Info);
+        Module.Log($"Peer Discovery server: {_serverPeer.SenderType} \"{_serverPeer.Identifier}\" received query: {queryMessage}", ObsLogLevel.Debug);
 
         if ((queryItems.Length == 2) && (queryItems[0] == MulticastPrefix) && (queryItems[1] == "Discover"))
         {
