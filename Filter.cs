@@ -29,6 +29,8 @@ public class Filter
   public BeamSenderProperties Properties { get; private set; }
   public bool IsEnabled { get; private set; }
   public bool IsActive { get; private set; }
+  public bool CheckSourceChangesVideo { get; set; }
+  public bool CheckSourceChangesAudio { get; set; }
   bool _isFirstVideoFrame = true;
   bool _isFirstAudioFrame = true;
   readonly BeamSender _beamSender;
@@ -78,6 +80,15 @@ public class Filter
     StopSender();
   }
 
+  private void RestartSender()
+  {
+    if (IsActive)
+    {
+      Disable();
+      Task.Delay(1000).ContinueWith((t) => Enable()); // a bit of delay is necessary if the filter was started before
+    }
+  }
+
   private void StartSenderIfPossible()
   {
     Module.Log($"{UniquePrefix} {_filterType} StartSenderIfPossible(): IsEnabled={IsEnabled}, IsActive={IsActive}, CanStart={_beamSender.CanStart}", ObsLogLevel.Debug);
@@ -100,6 +111,8 @@ public class Filter
     {
       _beamSender.Stop();
       IsActive = false;
+      CheckSourceChangesVideo = false;
+      CheckSourceChangesAudio = false;
       _isFirstVideoFrame = true;
       _isFirstAudioFrame = true;
     }
@@ -125,6 +138,24 @@ public class Filter
       return;
 
     _lastFrame = DateTime.UtcNow;
+
+    if (CheckSourceChangesVideo)
+    {
+      CheckSourceChangesVideo = false;
+      var obsVideoInfo = ObsBmem.bzalloc<obs_video_info>();
+      if (Convert.ToBoolean(Obs.obs_get_video_info(obsVideoInfo)) && (obsVideoInfo != null))
+      {
+        if (_beamSender.VideoParametersChanged(frame->format, frame->width, frame->height, obsVideoInfo->fps_num, obsVideoInfo->fps_den, frame->full_range, frame->color_matrix, frame->color_range_min, frame->color_range_max))
+        {
+          ObsBmem.bfree(obsVideoInfo);
+          Module.Log($"{UniquePrefix} {_filterType} source video configuration changed, restarting sender.", ObsLogLevel.Info);
+          RestartSender();
+          return;
+        }
+      }
+      ObsBmem.bfree(obsVideoInfo);
+    }
+
     if (_isFirstVideoFrame) // this is the first frame since the last output (re)start, get video info
     {
       _isFirstVideoFrame = false;
@@ -136,7 +167,11 @@ public class Filter
         // background: obs_filter_get_parent() is not guaranteed to work in filter_create, but it should be in filter_add, and then we don't need this here anymore where it might be too late and also doubled for first audio and video frame
         ContextPointer->ParentSource = Obs.obs_filter_get_parent(ContextPointer->Source);
         if (ContextPointer->ParentSource != null)
+        {
           _parentSourceName = Marshal.PtrToStringUTF8((IntPtr)Obs.obs_source_get_name(ContextPointer->ParentSource))!;
+          fixed (byte* signalName = "update"u8) // register for source settings update to restart the sender if necessary
+            ObsSignal.signal_handler_connect(Obs.obs_source_get_signal_handler(ContextPointer->ParentSource), (sbyte*)signalName, &SourceUpdateSignalEventHandler, ContextPointer);
+        }
       }
 
       var requiredVideoFormatConversion = Properties.GetRequiredVideoFormatConversion(frame->format);
@@ -173,6 +208,26 @@ public class Filter
       return;
 
     _lastFrame = DateTime.UtcNow;
+
+    if (CheckSourceChangesAudio)
+    {
+      CheckSourceChangesAudio = false;
+      var audioInfo = ObsBmem.bzalloc<obs_audio_info>(); // need this for samples_per_sec info
+      var audioOutputInfo = ObsAudio.audio_output_get_info(Obs.obs_get_audio()); // need this for format info, it's not in the global audio info
+      var speakerLayout = (ContextPointer->ParentSource != null ? Obs.obs_source_get_speaker_layout(ContextPointer->ParentSource) : audioInfo->speakers);
+      if (Convert.ToBoolean(Obs.obs_get_audio_info(audioInfo)) && (audioInfo != null) && (audioOutputInfo != null))
+      {
+        if (_beamSender.AudioParametersChanged(audioOutputInfo->format, speakerLayout, audioInfo->samples_per_sec))
+        {
+          ObsBmem.bfree(audioInfo);
+          Module.Log($"{UniquePrefix} {_filterType} source audio configuration changed, restarting sender.", ObsLogLevel.Info);
+          RestartSender();
+          return;
+        }
+      }
+      ObsBmem.bfree(audioInfo);
+    }
+
     if (_isFirstAudioFrame) // this is the first frame since the last output (re)start, get audio info
     {
       _isFirstAudioFrame = false;
@@ -209,6 +264,17 @@ public class Filter
     _beamSender.SendAudio(frame->timestamp, frame->frames, frame->data.e0);
   }
   #endregion Instance methods
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void SourceUpdateSignalEventHandler(void* data, calldata* callData)
+  {
+    var senderFilter = GetFilter(data);
+    if (senderFilter != null)
+    {
+      senderFilter.CheckSourceChangesVideo = true;
+      senderFilter.CheckSourceChangesAudio = true;
+    }
+  }
 
   #region Helper methods
   public static unsafe void Register()
@@ -357,6 +423,8 @@ public class Filter
   public static unsafe void filter_remove(void* data, obs_source* source)
   {
     Module.Log("filter_remove called", ObsLogLevel.Debug);
+    fixed (byte* signalName = "update"u8)
+      ObsSignal.signal_handler_disconnect(Obs.obs_source_get_signal_handler(source), (sbyte*)signalName, &SourceUpdateSignalEventHandler, GetFilter(data).ContextPointer);
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]

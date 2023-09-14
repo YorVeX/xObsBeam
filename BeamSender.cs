@@ -198,6 +198,21 @@ public class BeamSender
     return true;
   }
 
+  public unsafe bool VideoParametersChanged(video_format format, uint width, uint height, uint fps_num, uint fps_den, byte full_range, float* color_matrix, float* color_range_min, float* color_range_max)
+  {
+    var videoHeader = _videoHeader;
+    return ((_videoHeader.Width != width) ||
+        (_videoHeader.Height != height) ||
+        (_videoHeader.Fps != fps_num) ||
+        (_videoHeader.FpsDenominator != fps_den) ||
+        (_videoHeader.Format != format) ||
+        (_videoHeader.FullRange != full_range) ||
+        new ReadOnlySpan<float>(color_matrix, 16).SequenceEqual(new ReadOnlySpan<float>(videoHeader.ColorMatrix, 16)) == false ||
+        new ReadOnlySpan<float>(color_range_min, 3).SequenceEqual(new ReadOnlySpan<float>(videoHeader.ColorRangeMin, 3)) == false ||
+        new ReadOnlySpan<float>(color_range_max, 3).SequenceEqual(new ReadOnlySpan<float>(videoHeader.ColorRangeMax, 3)) == false
+    );
+  }
+
   public unsafe void SetAudioParameters(audio_format format, speaker_layout speakers, uint samples_per_sec, uint frames)
   {
     Beam.GetAudioPlaneInfo(format, speakers, out _audioPlanes, out _audioBlockSize);
@@ -212,6 +227,14 @@ public class BeamSender
       Frames = frames,
     };
     Module.Log($"{_audioHeader.Type} output feed initialized with {_audioPlanes} audio planes and a block size of {_audioBlockSize} bytes.", ObsLogLevel.Debug);
+  }
+
+  public unsafe bool AudioParametersChanged(audio_format format, speaker_layout speakers, uint samples_per_sec)
+  {
+    return ((_audioHeader.Format != format) ||
+        (_audioHeader.Speakers != speakers) ||
+        (_audioHeader.SampleRate != samples_per_sec)
+    );
   }
 
   public bool CanStart

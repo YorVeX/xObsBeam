@@ -277,7 +277,6 @@ public class BeamSenderProperties
   #region Callbacks
   public unsafe obs_properties* settings_get_properties(void* data)
   {
-    // NeedSenderRestart = false; // settings have been freshly opened, reset this
     _initializedEventHandlers.Clear(); // settings have been freshly opened, reset this
     var properties = ObsProperties.obs_properties_create();
     ObsProperties.obs_properties_set_flags(properties, ObsProperties.OBS_PROPERTIES_DEFER_UPDATE);
