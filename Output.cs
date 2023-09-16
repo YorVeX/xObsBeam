@@ -197,7 +197,8 @@ public static class Output
         _videoInfo->width = videoScaleInfo->width;
         _videoInfo->height = videoScaleInfo->height;
         _videoInfo->range = videoScaleInfo->range;
-        // don't set format, otherwise the info about manual conversions like from NV12 to I420 for JPEG will be lost
+        _conversionVideoFormat = videoScaleInfo->format;
+        // don't set _videoInfo->format, otherwise the info about manual conversions like from NV12 to I420 for JPEG will be lost
       }
 
       var video = ObsBmem.bzalloc<obs_source_frame>(); // only using this to store the color_matrix, color_range_min and color_range_max fields
