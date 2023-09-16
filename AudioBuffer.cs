@@ -10,7 +10,6 @@ public class AudioBuffer
   readonly List<Beam.BeamAudioData> _frameList = new();
   bool _rampUp = true;
   bool _isFirstAudioFrame = true;
-  int _audioFrameCount; //TODO: remove this and just access _frameList.Count instead, since this contains only audio frames anyway
   readonly double _senderFps;
   ulong _lastAudioTimestamp;
   long _timestampAdjustment;
@@ -49,7 +48,6 @@ public class AudioBuffer
     {
       _rampUp = true;
       _isFirstAudioFrame = true;
-      _audioFrameCount = 0;
       _lastAudioTimestamp = 0;
       _audioTimestampStepNs = 0;
       _maxAudioTimestampDeviation = 0;
@@ -67,11 +65,10 @@ public class AudioBuffer
     lock (_frameListLock)
     {
       _lastRenderDelay = frame.RenderDelayAverage; // need to get this from the newly added frames so that we work with the most recent value
-      _audioFrameCount++;
 
       if (_rampUp)
       {
-        if (_audioFrameCount > AudioFrameBufferCount) // ramp-up is finished when the buffer is filled to its configured size
+        if (_frameList.Count > AudioFrameBufferCount) // ramp-up is finished when the buffer is filled to its configured size
           _rampUp = false;
 
         if (_isFirstAudioFrame) // calculate the max audio frame time deviation based on header information from the first audio frame
@@ -198,7 +195,7 @@ public class AudioBuffer
         // check whether the next frame (by its timestamp) is not due yet
         bool isFrameDue = ((long)(frame.AdjustedTimestamp - _lastAudioTimestamp) < (long)currentVideoTimestampStepNs);
         bool isFrameMissing = ((long)(frame.AdjustedTimestamp - _lastAudioTimestamp) > (long)_maxAudioTimestampDeviation);
-        if ((_lastAudioTimestamp > 0) && (_audioFrameCount <= AudioFrameBufferCount) && (!isFrameDue || isFrameMissing))
+        if ((_lastAudioTimestamp > 0) && (_frameList.Count <= AudioFrameBufferCount) && (!isFrameDue || isFrameMissing))
         {
           if (!adjustedFrames && isFrameMissing)
             Module.Log($"Warning: Missing audio frame {_lastAudioTimestamp + (ulong)_audioTimestampStepNs} in frame buffer, timestamp deviation of {(long)(frame.AdjustedTimestamp - _lastAudioTimestamp)} > max deviation of {(long)_maxAudioTimestampDeviation}, consider increasing the frame buffer time if this happens frequently.", ObsLogLevel.Warning);
@@ -210,9 +207,8 @@ public class AudioBuffer
         {
           _lastAudioTimestamp = frame.AdjustedTimestamp;
 
-          _audioFrameCount--;
-          foundEnoughAudioFrames = (_audioFrameCount <= AudioFrameBufferCount); // only found enough audio frames when the buffer doesn't hold more of them than configured
           _frameList.RemoveAt(0);
+          foundEnoughAudioFrames = (_frameList.Count <= AudioFrameBufferCount); // only found enough audio frames when the buffer doesn't hold more of them than configured
           result.Add(frame);
         }
       }
