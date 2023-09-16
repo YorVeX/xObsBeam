@@ -590,7 +590,7 @@ public class BeamSenderProperties
   {
     Module.Log($"{UniquePrefix} settings_update called", ObsLogLevel.Debug);
     Initialize(settings);
-    RestartSenderIfNecessary(settings);
+    RestartSenderIfNecessary(settings, (PropertiesType == Beam.SenderTypes.Output));
   }
 
   public unsafe void settings_save(obs_data* settings)
@@ -640,9 +640,9 @@ public class BeamSenderProperties
   }
 
   #region Event handler helper functions
-  private unsafe void RestartSenderIfNecessary(obs_data* settings)
+  private unsafe void RestartSenderIfNecessary(obs_data* settings, bool forceRestart = false)
   {
-    if (!NeedSenderRestart)
+    if (!NeedSenderRestart && !forceRestart)
       return;
     fixed (byte* propertyEnableId = "enable"u8)
     {
@@ -678,10 +678,12 @@ public class BeamSenderProperties
 
   private void EventHandlerNeedSenderRestartCheck(string eventHandlerName)
   {
+    if (PropertiesType == Beam.SenderTypes.Output) // the output just always updates on settings_update
+      return;
     if (_initializedEventHandlers.Contains(eventHandlerName)) // this is not the init call, something actually changed, therefore a restart is necessary
     {
       NeedSenderRestart = true;
-      Module.Log($"{UniquePrefix} Sender restart requested from {eventHandlerName}.", ObsLogLevel.Debug);
+      Module.Log($"{UniquePrefix} sender restart requested from {eventHandlerName}.", ObsLogLevel.Debug);
     }
     else // this is just the init call after opening the settings, the setting didn't actually change, therefore no restart is necessary
       _initializedEventHandlers.Add(eventHandlerName);
