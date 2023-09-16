@@ -740,6 +740,9 @@ public class BeamSenderProperties
         video_format.VIDEO_FORMAT_I444, // native support by libjpeg-turbo
         video_format.VIDEO_FORMAT_YUVA, // no native support by libjpeg-turbo, alpha will be dropped so that it becomes I444
         video_format.VIDEO_FORMAT_NV12, // no native support by libjpeg-turbo, will be unpacked to I420
+        video_format.VIDEO_FORMAT_YVYU, // no native support by libjpeg-turbo, will be unpacked to I422
+        video_format.VIDEO_FORMAT_UYVY, // no native support by libjpeg-turbo, will be unpacked to I422
+        video_format.VIDEO_FORMAT_YUY2, // no native support by libjpeg-turbo, will be unpacked to I422
         video_format.VIDEO_FORMAT_BGRA, // native support by libjpeg-turbo
         video_format.VIDEO_FORMAT_BGRX, // native support by libjpeg-turbo
         video_format.VIDEO_FORMAT_BGR3, // native support by libjpeg-turbo

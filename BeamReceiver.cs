@@ -393,8 +393,9 @@ public class BeamReceiver
     uint rawVideoDataSize = 0;
     Beam.VideoPlaneInfo planeInfo = Beam.VideoPlaneInfo.Empty;
     bool jpegInitialized = false;
-    byte[] nv12ConversionBuffer = Array.Empty<byte>();
+    byte[] conversionBuffer = Array.Empty<byte>();
     Beam.VideoPlaneInfo i420PlaneInfo = Beam.VideoPlaneInfo.Empty;
+    Beam.VideoPlaneInfo i422PlaneInfo = Beam.VideoPlaneInfo.Empty;
 
     double senderFps = 30;
     uint logCycle = 0;
@@ -575,18 +576,41 @@ public class BeamReceiver
                     {
                       // can't do this in first frame handling code, since with compression level setting enabled the first frame might have been a raw one
                       jpegInitialized = true;
-                      if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12) // for this case we need an extra buffer and plane info for conversion to NV12, since JPEG decompression always outputs I420
+                      if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12) // for this case we need an extra buffer and plane info for conversion to NV12, since JPEG decompression for this always outputs I420
                       {
-                        nv12ConversionBuffer = new byte[rawVideoDataSize];
+                        conversionBuffer = new byte[rawVideoDataSize];
                         i420PlaneInfo = Beam.GetVideoPlaneInfo(video_format.VIDEO_FORMAT_I420, videoHeader.Width, videoHeader.Height);
+                      }
+                      else if (videoHeader.Format is video_format.VIDEO_FORMAT_YVYU or video_format.VIDEO_FORMAT_UYVY or video_format.VIDEO_FORMAT_YUY2) // for this case we need an extra buffer and plane info for conversion to these packed formats, since JPEG decompression for this always outputs I422
+                      {
+                        conversionBuffer = new byte[rawVideoDataSize];
+                        i422PlaneInfo = Beam.GetVideoPlaneInfo(video_format.VIDEO_FORMAT_I422, videoHeader.Width, videoHeader.Height);
                       }
                     }
 
                     if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12)
                     {
                       // for this case we need to decompress to an intermediate buffer for conversion to NV12, since for JPEG it was previously converted to I420
-                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, nv12ConversionBuffer, i420PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
-                      EncoderSupport.I420ToNv12(nv12ConversionBuffer, rawDataBuffer, planeInfo, i420PlaneInfo);
+                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, conversionBuffer, i420PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
+                      EncoderSupport.I420ToNv12(conversionBuffer, rawDataBuffer, planeInfo, i420PlaneInfo);
+                    }
+                    else if (videoHeader.Format == video_format.VIDEO_FORMAT_YVYU)
+                    {
+                      // for this case we need to decompress to an intermediate buffer for conversion to YVYU, since for JPEG it was previously converted to I422
+                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, conversionBuffer, i422PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
+                      EncoderSupport.I422ToYvyu(conversionBuffer, rawDataBuffer, i422PlaneInfo);
+                    }
+                    else if (videoHeader.Format == video_format.VIDEO_FORMAT_UYVY)
+                    {
+                      // for this case we need to decompress to an intermediate buffer for conversion to UYVY, since for JPEG it was previously converted to I422
+                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, conversionBuffer, i422PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
+                      EncoderSupport.I422ToUyvy(conversionBuffer, rawDataBuffer, i422PlaneInfo);
+                    }
+                    else if (videoHeader.Format == video_format.VIDEO_FORMAT_YUY2)
+                    {
+                      // for this case we need to decompress to an intermediate buffer for conversion to YUY2, since for JPEG it was previously converted to I422
+                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, conversionBuffer, i422PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
+                      EncoderSupport.I422ToYuy2(conversionBuffer, rawDataBuffer, i422PlaneInfo);
                     }
                     else // for I420, I422 and I444 decompression no conversion is needed, decompress directly into the final raw data buffer (both libjpeg-turbo and OBS support these formats)
                       TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, planeInfo, (int)videoHeader.Width, (int)videoHeader.Height);

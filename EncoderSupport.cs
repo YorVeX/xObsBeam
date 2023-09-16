@@ -284,6 +284,105 @@ public static class EncoderSupport
     }
   }
 
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  public static unsafe void YvyuToI422(byte* sourceBuffer, Span<byte> destinationBuffer, Beam.VideoPlaneInfo planeInfoI422)
+  {
+    // copy and deinterleave the UV plane
+    var yPlane = destinationBuffer.Slice((int)planeInfoI422.Offsets[0], (int)planeInfoI422.PlaneSizes[0]);
+    var uPlane = destinationBuffer.Slice((int)planeInfoI422.Offsets[1], (int)planeInfoI422.PlaneSizes[1]);
+    var vPlane = destinationBuffer.Slice((int)planeInfoI422.Offsets[2], (int)planeInfoI422.PlaneSizes[2]);
+
+    for (int i = 0; i < planeInfoI422.PlaneSizes[0]; i++)
+      yPlane[i] = sourceBuffer[i * 2];
+    for (int i = 0; i < planeInfoI422.PlaneSizes[1]; i++)
+    {
+      uPlane[i] = sourceBuffer[(4 * i) + 3];
+      vPlane[i] = sourceBuffer[(4 * i) + 1];
+    }
+  }
+
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  public static void I422ToYvyu(Span<byte> sourceBuffer, Span<byte> destinationBuffer, Beam.VideoPlaneInfo planeInfoI422)
+  {
+    // interleave the Y, U and V planes into a single packed plane
+    var yPlane = sourceBuffer.Slice((int)planeInfoI422.Offsets[0], (int)planeInfoI422.PlaneSizes[0]);
+    var uPlane = sourceBuffer.Slice((int)planeInfoI422.Offsets[1], (int)planeInfoI422.PlaneSizes[1]);
+    var vPlane = sourceBuffer.Slice((int)planeInfoI422.Offsets[2], (int)planeInfoI422.PlaneSizes[2]);
+    for (int i = 0; i < planeInfoI422.PlaneSizes[0]; i++)
+      destinationBuffer[i * 2] = yPlane[i];
+    for (int i = 0; i < planeInfoI422.PlaneSizes[1]; i++)
+    {
+      destinationBuffer[(4 * i) + 3] = uPlane[i];
+      destinationBuffer[(4 * i) + 1] = vPlane[i];
+    }
+  }
+
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  public static unsafe void UyvyToI422(byte* sourceBuffer, Span<byte> destinationBuffer, Beam.VideoPlaneInfo planeInfoI422)
+  {
+    // copy and deinterleave the UV plane
+    var yPlane = destinationBuffer.Slice((int)planeInfoI422.Offsets[0], (int)planeInfoI422.PlaneSizes[0]);
+    var uPlane = destinationBuffer.Slice((int)planeInfoI422.Offsets[1], (int)planeInfoI422.PlaneSizes[1]);
+    var vPlane = destinationBuffer.Slice((int)planeInfoI422.Offsets[2], (int)planeInfoI422.PlaneSizes[2]);
+
+    for (int i = 0; i < planeInfoI422.PlaneSizes[0]; i++)
+      yPlane[i] = sourceBuffer[(i * 2) + 1];
+    for (int i = 0; i < planeInfoI422.PlaneSizes[1]; i++)
+    {
+      uPlane[i] = sourceBuffer[(4 * i) + 0];
+      vPlane[i] = sourceBuffer[(4 * i) + 2];
+    }
+  }
+
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  public static void I422ToUyvy(Span<byte> sourceBuffer, Span<byte> destinationBuffer, Beam.VideoPlaneInfo planeInfoI422)
+  {
+    // interleave the Y, U and V planes into a single packed plane
+    var yPlane = sourceBuffer.Slice((int)planeInfoI422.Offsets[0], (int)planeInfoI422.PlaneSizes[0]);
+    var uPlane = sourceBuffer.Slice((int)planeInfoI422.Offsets[1], (int)planeInfoI422.PlaneSizes[1]);
+    var vPlane = sourceBuffer.Slice((int)planeInfoI422.Offsets[2], (int)planeInfoI422.PlaneSizes[2]);
+    for (int i = 0; i < planeInfoI422.PlaneSizes[0]; i++)
+      destinationBuffer[(i * 2) + 1] = yPlane[i];
+    for (int i = 0; i < planeInfoI422.PlaneSizes[1]; i++)
+    {
+      destinationBuffer[(4 * i) + 0] = uPlane[i];
+      destinationBuffer[(4 * i) + 2] = vPlane[i];
+    }
+  }
+
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  public static unsafe void Yuy2ToI422(byte* sourceBuffer, Span<byte> destinationBuffer, Beam.VideoPlaneInfo planeInfoI422)
+  {
+    // copy and deinterleave the UV plane
+    var yPlane = destinationBuffer.Slice((int)planeInfoI422.Offsets[0], (int)planeInfoI422.PlaneSizes[0]);
+    var uPlane = destinationBuffer.Slice((int)planeInfoI422.Offsets[1], (int)planeInfoI422.PlaneSizes[1]);
+    var vPlane = destinationBuffer.Slice((int)planeInfoI422.Offsets[2], (int)planeInfoI422.PlaneSizes[2]);
+
+    for (int i = 0; i < planeInfoI422.PlaneSizes[0]; i++)
+      yPlane[i] = sourceBuffer[i * 2];
+    for (int i = 0; i < planeInfoI422.PlaneSizes[1]; i++)
+    {
+      uPlane[i] = sourceBuffer[(4 * i) + 1];
+      vPlane[i] = sourceBuffer[(4 * i) + 3];
+    }
+  }
+
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+  public static void I422ToYuy2(Span<byte> sourceBuffer, Span<byte> destinationBuffer, Beam.VideoPlaneInfo planeInfoI422)
+  {
+    // interleave the Y, U and V planes into a single packed plane
+    var yPlane = sourceBuffer.Slice((int)planeInfoI422.Offsets[0], (int)planeInfoI422.PlaneSizes[0]);
+    var uPlane = sourceBuffer.Slice((int)planeInfoI422.Offsets[1], (int)planeInfoI422.PlaneSizes[1]);
+    var vPlane = sourceBuffer.Slice((int)planeInfoI422.Offsets[2], (int)planeInfoI422.PlaneSizes[2]);
+    for (int i = 0; i < planeInfoI422.PlaneSizes[0]; i++)
+      destinationBuffer[i * 2] = yPlane[i];
+    for (int i = 0; i < planeInfoI422.PlaneSizes[1]; i++)
+    {
+      destinationBuffer[(4 * i) + 1] = uPlane[i];
+      destinationBuffer[(4 * i) + 3] = vPlane[i];
+    }
+  }
+
 #pragma warning disable IDE0060 // we don't make use of the memory_func_context parameter but it needs to be there
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]

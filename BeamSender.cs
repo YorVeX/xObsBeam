@@ -36,6 +36,7 @@ public class BeamSender
   Beam.AudioHeader _audioHeader;
   Beam.VideoPlaneInfo _videoPlaneInfo;
   Beam.VideoPlaneInfo _i420PlaneInfo;
+  Beam.VideoPlaneInfo _i422PlaneInfo;
   int _audioPlanes;
   int _audioBlockSize;
 
@@ -143,6 +144,8 @@ public class BeamSender
     {
       if (format == video_format.VIDEO_FORMAT_NV12) // NV12 is a special case, because it's already in YUV format, but the planes are interleaved
         _i420PlaneInfo = Beam.GetVideoPlaneInfo(video_format.VIDEO_FORMAT_I420, width, height);
+      else if (format is video_format.VIDEO_FORMAT_YVYU or video_format.VIDEO_FORMAT_UYVY or video_format.VIDEO_FORMAT_YUY2) // more special cases where it's already in YUV format, but the planes are interleaved
+        _i422PlaneInfo = Beam.GetVideoPlaneInfo(video_format.VIDEO_FORMAT_I422, width, height);
 
       _videoHeader.Compression = Beam.CompressionTypes.Jpeg;
       _jpegCompressionQuality = properties.JpegCompressionQuality;
@@ -474,6 +477,8 @@ public class BeamSender
             var planeInfo = _videoPlaneInfo;
             if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12)
               planeInfo = _i420PlaneInfo; // packed format, was converted to I420 so that libjpeg-turbo can handle it
+            else if (videoHeader.Format is video_format.VIDEO_FORMAT_YVYU or video_format.VIDEO_FORMAT_UYVY or video_format.VIDEO_FORMAT_YUY2)
+              planeInfo = _i422PlaneInfo; // packed format, was converted to I422 so that libjpeg-turbo can handle it
 
             // set the pointers to the start of each plane
             var planes = stackalloc byte*[planeInfo.Count];
@@ -641,10 +646,24 @@ public class BeamSender
 
     if (_compressionThreadingSync)
     {
-      if ((_videoHeader.Compression is Beam.CompressionTypes.Jpeg) && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
+      if ((_videoHeader.Compression == Beam.CompressionTypes.Jpeg) && (_videoHeader.Format is video_format.VIDEO_FORMAT_NV12 or video_format.VIDEO_FORMAT_YVYU or video_format.VIDEO_FORMAT_UYVY or video_format.VIDEO_FORMAT_YUY2))
       {
         byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize);
-        EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneInfo, _i420PlaneInfo);
+        switch (_videoHeader.Format)
+        {
+          case video_format.VIDEO_FORMAT_NV12:
+            EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneInfo, _i420PlaneInfo);
+            break;
+          case video_format.VIDEO_FORMAT_YVYU:
+            EncoderSupport.YvyuToI422(data, managedDataCopy, _i422PlaneInfo);
+            break;
+          case video_format.VIDEO_FORMAT_UYVY:
+            EncoderSupport.UyvyToI422(data, managedDataCopy, _i422PlaneInfo);
+            break;
+          case video_format.VIDEO_FORMAT_YUY2:
+            EncoderSupport.Yuy2ToI422(data, managedDataCopy, _i422PlaneInfo);
+            break;
+        }
         fixed (byte* videoData = managedDataCopy)
           SendCompressed(timestamp, _videoHeader, videoData, encodedData);
         _videoDataPool!.Return(managedDataCopy);
@@ -657,8 +676,14 @@ public class BeamSender
       byte[]? managedDataCopy = _videoDataPool!.Rent(_videoDataPoolMaxSize); // need a managed memory copy for async handover
 
       // to save an additional frame copy operation the JPEG deinterleaving is done in the sync part of the code with an implicit copy operation to managed memory that is needed anyway for the async handover
-      if ((_videoHeader.Compression is Beam.CompressionTypes.Jpeg) && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12)) //TODO: support deinterleaving for more packed formats: VIDEO_FORMAT_YVYU, VIDEO_FORMAT_YUY2, VIDEO_FORMAT_UYVY, VIDEO_FORMAT_AYUV, VIDEO_FORMAT_V210
+      if ((_videoHeader.Compression is Beam.CompressionTypes.Jpeg) && (_videoHeader.Format == video_format.VIDEO_FORMAT_NV12))
         EncoderSupport.Nv12ToI420(data, managedDataCopy, _videoPlaneInfo, _i420PlaneInfo);
+      else if ((_videoHeader.Compression is Beam.CompressionTypes.Jpeg) && (_videoHeader.Format == video_format.VIDEO_FORMAT_YVYU))
+        EncoderSupport.YvyuToI422(data, managedDataCopy, _i422PlaneInfo);
+      else if ((_videoHeader.Compression is Beam.CompressionTypes.Jpeg) && (_videoHeader.Format == video_format.VIDEO_FORMAT_UYVY))
+        EncoderSupport.UyvyToI422(data, managedDataCopy, _i422PlaneInfo);
+      else if ((_videoHeader.Compression is Beam.CompressionTypes.Jpeg) && (_videoHeader.Format == video_format.VIDEO_FORMAT_YUY2))
+        EncoderSupport.Yuy2ToI422(data, managedDataCopy, _i422PlaneInfo);
       else
         new ReadOnlySpan<byte>(data, (int)_videoPlaneInfo.DataSize).CopyTo(managedDataCopy); // just copy to managed as-is for formats that are not packed
 
