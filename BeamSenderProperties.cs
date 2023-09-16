@@ -731,7 +731,20 @@ public class BeamSenderProperties
       RequiredVideoFormats.Add(Beam.CompressionTypes.Qoi, new[] { video_format.VIDEO_FORMAT_BGRA });
       RequiredVideoFormats.Add(Beam.CompressionTypes.Qoir, new[] { video_format.VIDEO_FORMAT_BGRA });
       RequiredVideoFormats.Add(Beam.CompressionTypes.Qoy, new[] { video_format.VIDEO_FORMAT_NV12 });
-      RequiredVideoFormats.Add(Beam.CompressionTypes.Jpeg, new[] { video_format.VIDEO_FORMAT_I420, video_format.VIDEO_FORMAT_I444, video_format.VIDEO_FORMAT_NV12, video_format.VIDEO_FORMAT_BGRA });
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Jpeg, new[]
+      {
+        video_format.VIDEO_FORMAT_I420, // native support by libjpeg-turbo
+        video_format.VIDEO_FORMAT_I40A, // no native support by libjpeg-turbo, alpha will be dropped so that it becomes I420
+        video_format.VIDEO_FORMAT_I422, // native support by libjpeg-turbo
+        video_format.VIDEO_FORMAT_I42A, // no native support by libjpeg-turbo, alpha will be dropped so that it becomes I422
+        video_format.VIDEO_FORMAT_I444, // native support by libjpeg-turbo
+        video_format.VIDEO_FORMAT_YUVA, // no native support by libjpeg-turbo, alpha will be dropped so that it becomes I444
+        video_format.VIDEO_FORMAT_NV12, // no native support by libjpeg-turbo, will be unpacked to I420
+        video_format.VIDEO_FORMAT_BGRA, // native support by libjpeg-turbo
+        video_format.VIDEO_FORMAT_BGRX, // native support by libjpeg-turbo
+        video_format.VIDEO_FORMAT_BGR3, // native support by libjpeg-turbo
+        video_format.VIDEO_FORMAT_RGBA, // native support by libjpeg-turbo
+      });
 
       // if only recommended items are configured to be shown: hide compression algorithms that don't natively support the current OBS video format or have a superior alternative available
       var qoiRecommended = !showOnlyRecommended || (NativeVideoFormatSupport(Beam.CompressionTypes.Qoi, obsVideoFormat) && !EncoderSupport.QoirLib);

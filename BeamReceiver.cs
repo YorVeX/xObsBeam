@@ -259,15 +259,16 @@ public class BeamReceiver
   }
 
   [MethodImpl(MethodImplOptions.AggressiveInlining)]
-  private unsafe void TurboJpegDecompressToBgra(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, int width, int height)
+  private unsafe void TurboJpegDecompressToBgra(byte[] receivedFrameData, int dataSize, byte[] rawDataBuffer, int width, int height, video_format format)
   {
+    var pixelFormat = EncoderSupport.ObsToJpegPixelFormat(format);
     fixed (byte* jpegBuf = receivedFrameData, dstBuf = rawDataBuffer)
     {
       int compressResult;
       if (EncoderSupport.LibJpegTurboV3)
-        compressResult = TurboJpeg.tj3Decompress8(_turboJpegDecompress, jpegBuf, (uint)dataSize, dstBuf, width * TurboJpeg.tjPixelSize[(int)TJPF.TJPF_BGRA], (int)TJPF.TJPF_BGRA);
+        compressResult = TurboJpeg.tj3Decompress8(_turboJpegDecompress, jpegBuf, (uint)dataSize, dstBuf, width * TurboJpeg.tjPixelSize[(int)pixelFormat], (int)pixelFormat);
       else if (EncoderSupport.LibJpegTurbo)
-        compressResult = TurboJpeg.tjDecompress2(_turboJpegDecompress, jpegBuf, (uint)dataSize, dstBuf, width, width * TurboJpeg.tjPixelSize[(int)TJPF.TJPF_BGRA], height, (int)TJPF.TJPF_BGRA, 0);
+        compressResult = TurboJpeg.tjDecompress2(_turboJpegDecompress, jpegBuf, (uint)dataSize, dstBuf, width, width * TurboJpeg.tjPixelSize[(int)pixelFormat], height, (int)pixelFormat, 0);
       else
       {
         Module.Log($"Error: JPEG library is not available, cannot decompress received video data!", ObsLogLevel.Error);
@@ -583,15 +584,15 @@ public class BeamReceiver
 
                     if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12)
                     {
-                      // for this case we need to decompress to an intermediate buffer for conversion to NV12, since JPEG decompression always outputs I420
+                      // for this case we need to decompress to an intermediate buffer for conversion to NV12, since for JPEG it was previously converted to I420
                       TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, nv12ConversionBuffer, i420PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
                       EncoderSupport.I420ToNv12(nv12ConversionBuffer, rawDataBuffer, planeInfo, i420PlaneInfo);
                     }
-                    else // for I420 decompression no conversion is needed, decompress directly into the final raw data buffer
+                    else // for I420, I422 and I444 decompression no conversion is needed, decompress directly into the final raw data buffer (both libjpeg-turbo and OBS support these formats)
                       TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, planeInfo, (int)videoHeader.Width, (int)videoHeader.Height);
                   }
                   else
-                    TurboJpegDecompressToBgra(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height);
+                    TurboJpegDecompressToBgra(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height, videoHeader.Format);
                   break;
               }
             }

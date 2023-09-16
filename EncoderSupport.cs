@@ -164,7 +164,6 @@ public static class EncoderSupport
     switch (format)
     {
       case video_format.VIDEO_FORMAT_NV12:
-      case video_format.VIDEO_FORMAT_I422:
       case video_format.VIDEO_FORMAT_YVYU:
       case video_format.VIDEO_FORMAT_YUY2:
       case video_format.VIDEO_FORMAT_UYVY:
@@ -227,6 +226,17 @@ public static class EncoderSupport
       video_format.VIDEO_FORMAT_RGBA => TJPF.TJPF_RGBA,
       video_format.VIDEO_FORMAT_Y800 => TJPF.TJPF_GRAY,
       _ => TJPF.TJPF_UNKNOWN
+    };
+  }
+
+  public static video_format JpegDropAlpha(video_format obsVideoFormat)
+  {
+    return obsVideoFormat switch
+    {
+      video_format.VIDEO_FORMAT_I40A => video_format.VIDEO_FORMAT_I420,
+      video_format.VIDEO_FORMAT_I42A => video_format.VIDEO_FORMAT_I422,
+      video_format.VIDEO_FORMAT_YUVA => video_format.VIDEO_FORMAT_I444,
+      _ => obsVideoFormat
     };
   }
 

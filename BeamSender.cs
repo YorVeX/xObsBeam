@@ -77,6 +77,16 @@ public class BeamSender
     if (conversionVideoFormat != video_format.VIDEO_FORMAT_NONE)
       format = conversionVideoFormat;
 
+    if (properties.JpegCompression && EncoderSupport.LibJpegTurbo)
+    {
+      var jpegformat = EncoderSupport.JpegDropAlpha(format); // YUV formats with alpha channel are not supported for JPEG, for these formats just ignore the alpha plane that is at the end
+      if (format != jpegformat)
+      {
+        Module.Log($"Warning: JPEG compression does not support alpha channel, dropping alpha plane for {format}, resulting in {jpegformat}.", ObsLogLevel.Warning);
+        format = jpegformat;
+      }
+    }
+
     // get the plane information for the current frame format and size
     _videoPlaneInfo = Beam.GetVideoPlaneInfo(format, width, height);
     if (_videoPlaneInfo.Count == 0) // unsupported format, will also be logged by the GetPlaneInfo() function
@@ -90,7 +100,7 @@ public class BeamSender
       if (pointerOffset != (IntPtr)data[planeIndex])
       {
         // either GetPlaneInfo() returned wrong information or the video data plane pointers are not contiguous in memory (which we currently rely on)
-        Module.Log($"Video data plane pointer for {format} plane {planeIndex} with resolution {width}x{height} has a difference of {pointerOffset - (IntPtr)data[planeIndex]} ({(IntPtr)data[planeIndex] - (IntPtr)data.e0} instead of {pointerOffset - (IntPtr)data.e0}).", ObsLogLevel.Warning);
+        Module.Log($"Warning: Video data plane pointer for {format} plane {planeIndex} with resolution {width}x{height} has a difference of {pointerOffset - (IntPtr)data[planeIndex]} ({(IntPtr)data[planeIndex] - (IntPtr)data.e0} instead of {pointerOffset - (IntPtr)data.e0}).", ObsLogLevel.Warning);
       }
     }
 
@@ -131,6 +141,9 @@ public class BeamSender
     }
     else if (properties.JpegCompression && EncoderSupport.LibJpegTurbo)
     {
+      if (format == video_format.VIDEO_FORMAT_NV12) // NV12 is a special case, because it's already in YUV format, but the planes are interleaved
+        _i420PlaneInfo = Beam.GetVideoPlaneInfo(video_format.VIDEO_FORMAT_I420, width, height);
+
       _videoHeader.Compression = Beam.CompressionTypes.Jpeg;
       _jpegCompressionQuality = properties.JpegCompressionQuality;
       _videoDataPoolMaxSize = (int)_videoPlaneInfo.DataSize;
@@ -143,8 +156,6 @@ public class BeamSender
       _jpegSubsampling = EncoderSupport.ObsToJpegSubsampling(format);
       _jpegColorspace = EncoderSupport.ObsToJpegColorSpace(format);
       _jpegYuv = EncoderSupport.FormatIsYuv(format);
-      if (format == video_format.VIDEO_FORMAT_NV12) // NV12 is a special case, because it's already in YUV format, but the planes are interleaved
-        _i420PlaneInfo = Beam.GetVideoPlaneInfo(video_format.VIDEO_FORMAT_I420, width, height);
       _compressionThreshold = properties.JpegCompressionLevel / 10.0;
     }
     else if (properties.DensityCompression && EncoderSupport.DensityApi)
