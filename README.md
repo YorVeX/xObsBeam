@@ -104,7 +104,8 @@ Another option for a sender would be a filter. For this right click an async sou
 ![image](https://github.com/YorVeX/xObsBeam/assets/528974/94be1abe-6af2-4ba2-a361-87e25928235e)
 
 Now in the "Audio/Video Filters" section click the + button and choose one of the Beam filters:
-![image](https://github.com/YorVeX/xObsBeam/assets/528974/7db6202a-2fe8-459d-a195-f39057bf1bfa)
+
+![image](https://github.com/YorVeX/xObsBeam/assets/528974/cf1588b5-146b-4686-aab2-c1645f65c166)
 
 After creating the filter the sender options are the same as for the output.
 
