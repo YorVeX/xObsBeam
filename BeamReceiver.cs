@@ -359,7 +359,6 @@ public class BeamReceiver
 
   private async Task ProcessDataLoopAsync(Socket? socket, NamedPipeClientStream? pipeStream, CancellationToken cancellationToken)
   {
-    _frameTimestampOffset = 0;
     _lastRenderedFrameTimestamps.Clear();
 
     string endpointName;
@@ -451,40 +450,11 @@ public class BeamReceiver
             Module.Log($"Video data: Header reports invalid data size of {videoHeader.DataSize} bytes, aborting connection.", ObsLogLevel.Error);
             break;
           }
-
-          // set frame timestamp offset
           senderVideoTimestamp = videoHeader.Timestamp; // save the original sender timestamp
-          if (_frameTimestampOffset == 0) // initialize the offset if this is the very first frame since connecting
-          {
-            _frameTimestampOffset = videoHeader.Timestamp;
-            Module.Log($"Video data: Frame timestamp offset initialized to: {_frameTimestampOffset}", ObsLogLevel.Debug);
-          }
-          if (_frameTimestampOffset > videoHeader.Timestamp) // could happen for the very first pair of audio and video frames after connecting
-          {
-            Module.Log($"Video data: Frame timestamp offset {_frameTimestampOffset} is higher than current timestamp {videoHeader.Timestamp}, correcting to timestamp 1.", ObsLogLevel.Warning);
-            videoHeader.Timestamp = 1;
-          }
-          else
-            videoHeader.Timestamp -= _frameTimestampOffset; // normal operation, just apply the offset
 
           // read video data
           if (videoHeader.DataSize > 0)
           {
-            // tell the sender the current video frame timestamp that was received - only done for frames that were not skipped by the sender
-            pipeWriter.GetSpan(sizeof(byte))[0] = (byte)Beam.ReceiveTimestampTypes.Receive;
-            pipeWriter.Advance(sizeof(byte));
-            BinaryPrimitives.WriteUInt64LittleEndian(pipeWriter.GetSpan(sizeof(ulong)), senderVideoTimestamp);
-            pipeWriter.Advance(sizeof(ulong));
-            var writeReceivedTimestampResult = await pipeWriter.FlushAsync(cancellationToken);
-            if (writeReceivedTimestampResult.IsCanceled || writeReceivedTimestampResult.IsCompleted)
-            {
-              if (writeReceivedTimestampResult.IsCanceled)
-                Module.Log("processDataLoopAsync() exit from sending through cancellation.", ObsLogLevel.Debug);
-              else
-                Module.Log("processDataLoopAsync() exit from sending through completion.", ObsLogLevel.Debug);
-              break;
-            }
-
             readResult = await pipeReader.ReadAtLeastAsync(videoHeader.DataSize, cancellationToken);
             if (readResult.IsCanceled || (readResult.Buffer.IsEmpty && readResult.IsCompleted))
             {
@@ -505,7 +475,15 @@ public class BeamReceiver
             if (sizeChanged || firstVideoFrame) // re-allocate the arrays matching the new necessary size
             {
               firstVideoFrame = false;
-              AudioBuffer = null;
+
+              if ((_frameTimestampOffset > videoHeader.Timestamp) || // if this receiver was previously connected to a different sender, in this case the offset needs to be reset
+                  (_frameTimestampOffset == 0)) // if this receiver was never connected to any sender before, in this case the offset needs to be initially set
+              {
+                Module.Log($"Video data: Frame timestamp offset initialized to: {_frameTimestampOffset}", ObsLogLevel.Debug);
+                _frameTimestampOffset = videoHeader.Timestamp;
+              }
+
+              AudioBuffer = null; // received a video frame, meaning we don't need the buffer for audio-only feeds
 
               renderDelayAveragingFrameCount = (int)(senderFps / 2);
               renderDelays = new int[renderDelayAveragingFrameCount];
@@ -533,6 +511,23 @@ public class BeamReceiver
                 FrameBuffer = null;
                 Module.Log("Frame buffering disabled.", ObsLogLevel.Info);
               }
+            }
+
+            videoHeader.Timestamp -= _frameTimestampOffset; // apply the offset
+
+            // tell the sender the current video frame timestamp that was received - only done for frames that were not skipped by the sender
+            pipeWriter.GetSpan(sizeof(byte))[0] = (byte)Beam.ReceiveTimestampTypes.Receive;
+            pipeWriter.Advance(sizeof(byte));
+            BinaryPrimitives.WriteUInt64LittleEndian(pipeWriter.GetSpan(sizeof(ulong)), senderVideoTimestamp);
+            pipeWriter.Advance(sizeof(ulong));
+            var writeReceivedTimestampResult = await pipeWriter.FlushAsync(cancellationToken);
+            if (writeReceivedTimestampResult.IsCanceled || writeReceivedTimestampResult.IsCompleted)
+            {
+              if (writeReceivedTimestampResult.IsCanceled)
+                Module.Log("processDataLoopAsync() exit from sending through cancellation.", ObsLogLevel.Debug);
+              else
+                Module.Log("processDataLoopAsync() exit from sending through completion.", ObsLogLevel.Debug);
+              break;
             }
 
             // average render delay calculation
@@ -676,13 +671,6 @@ public class BeamReceiver
               break;
             }
 
-            // set frame timestamp offset
-            if (_frameTimestampOffset == 0) // initialize the offset if this is the very first frame since connecting
-            {
-              _frameTimestampOffset = audioHeader.Timestamp;
-              Module.Log($"Audio data: Frame timestamp offset initialized to: {_frameTimestampOffset}", ObsLogLevel.Debug);
-            }
-
             if (firstAudioFrame)
             {
               firstAudioFrame = false;
@@ -726,8 +714,9 @@ public class BeamReceiver
             audioHeader.Timestamp -= _frameTimestampOffset;
           else
           {
+            // could happen for the very first pair of audio and video frames after connecting
             Module.Log($"Audio data: Not applying offset {_frameTimestampOffset} to the smaller frame timestamp {audioHeader.Timestamp}.", ObsLogLevel.Debug);
-            audioHeader.Timestamp = 0;
+            audioHeader.Timestamp = 1;
           }
 
           // read audio data

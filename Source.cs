@@ -162,17 +162,7 @@ public class Source
       BeamReceiver.FrameBufferTimeMs = (int)ObsData.obs_data_get_int(settings, (sbyte*)propertyFrameBufferTimeId);
       BeamReceiver.FrameBufferFixedDelay = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyFrameBufferTimeFixedRenderDelayId));
 
-      /*
-        this audio reset helps to prevent OBS increasing the audio buffer under some circumstances, e.g. when
-        - restarting a feed within the frame buffer time
-        - increasing the frame buffer time on an already active feed (source is being shown)
-      */
-      context->Audio->timestamp = 0;
-      context->Audio->samples_per_sec = 48000;
-      context->Audio->speakers = speaker_layout.SPEAKERS_STEREO;
-      context->Audio->format = audio_format.AUDIO_FORMAT_FLOAT;
-      context->Audio->frames = 0;
-      Obs.obs_source_output_audio(context->Source, context->Audio);
+      context->Audio->format = audio_format.AUDIO_FORMAT_UNKNOWN; // make sure the first audio frame triggers a (re)initialization
       _audioBlockSize = 0;
       _audioPlanes = 0;
 
