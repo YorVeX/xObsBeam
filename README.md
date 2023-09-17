@@ -152,7 +152,7 @@ This plugin uses the following libraries/technologies:
 - [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) for LZ4 compression
 - [QOI](https://qoiformat.org) - ported 1:1 to C#, also some comments were added, see [here](https://github.com/YorVeX/xObsBeam/blob/main/Qoi.cs) for the Beam implementation
 - [QOIR](https://github.com/nigeltao/qoir) - optionally loaded from an external dynamic library, more details on the Beam implementation of it [here](https://github.com/YorVeX/xObsBeam/tree/main/QoirLib)
-- [Density](https://github.com/k0dai/density) - optionally loaded from an external dynamic library, more details on the Beam implementation of it [here]([https://github.com/YorVeX/xObsBeam/tree/main/QoirLib](https://github.com/YorVeX/xObsBeam/tree/main/Density))
+- [Density](https://github.com/k0dai/density) - optionally loaded from an external dynamic library, more details on the Beam implementation of it [here]([https://github.com/YorVeX/xObsBeam/tree/main/QoirLib](https://github.com/YorVeX/xObsBeam/tree/main/Density)
 - a modified version of [QOY](https://github.com/Chainfire/qoy) - see [source code comments](https://github.com/YorVeX/xObsBeam/blob/main/Qoy.cs) for the differences to the original
 
 Compression is simply applied to each frame separately, QOI, QOIR, QOY and JPEG are image codecs and not video codecs anyway and LZ4 and Density not even tailored for images.
