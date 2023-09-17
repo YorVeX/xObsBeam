@@ -1,7 +1,7 @@
-# xObsBeam
+# Beam
 ⚠️ Seeking help with translations, please go [here](https://obsproject.com/forum/threads/xobsbeam-beta.165709/page-5#post-624502) if you want to help, thanks!
 
-OBS plugin to transmit video and audio feeds between OBS instances, raw, or with lossless or lossy compression. An alternative to NDI and Teleport for A/V transmission. An alternative to NDI and Teleport for A/V transmission.
+Beam (technical project name "xObsBeam") is an OBS plugin to transmit video and audio feeds between OBS instances, raw, or with lossless or lossy compression. An alternative to NDI and Teleport for A/V transmission. Raw transmission and some compression options have alpha channel and HDR support.
 
 ![image](https://user-images.githubusercontent.com/528974/229695123-33b165ba-019a-48ce-9197-3d203627352b.png)
 
@@ -39,7 +39,7 @@ Install the same version of the plugin (different versions are never guaranteed 
 ### Installation
 Before installing make sure that OBS is not running.
 
-For portable mode simply extract the .7z file into the root directory of the portable folder structure. For regular OBS installations see the operating system specific instructions below.
+For regular OBS installations see the operating system specific instructions below. For portable mode simply extract the .7z file into the root directory of the portable folder structure.
 
 <details>
 <summary>🟦 Windows</summary>
@@ -85,41 +85,46 @@ If in doubt, please check where other "en-US.ini" files are located on your syst
 The steps to update an older version of the plugin to a newer version are the same, except that during file extraction you need to confirm overwriting existing files in addition.
 
 ### Sender configuration
-One OBS instance will be the sender, on this instance go to the OBS main menu and select Tools -> Beam.
+One OBS instance will be the sender, on this instance go to the OBS main menu and select Tools -> Beam Sender Output.
 
-![image](https://user-images.githubusercontent.com/528974/229874785-8a504ebf-a743-4714-8acd-39651784d1c9.png)
+![image](https://github.com/YorVeX/xObsBeam/assets/528974/a956f9be-76ac-4fb3-8bc3-6711998cd98e)
 
 A dialog will appear where you can configure the sender identifier and how the sender will accept receiver connections. Named pipe connection is the recommended connection type for local (within the same machine) connections, as it has the least overhead and therefore should come with the smallest resource impact. If you need to connect receiver and sender from different machines you need to use a TCP socket connection. Compression configuration depends on the setup and use case, read above sections for more information.
   
-⚠️ During beta very many compression settings will be available to play around with, however, that doesn't mean they're all sensible choices. In fact, 80+% of combinations won't make sense, i.e. have high CPU usage but still also high bandwidth usage. After it has become a bit clearer what good combinations are others will be removed again when moving towards a stable release. In the meantime it's very important that you experiment and measure for yourself. If unsure, a safe option is using only LZ4 at FAST (level 1) for the lowest CPU usage and lowered but still very high bandwidth usage - it's also a compression mode that reliably works for color formats other than BGRA. If you're fine with setting the color format to BGRA (which comes with a CPU usage hit of its own but in some scenarios also with a quality boost depending on your inputs) then disable LZ4 and use QOI level 5, which is at already a bit less than half of raw bandwidth if you're lucky, or QOI level 10, which could get you down to less than a third of raw bandwidth usage on a sunny day while still being relatively nice to your CPU.
-
-It doesn't seem reasonable to ever use higher LZ4 compression levels than FAST but since it was very easy to implement them I decided to put it in at least for the beta period, maybe someone finds a scenario where it's actually a good choice.
-
 For the "Compress from OBS render thread" option the rule of thumb would be to leave it enabled as long as you're not dropping frames in any of the OBS instances, if you do, then disable that option (will be more likely to be necessary the higher the compression level you pick).
 
-In any case I would be happy about reports of your experimentation results in the OBS forum.
+![image](https://github.com/YorVeX/xObsBeam/assets/528974/0809c533-3f68-498c-ac7f-68ce7742cfcc)
 
-![image](https://user-images.githubusercontent.com/528974/231322501-9bcd3efe-dde1-4d71-944e-7046f246fec4.png)
-
-Check the "Enable Beam output" box if you want your output to be active now. Press OK to save the settings.
+Check the "Enable Beam Sender Output" box if you want your output to be active now. Press OK to save the settings.
 
 Note that as soon as the output is active your resource usage from OBS will go up, as OBS is now providing data to this plugin (regardless of whether the plugin is doing something with it at this point). Also certain video and audio settings (e.g. video resolution, FPS...) are locked in the OBS settings as long as an output is active. If you want to change those settings, you first need to disable the Beam output again.
 
-An output is currently the only way to send data. A filter based sender solution to send only the data of a single source might be added to xObsBeam as a new feature later.
+Another option for a sender would be a filter. For this right click an async source and choose Filters from the context menu:
+
+![image](https://github.com/YorVeX/xObsBeam/assets/528974/94be1abe-6af2-4ba2-a361-87e25928235e)
+
+Now in the "Audio/Video Filters" section click the + button and choose one of the Beam filters:
+![image](https://github.com/YorVeX/xObsBeam/assets/528974/7db6202a-2fe8-459d-a195-f39057bf1bfa)
+
+After creating the filter the sender options are the same as for the output.
+
+Note that Beam filters are not available for sync sources, which include Game Capture or scenes, they don't have the "Audio/Video Filters" section. There is currently no plans to add this, you can [read more about the reasons here](https://obsproject.com/forum/threads/xobsbeam-beta.165709/post-624288).
 
 ### Receiver configuration
-At least one OBS instance will be the receiver (multiple receivers can connect to a sender), on a receiver instance add a new source of type Beam.
+At least one OBS instance will be the receiver (multiple receivers can connect to a sender), on a receiver instance add a new source of type Beam Receiver.
 
-![image](https://user-images.githubusercontent.com/528974/229876072-47b20f3b-bac9-4b5d-ba99-8738aa43a14d.png)
+![image](https://github.com/YorVeX/xObsBeam/assets/528974/742d8ec0-ec8d-44e4-bee5-472c92d465a8)
 
 Double click the source to edit its properties.
 
-![image](https://user-images.githubusercontent.com/528974/231031395-081d0010-46a5-4c0c-b3b6-4141474237d0.png)
+![image](https://github.com/YorVeX/xObsBeam/assets/528974/7d14a149-4fd6-4910-9e85-d5523cc53666)
 
-Make sure to select the same connection type that you previously selected for the sender, also enter the pipe name that you configured for the sender ("BeamSender" in this example). Press OK to save the settings.
+Make sure to select the same connection type that you previously selected for the sender, then you should be able to find the sender on the list of available Beam feeds (an output named "BeamSender" in this case). Press OK to save the settings.
 
-Now you can show the new Beam source (click the eye icon next to it) and it should connect to the sender and start to receive data.
+Now you can show the new Beam source (click the eye icon next to it) and it should connect to the sender and start to receive data. Play with the other options as you wish, a render delay limit can make sure that your source is reconnected (resetting delay to a lower level again) if it ever becomes too high, a frame buffer can be used to compensate for network hiccups or other lags or to get a fixed delay between sender and receiver, by automatically increasing or decreasing the buffer to counter any changes in delay within OBS.
 
+### Troubleshooting
+See [the Wiki](https://github.com/YorVeX/xObsBeam/wiki/Troubleshooting) for troubleshooting help.
 
 ## FAQ
 - **Q**: Why is the plugin file so big compared to other plugins for the little bit it does, will this cause issues?
@@ -132,21 +137,24 @@ Now you can show the new Beam source (click the eye icon next to it) and it shou
   - **A**: No. Feel free to try and compile it for x86 targets yourself, last time I checked it wasn't fully supported in NativeAOT.
 
 - **Q**: Does this work with all color formats and color spaces including HDR?
-  - **A**: It should work fine when not using compression for every available OBS color format/space setting including HDR, since OBS data is just transferred 1:1. This is also true when using LZ4 compression. QOI compression, however, [is designed only for RGB(A)](https://qoiformat.org/qoi-specification.pdf). Its basic logic on byte level will still achieve some compression in most scenarios, but results may vary a lot, hence xObsBeam will show a warning when you enable QOI on any other color format than BGRA.
+  - **A**: It should work fine when not using compression for every available OBS color format/space setting including HDR, since OBS data is just transferred 1:1. This is also true when using LZ4 or Density compression. QOI and QOIR compression, however, support alpha but [are designed only for RGB(A)](https://qoiformat.org/qoi-specification.pdf), and QOY is designed for YUV formats like the NV12 OBS default or I420, it doesn't support alpha either. The current JPEG implementation in Beam also doesn't support HDR formats or alpha channels, even if the JPEG spec in general would offer this.
 
 
 ## For developers
 ### C#
-OBS Classic still had a [CLR Host Plugin](https://obsproject.com/forum/resources/clr-host-plugin.21/), but with OBS Studio writing plugins in C# wasn't possible anymore. This has changed as of recently as you can see, this plugin is fully written in C#.
+OBS Classic still had a [CLR Host Plugin](https://obsproject.com/forum/resources/clr-host-plugin.21/), but with OBS Studio writing plugins in C# wasn't possible anymore. This has changed with the release of .NET 7 and NativeAOT, and this plugin is fully written in C#.
 
 ### Used libraries/technologies
 This plugin uses the following libraries/technologies:
+- [NetObsBindings](https://github.com/kostya9/NetObsBindings) as a base for building OBS plugins in C#
 - [System.IO.Pipelines](https://docs.microsoft.com/en-us/dotnet/api/system.io.pipelines?view=net-7.0) PipeWriter/PipeReader for high-efficiency data transfer between sender and receiver
 - [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) for LZ4 compression
-- [QOI](https://qoiformat.org)
+- [QOI](https://qoiformat.org) - ported 1:1 to C#, also some comments were added, see [here](https://github.com/YorVeX/xObsBeam/blob/main/Qoi.cs) for the Beam implementation
+- [QOIR](https://github.com/nigeltao/qoir) - optionally loaded from an external dynamic library, more details on the Beam implementation of it [here](https://github.com/YorVeX/xObsBeam/tree/main/QoirLib)
+- [Density](https://github.com/k0dai/density) - optionally loaded from an external dynamic library, more details on the Beam implementation of it [here]([https://github.com/YorVeX/xObsBeam/tree/main/QoirLib](https://github.com/YorVeX/xObsBeam/tree/main/Density))
+- a modified version of [QOY](https://github.com/Chainfire/qoy) - see [source code comments](https://github.com/YorVeX/xObsBeam/blob/main/Qoy.cs) for the differences to the original
 
-Compression is simply applied to each frame separately, QOI is not a video codec anyway and LZ4 not even tailored for images. It just so happens that [QOI is compressible](https://github.com/phoboslab/qoi/issues/166) and LZ4 is a very fast compression algorithm, creating a good combination to further reduce bandwidth needs while still staying lossless and keeping CPU usage low.
-
+Compression is simply applied to each frame separately, QOI, QOIR, QOY and JPEG are image codecs and not video codecs anyway and LZ4 and Density not even tailored for images.
 
 ### Building
 Refer to the [building instructions for my example plugin](https://github.com/YorVeX/ObsCSharpExample#building), they will also apply here.
