@@ -1,4 +1,6 @@
 # xObsBeam
+⚠️ Seeking help with translations, please go [here](https://obsproject.com/forum/threads/xobsbeam-beta.165709/page-5#post-624502) if you want to help, thanks!
+
 OBS plugin to transmit lossless (raw or [QOI](https://qoiformat.org)/[LZ4](https://github.com/lz4/lz4) compressed) video and audio feeds between OBS instances. An alternative to NDI and Teleport for A/V transmission.
 
 ![image](https://user-images.githubusercontent.com/528974/229695123-33b165ba-019a-48ce-9197-3d203627352b.png)
