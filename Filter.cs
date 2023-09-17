@@ -280,7 +280,7 @@ public class Filter
   public static unsafe void Register()
   {
     var sourceInfo = new obs_source_info();
-    fixed (byte* id = "Beam Receiver Filter AV"u8)
+    fixed (byte* id = "Beam Sender Filter AV"u8)
     {
       sourceInfo.id = (sbyte*)id;
       sourceInfo.type = obs_source_type.OBS_SOURCE_TYPE_FILTER;
@@ -299,7 +299,7 @@ public class Filter
       ObsSource.obs_register_source_s(&sourceInfo, (nuint)sizeof(obs_source_info));
     }
     sourceInfo = new obs_source_info();
-    fixed (byte* id = "Beam Receiver Filter Video"u8)
+    fixed (byte* id = "Beam Sender Filter Video"u8)
     {
       sourceInfo.id = (sbyte*)id;
       sourceInfo.type = obs_source_type.OBS_SOURCE_TYPE_FILTER;
@@ -317,7 +317,7 @@ public class Filter
       ObsSource.obs_register_source_s(&sourceInfo, (nuint)sizeof(obs_source_info));
     }
     sourceInfo = new obs_source_info();
-    fixed (byte* id = "Beam Receiver Filter Audio"u8)
+    fixed (byte* id = "Beam Sender Filter Audio"u8)
     {
       sourceInfo.id = (sbyte*)id;
       sourceInfo.type = obs_source_type.OBS_SOURCE_TYPE_FILTER;
@@ -348,7 +348,7 @@ public class Filter
   public static unsafe sbyte* filter_av_get_name(void* data)
   {
     Module.Log("filter_av_get_name called", ObsLogLevel.Debug);
-    fixed (byte* filterName = "Beam Receiver Filter (Audio/Video)"u8)
+    fixed (byte* filterName = "Beam Sender Filter (Audio/Video)"u8)
       return (sbyte*)filterName;
   }
 
@@ -356,7 +356,7 @@ public class Filter
   public static unsafe sbyte* filter_video_get_name(void* data)
   {
     Module.Log("filter_video_get_name called", ObsLogLevel.Debug);
-    fixed (byte* filterName = "Beam Receiver Filter (Video only)"u8)
+    fixed (byte* filterName = "Beam Sender Filter (Video only)"u8)
       return (sbyte*)filterName;
   }
 
@@ -364,7 +364,7 @@ public class Filter
   public static unsafe sbyte* filter_audio_get_name(void* data)
   {
     Module.Log("filter_audio_get_name called", ObsLogLevel.Debug);
-    fixed (byte* filterName = "Beam Receiver Filter (Audio only)"u8)
+    fixed (byte* filterName = "Beam Sender Filter (Audio only)"u8)
       return (sbyte*)filterName;
   }
 
