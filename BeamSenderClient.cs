@@ -420,16 +420,16 @@ sealed class BeamSenderClient
       Module.Log($"<{ClientId}> Warning: Send queue size {videoFrameCount} ({_frameTimestampQueue.Count}) at video frame {timestamp}.", ObsLogLevel.Warning);
 
     var frame = new Beam.BeamVideoData(videoHeader, _videoDataPool!.Rent(videoHeader.DataSize), timestamp);
-    new Span<byte>(videoData, frame.Header.DataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
+    new ReadOnlySpan<byte>(videoData, frame.Header.DataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
     _frames.AddOrUpdate(timestamp, frame, (key, oldValue) => frame);
     _frameAvailable.Set();
     return true;
   }
 
-  public unsafe void EnqueueAudio(ulong timestamp, uint frames, byte* audioData, int dataSize)
+  public unsafe void EnqueueAudio(ulong timestamp, uint frames, byte[] audioData, int dataSize)
   {
     var frame = new Beam.BeamAudioData(_audioHeader, _audioDataPool!.Rent(dataSize), frames, dataSize, timestamp); // get an audio data memory buffer from the pool, avoiding allocations
-    new Span<byte>(audioData, dataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
+    new ReadOnlySpan<byte>(audioData, 0, dataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory
 
     _frameTimestampQueue.Enqueue(timestamp); // EnqueueAudio() is always called from a sync context, so we can safely add the timestamps to the queue here and have it in the right order
     _frames.AddOrUpdate(timestamp, frame, (key, oldValue) => frame);

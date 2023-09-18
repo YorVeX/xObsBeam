@@ -261,7 +261,7 @@ public class Filter
       ObsBmem.bfree(audioInfo);
     }
 
-    _beamSender.SendAudio(frame->timestamp, frame->frames, frame->data.e0);
+    _beamSender.SendAudio(frame->timestamp, frame->frames, frame->data);
   }
   #endregion Instance methods
 

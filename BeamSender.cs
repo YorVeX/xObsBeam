@@ -34,11 +34,12 @@ public class BeamSender
   readonly Beam.SenderTypes _senderType;
   Beam.VideoHeader _videoHeader;
   Beam.AudioHeader _audioHeader;
+  byte[] _audioData = Array.Empty<byte>();
   Beam.VideoPlaneInfo _videoPlaneInfo;
   Beam.VideoPlaneInfo _i420PlaneInfo;
   Beam.VideoPlaneInfo _i422PlaneInfo;
+  uint _audioBytesPerChannel;
   int _audioPlanes;
-  int _audioBlockSize;
 
   // cached compression settings
   int _jpegCompressionQuality = 90;
@@ -96,7 +97,7 @@ public class BeamSender
     for (int planeIndex = 0; planeIndex < _videoPlaneInfo.Count; planeIndex++)
     {
       Module.Log($"SetVideoParameters(): {format} line size[{planeIndex}] = {linesize[planeIndex]}, plane size[{planeIndex}] = {_videoPlaneInfo.PlaneSizes[planeIndex]}, offset[{planeIndex}] = {_videoPlaneInfo.Offsets[planeIndex]}", ObsLogLevel.Debug);
-      // validate actual video data plane pointers against the GetPlaneSizes() information
+      // validate actual video data plane pointers against the GetVideoPlaneInfo() information
       var pointerOffset = (IntPtr)data.e0 + _videoPlaneInfo.Offsets[planeIndex];
       if (pointerOffset != (IntPtr)data[planeIndex])
       {
@@ -229,8 +230,9 @@ public class BeamSender
 
   public unsafe void SetAudioParameters(audio_format format, speaker_layout speakers, uint samples_per_sec, uint frames)
   {
-    Beam.GetAudioPlaneInfo(format, speakers, out _audioPlanes, out _audioBlockSize);
-    int audioDataSize = Beam.GetTotalAudioSize(format, speakers, frames);
+    Beam.GetAudioPlaneInfo(format, speakers, out _audioPlanes, out _audioBytesPerChannel);
+    uint audioPlaneSize = _audioBytesPerChannel * frames;
+    int audioDataSize = (int)audioPlaneSize * _audioPlanes;
     _audioHeader = new Beam.AudioHeader()
     {
       Type = (_senderType == Beam.SenderTypes.FilterAudio ? Beam.Type.AudioOnly : Beam.Type.Audio),
@@ -240,7 +242,9 @@ public class BeamSender
       Speakers = speakers,
       Frames = frames,
     };
-    Module.Log($"{_audioHeader.Type} output feed initialized with {_audioPlanes} audio planes and a block size of {_audioBlockSize} bytes.", ObsLogLevel.Debug);
+    _audioData = new byte[_audioHeader.DataSize]; // don't need a pool here, because the audio data is processed in sync context
+
+    Module.Log($"{_audioHeader.Type} output feed initialized, reserving {_audioHeader.DataSize} bytes of memory per packet.", ObsLogLevel.Debug);
   }
 
   public unsafe bool AudioParametersChanged(audio_format format, speaker_layout speakers, uint samples_per_sec)
@@ -256,11 +260,11 @@ public class BeamSender
     get
     {
       if (_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo)
-        return ((_videoPlaneInfo.DataSize > 0) && (_audioBlockSize > 0));
+        return ((_videoPlaneInfo.DataSize > 0) && (_audioPlanes > 0));
       if (_senderType == Beam.SenderTypes.FilterVideo)
         return (_videoPlaneInfo.DataSize > 0);
       if (_senderType == Beam.SenderTypes.FilterAudio)
-        return (_audioBlockSize > 0);
+        return (_audioPlanes > 0);
       return false;
     }
   }
@@ -269,7 +273,7 @@ public class BeamSender
   {
     if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterVideo) && (_videoPlaneInfo.DataSize == 0))
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
-    if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterAudio) && (_audioBlockSize == 0))
+    if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterAudio) && (_audioPlanes == 0))
       throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
 
     int failCount = 0;
@@ -369,7 +373,7 @@ public class BeamSender
   {
     if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterVideo) && (_videoPlaneInfo.DataSize == 0))
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
-    if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterAudio) && (_audioBlockSize == 0))
+    if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterAudio) && (_audioPlanes == 0))
       throw new InvalidOperationException("Audio data size is unknown. Call SetAudioParameters() before calling Start().");
 
     _pipeName = pipeName;
@@ -434,7 +438,6 @@ public class BeamSender
       foreach (var client in _clients.Values)
         client.Disconnect(); // this will block for up to 1000 ms per client to try and get a clean disconnect
       _audioPlanes = 0;
-      _audioBlockSize = 0;
       _discoveryServer.StopServer();
 
       Module.Log($"Stopped BeamSender.", ObsLogLevel.Debug);
@@ -698,16 +701,37 @@ public class BeamSender
     }
   }
 
-  public unsafe void SendAudio(ulong timestamp, uint frames, byte* data)
+  public unsafe void SendAudio(ulong timestamp, uint frames, audio_data._data_e__FixedBuffer data)
   {
-    // calulate the data size based on the frame count (stable for outputs, but for filters it can vary for every call)
-    int audioDataSize = _audioBlockSize * (int)frames;
+    uint audioPlaneSize = _audioBytesPerChannel * frames;
+    int audioDataSize = (int)audioPlaneSize * _audioPlanes;
+    uint currentOffset = 0;
+    for (int planeIndex = 0; planeIndex < _audioPlanes; planeIndex++)
+    {
+      new ReadOnlySpan<byte>(data[planeIndex], (int)audioPlaneSize).CopyTo(new Span<byte>(_audioData, (int)currentOffset, (int)audioPlaneSize));
+      currentOffset += audioPlaneSize;
+    }
 
     // send the audio data to all currently connected clients
     foreach (var client in _clients.Values)
-      client.EnqueueAudio(timestamp, frames, data, audioDataSize);
+      client.EnqueueAudio(timestamp, frames, _audioData, audioDataSize);
   }
 
+  public unsafe void SendAudio(ulong timestamp, uint frames, obs_audio_data._data_e__FixedBuffer data)
+  {
+    uint audioPlaneSize = _audioBytesPerChannel * frames;
+    int audioDataSize = (int)audioPlaneSize * _audioPlanes;
+    uint currentOffset = 0;
+    for (int planeIndex = 0; planeIndex < _audioPlanes; planeIndex++)
+    {
+      new ReadOnlySpan<byte>(data[planeIndex], (int)audioPlaneSize).CopyTo(new Span<byte>(_audioData, (int)currentOffset, (int)audioPlaneSize));
+      currentOffset += audioPlaneSize;
+    }
+
+    // send the audio data to all currently connected clients
+    foreach (var client in _clients.Values)
+      client.EnqueueAudio(timestamp, frames, _audioData, audioDataSize);
+  }
   #region Event handlers
   private unsafe void ClientDisconnectedEventHandler(object? sender, EventArgs e)
   {

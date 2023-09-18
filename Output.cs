@@ -244,7 +244,7 @@ public static class Output
       }
     }
 
-    _beamSender.SendAudio(frames->timestamp, frames->frames, frames->data.e0);
+    _beamSender.SendAudio(frames->timestamp, frames->frames, frames->data);
     _audioFrameCycleCounter++;
     if ((_audioFrameCycleCounter > 5) && (_audioFrameCycleCounter > Obs.obs_get_active_fps())) // do this only roughly once per second
     {

@@ -435,6 +435,22 @@ public class Beam
     return audioBytesPerChannel;
   }
 
+  public static int GetAudioChannels(speaker_layout speakers)
+  {
+    return speakers switch
+    {
+      speaker_layout.SPEAKERS_MONO => 1,
+      speaker_layout.SPEAKERS_STEREO => 2,
+      speaker_layout.SPEAKERS_2POINT1 => 3,
+      speaker_layout.SPEAKERS_4POINT0 => 4,
+      speaker_layout.SPEAKERS_4POINT1 => 5,
+      speaker_layout.SPEAKERS_5POINT1 => 6,
+      speaker_layout.SPEAKERS_7POINT1 => 8,
+      speaker_layout.SPEAKERS_UNKNOWN => 0,
+      _ => 0,
+    };
+  }
+
   public static unsafe bool IsAudioPlanar(audio_format format)
   {
     return format switch
@@ -446,16 +462,10 @@ public class Beam
     };
   }
 
-  public static unsafe int GetTotalAudioSize(audio_format format, speaker_layout speakers, uint frames)
+  public static unsafe void GetAudioPlaneInfo(audio_format format, speaker_layout speakers, out int audioPlanes, out uint audioBytesPerChannel)
   {
-    return (int)speakers * GetAudioBytesPerChannel(format) * (int)frames;
-  }
-
-  public static unsafe void GetAudioPlaneInfo(audio_format format, speaker_layout speakers, out int audioPlanes, out int audioBlockSize)
-  {
-    bool planar = IsAudioPlanar(format);
-    audioPlanes = (planar ? (int)speakers : 1);
-    audioBlockSize = (planar ? 1 : (int)speakers) * GetAudioBytesPerChannel(format);
+    audioPlanes = (IsAudioPlanar(format) ? GetAudioChannels(speakers) : 1);
+    audioBytesPerChannel = (uint)GetAudioBytesPerChannel(format);
   }
   #endregion helper methods
 
