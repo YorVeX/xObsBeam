@@ -479,8 +479,8 @@ public class BeamReceiver
               if ((_frameTimestampOffset > videoHeader.Timestamp) || // if this receiver was previously connected to a different sender, in this case the offset needs to be reset
                   (_frameTimestampOffset == 0)) // if this receiver was never connected to any sender before, in this case the offset needs to be initially set
               {
-                Module.Log($"Video data: Frame timestamp offset initialized to: {_frameTimestampOffset}", ObsLogLevel.Debug);
                 _frameTimestampOffset = videoHeader.Timestamp;
+                Module.Log($"Video data: Frame timestamp offset initialized to: {_frameTimestampOffset}", ObsLogLevel.Debug);
               }
 
               AudioBuffer = null; // received a video frame, meaning we don't need the buffer for audio-only feeds
@@ -677,6 +677,13 @@ public class BeamReceiver
               FrameBuffer = null;
 
               senderFps = (1 / ((1 / (double)audioHeader.SampleRate) * audioHeader.Frames));
+
+              if ((_frameTimestampOffset > audioHeader.Timestamp) || // if this receiver was previously connected to a different sender, in this case the offset needs to be reset
+                  (_frameTimestampOffset == 0)) // if this receiver was never connected to any sender before, in this case the offset needs to be initially set
+              {
+                _frameTimestampOffset = audioHeader.Timestamp;
+                Module.Log($"Audio data: Frame timestamp offset initialized to: {_frameTimestampOffset}", ObsLogLevel.Debug);
+              }
 
               // initialize render delay averaging
               renderDelayAveragingFrameCount = (int)(senderFps / 2);
