@@ -57,7 +57,7 @@ This needs admin permissions.
 <details>
 <summary>🐧 Linux</summary>
 
-The folder structure in the downloaded .7z file is prepared so that you can extract the file (= copy the contained files) into your user home and on many systems this will just work already, e.g. on Ubuntu with an installation through apt. If you installed through flatpak, copy the `plugins` folder from the .7z file to:
+The folder structure in the downloaded .7z file is prepared so that you can extract the file (= copy the contained files) into your user home and on many systems this will just work already, e.g. on Ubuntu with an installation through apt. If you installed through flatpak, copy the `obs-studio` folder from the .7z file to:
 `~/.var/app/com.obsproject.Studio/config/`
 
 However, depending on the distribution and OBS installation method (manual, distro repo, snap, flatpak...) the location of this folder can vary, so if it doesn't work from the user home you might have to look around a bit.
@@ -65,7 +65,7 @@ However, depending on the distribution and OBS installation method (manual, dist
 Example locations for the plugin .so (and .so.dbg) file are:
 
 - `~/.config/obs-studio/plugins/` (The structure the .7z is prepared for)
-- `~/.var/app/com.obsproject.Studio/config/plugins/` (OBS flatpak installation, if this works it should also cover locales)
+- `~/.var/app/com.obsproject.Studio/config/obs-studio/plugins/` (OBS flatpak installation, if this works it should also cover locales)
 - `/usr/lib/obs-plugins/`
 - `/usr/lib/x86_64-linux-gnu/obs-plugins/`
 - `/usr/share/obs/obs-plugins/`
