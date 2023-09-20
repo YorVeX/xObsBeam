@@ -41,6 +41,7 @@ public static class Module
   public static unsafe obs_module* ObsModule { get; private set; } = null;
   public static string ModuleName { get; private set; } = "xObsBeam";
   public static string ModulePath { get; private set; } = "";
+  public static string ModuleVersionString { get; private set; } = "v0.0.0";
 
   static unsafe text_lookup* _textLookupModule = null;
 
@@ -201,7 +202,8 @@ public static class Module
     Filter.Register();
 
     Version version = thisAssembly.GetName().Version!;
-    Log($"Version {version.Major}.{version.Minor}.{version.Build} loaded (built with .NET {Environment.Version}).", ObsLogLevel.Info);
+    ModuleVersionString = $"{version.Major}.{version.Minor}.{version.Build}";
+    Log($"Version {ModuleVersionString} loaded (built with .NET {Environment.Version}).", ObsLogLevel.Info);
     return true;
   }
 

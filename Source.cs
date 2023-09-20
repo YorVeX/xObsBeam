@@ -283,24 +283,33 @@ public class Source
 
       ObsProperties.obs_property_list_clear(peerDiscoveryAvailablePipeFeedsList);
       ObsProperties.obs_property_list_clear(peerDiscoveryAvailableSocketFeedsList);
+      nuint pipePeerIndex = 0;
+      nuint socketPeerIndex = 0;
       foreach (var peer in discoveredPeers)
       {
         var peerSocketItemName = peer.SocketListItemName;
         var peerSocketItemValue = peer.SocketListItemValue;
         var peerPipeItemValue = peer.PipeListItemValue;
+        bool versionMatch = (peer.SenderVersionString == Module.ModuleVersionString);
+        string versionMismatchText = "";
+        if (!versionMatch)
+          versionMismatchText = " (" + Module.ObsTextString("PeerDiscoveryVersionMismatchText") + ")";
         fixed (byte*
-          peerListPipeItemName = Encoding.UTF8.GetBytes(peer.PipeListItemName),
+          peerListPipeItemName = Encoding.UTF8.GetBytes(peer.PipeListItemName + versionMismatchText),
           peerListPipeItemValue = Encoding.UTF8.GetBytes(peerPipeItemValue),
-          peerListSocketItemName = Encoding.UTF8.GetBytes(peerSocketItemName),
+          peerListSocketItemName = Encoding.UTF8.GetBytes(peerSocketItemName + versionMismatchText),
           peerListSocketItemValue = Encoding.UTF8.GetBytes(peerSocketItemValue)
         )
         {
           if (peer.ConnectionType == PeerDiscovery.ConnectionTypes.Pipe)
           {
             foundPipePeers = true;
-            if (previousPipeFeedsListSelectionValue == peerPipeItemValue)
+            if (versionMatch && (previousPipeFeedsListSelectionValue == peerPipeItemValue))
               foundExactPreviousPipePeer = true;
             ObsProperties.obs_property_list_add_string(peerDiscoveryAvailablePipeFeedsList, (sbyte*)peerListPipeItemName, (sbyte*)peerListPipeItemValue);
+            if (!versionMatch)
+              ObsProperties.obs_property_list_item_disable(peerDiscoveryAvailablePipeFeedsList, pipePeerIndex, Convert.ToByte(true));
+            pipePeerIndex++;
             if (pipePeerItemValues.Contains(peer.Identifier))
             {
               foundConflicts = true;
@@ -312,12 +321,15 @@ public class Source
           else if (peer.ConnectionType == PeerDiscovery.ConnectionTypes.Socket)
           {
             foundSocketPeers = true;
-            if (previousSocketFeedsListSelectionValue == peerSocketItemValue)
+            if (versionMatch && (previousSocketFeedsListSelectionValue == peerSocketItemValue))
               foundExactPreviousSocketPeer = true;
             string peerSocketItemUniqueIdentifier = peer.SocketUniqueIdentifier;
-            if (previousPeerSocketItemUniqueIdentifier == peerSocketItemUniqueIdentifier) // this matches even when IP and/or port have changed, so we can restore the previous selection, but with updated IP/port
+            if (versionMatch && (previousPeerSocketItemUniqueIdentifier == peerSocketItemUniqueIdentifier)) // this matches even when IP and/or port have changed, so we can restore the previous selection, but with updated IP/port
               newSocketFeedsListSelectionValue = peerSocketItemValue;
             ObsProperties.obs_property_list_add_string(peerDiscoveryAvailableSocketFeedsList, (sbyte*)peerListSocketItemName, (sbyte*)peerListSocketItemValue);
+            if (!versionMatch)
+              ObsProperties.obs_property_list_item_disable(peerDiscoveryAvailableSocketFeedsList, socketPeerIndex, Convert.ToByte(true));
+            socketPeerIndex++;
             if (socketPeerItemValues.Contains(peerSocketItemUniqueIdentifier))
             {
               foundConflicts = true;

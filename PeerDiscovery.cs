@@ -21,6 +21,7 @@ public class PeerDiscovery
     public string InterfaceId;
     public string Identifier;
     public Beam.SenderTypes SenderType;
+    public string SenderVersionString;
     public ConnectionTypes ConnectionType;
     public string IP;
     public int Port;
@@ -64,22 +65,23 @@ public class PeerDiscovery
 
     public string ToMulticastString(string interfaceId, string ipAddress)
     {
-      return MulticastPrefix + StringSeparator + "Service" + StringSeparator + interfaceId + StringSeparator + ipAddress + StringSeparator + Port + StringSeparator + SenderType + StringSeparator + ConnectionType + StringSeparator + Identifier.Replace(StringSeparator, StringSeparatorReplacement);
+      return MulticastPrefix + StringSeparator + "Service" + StringSeparator + Module.ModuleVersionString + StringSeparator + interfaceId + StringSeparator + ipAddress + StringSeparator + Port + StringSeparator + SenderType + StringSeparator + ConnectionType + StringSeparator + Identifier.Replace(StringSeparator, StringSeparatorReplacement);
     }
 
     public static Peer FromMulticastString(string multicastString)
     {
       var peerStrings = multicastString.Split(StringSeparator, StringSplitOptions.TrimEntries);
-      if ((peerStrings.Length != 8) || (peerStrings[0] != MulticastPrefix) || (peerStrings[1] != "Service"))
+      if ((peerStrings.Length != 9) || (peerStrings[0] != MulticastPrefix) || (peerStrings[1] != "Service"))
         throw new ArgumentException("Invalid multicast string.");
       return new Peer
       {
-        InterfaceId = peerStrings[2],
-        IP = peerStrings[3],
-        Port = Convert.ToInt32(peerStrings[4]),
-        SenderType = Enum.Parse<Beam.SenderTypes>(peerStrings[5]),
-        ConnectionType = Enum.Parse<ConnectionTypes>(peerStrings[6]),
-        Identifier = peerStrings[7]
+        SenderVersionString = peerStrings[2],
+        InterfaceId = peerStrings[3],
+        IP = peerStrings[4],
+        Port = Convert.ToInt32(peerStrings[5]),
+        SenderType = Enum.Parse<Beam.SenderTypes>(peerStrings[6]),
+        ConnectionType = Enum.Parse<ConnectionTypes>(peerStrings[7]),
+        Identifier = peerStrings[8]
       };
     }
 
@@ -226,16 +228,16 @@ public class PeerDiscovery
             try { discoveredPeer = Peer.FromMulticastString(responseString); } catch { continue; }
             if (!currentPeer.IsEmpty) // searching for a specific identifier? then don't fill the list with other peers that are not interesting
             {
-              if ((currentPeer.Identifier == discoveredPeer.Identifier) && (currentPeer.InterfaceId == discoveredPeer.InterfaceId))
+              if ((currentPeer.Identifier == discoveredPeer.Identifier) && (currentPeer.InterfaceId == discoveredPeer.InterfaceId) && (discoveredPeer.SenderVersionString == Module.ModuleVersionString))
               {
-                Module.Log($"Peer Discovery client: found specific {discoveredPeer.SenderType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
+                Module.Log($"Peer Discovery client: found specific {discoveredPeer.SenderVersionString} {discoveredPeer.SenderType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
                 peers.Add(discoveredPeer); // add only this entry to the list...
                 break; // ...and stop the loop
               }
             }
             else
               peers.Add(discoveredPeer);
-            Module.Log($"Peer Discovery client: found {discoveredPeer.SenderType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
+            Module.Log($"Peer Discovery client: found {discoveredPeer.SenderVersionString} {discoveredPeer.SenderType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
           }
           catch (Exception ex)
           {
