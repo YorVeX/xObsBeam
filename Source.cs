@@ -748,8 +748,8 @@ public class Source
       propertyTargetPortId = "port"u8
     )
     {
-      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(true));
-      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(false));
+      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(false));
+      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(true));
       ObsData.obs_data_set_default_string(settings, (sbyte*)propertyTargetPipeNameId, (sbyte*)propertyTargetPipeNameDefaultText);
       ObsData.obs_data_set_default_string(settings, (sbyte*)propertyTargetHostId, (sbyte*)propertyTargetHostDefaultText);
       ObsData.obs_data_set_default_int(settings, (sbyte*)propertyTargetPortId, BeamSender.DefaultPort);
