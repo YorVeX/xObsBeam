@@ -15,9 +15,7 @@ This DLL should be placed in the same folder as the xObsBeam plugin for simplici
 On Linux it is recommended to install one of the libjpeg-turbo packages provided either by your distribution or from [https://sourceforge.net/projects/libjpeg-turbo/files](https://sourceforge.net/projects/libjpeg-turbo/files). You need the `libturbojpeg.so.0` library file, e.g. on Ubuntu this would be contained in the [libturbojpeg](https://packages.ubuntu.com/search?keywords=libturbojpeg) package.
 
 ### Compatible versions and features
-The wrapper class was more thorougly tested in Windows with both libjpeg-turbo versions 2.1.5.1 and 2.1.91 (aka beta 3.0 beta 2) and had a quick and short test on Ubuntu 20.04 with the 2.0.3-0ubuntu1 version. In general it should also work with many older versions.
-
-Note that lossless JPEG encoding is only supported in beta 3 versions and later, for older versions the feature will be unavailable.
+The wrapper class was more thoroughly tested in Windows with both libjpeg-turbo versions 2.1.5.1 and 2.1.91 (aka beta 3.0 beta 2) and had a quick and short test on Ubuntu 20.04 with the 2.0.3-0ubuntu1 version. In general it should also work with many older versions.
 
 ## Creating the wrapper class (for developers)
 The wrapper class was generated using ClangSharpPInvokeGenerator from [ClangSharp project](https://github.com/dotnet/ClangSharp) with the generate.ps1 script in this folder. This is a PowerShell script and therefore is for Windows only.
