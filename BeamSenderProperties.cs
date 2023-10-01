@@ -945,14 +945,16 @@ public class BeamSenderProperties
   public static unsafe byte AutomaticListenPortEnabledChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
+      propertyConnectionTypePipeId = "connection_type_pipe"u8,
       propertyAutomaticListenPortId = "auto_listen_port"u8,
       propertyListenPortId = "listen_port"u8
     )
     {
+      var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
       var automaticListenPort = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyAutomaticListenPortId));
       var senderProperties = GetProperties(properties);
       Module.Log($"{senderProperties.UniquePrefix} Automatic listen port enabled: {automaticListenPort}", ObsLogLevel.Debug);
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!automaticListenPort));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe && !automaticListenPort));
       senderProperties.EventHandlerNeedSenderRestartCheck("AutomaticListenPortEnabledChangedEventHandler");
       return Convert.ToByte(true);
     }
@@ -970,10 +972,11 @@ public class BeamSenderProperties
     )
     {
       var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
+      var automaticListenPort = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyAutomaticListenPortId));
       ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(!connectionTypePipe));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyAutomaticListenPortId), Convert.ToByte(!connectionTypePipe));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe && !automaticListenPort));
       var senderProperties = GetProperties(properties);
       Module.Log($"{senderProperties.UniquePrefix} Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
       senderProperties.EventHandlerNeedSenderRestartCheck("ConnectionTypePipeChangedEventHandler");
