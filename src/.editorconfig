@@ -238,7 +238,7 @@ dotnet_diagnostic.CA1401.severity = none
 # - also read the comments next to the DisableRuntimeMarshalling attribute
 dotnet_diagnostic.SYSLIB1054.severity = none
 
-[QoirLib/**]
+[Qoir.cs]
 # disable naming rules, as this wrapper is a mapping of the original C(++) API
 dotnet_diagnostic.IDE1006.severity = none
 
@@ -252,7 +252,7 @@ dotnet_diagnostic.CA1401.severity = none
 # - also read the comments next to the DisableRuntimeMarshalling attribute
 dotnet_diagnostic.SYSLIB1054.severity = none
 
-[Density/**]
+[DensityApi.cs]
 # disable naming rules, as this wrapper is a mapping of the original C(++) API
 dotnet_diagnostic.IDE1006.severity = none
 

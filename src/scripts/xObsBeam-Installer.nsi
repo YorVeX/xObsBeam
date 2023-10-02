@@ -7,7 +7,7 @@ Unicode True
 
 ; Automatically detect the name of the parent directory to use it as the app name
 !tempfile MYINCFILE
-!system 'for %I in (..\.) do echo !define APPNAME "%~nxI" > "${MYINCFILE}"'
+!system 'for %I in (..\..\.) do echo !define APPNAME "%~nxI" > "${MYINCFILE}"'
 !include "${MYINCFILE}"
 !delfile "${MYINCFILE}"
 !define APPDISPLAYNAME "${APPNAME} OBS Plugin"
@@ -26,8 +26,8 @@ VIAddVersionKey "FileDescription" "${APPDISPLAYNAME}"
 ; Main install settings
 Name "${APPDISPLAYNAME} ${DISPLAY_VERSION}"
 Caption "Beam plugin for OBS Studio"
-Icon "..\img\${APPNAME}-Icon.ico"
-UninstallIcon "..\img\${APPNAME}-Icon.ico"
+Icon "..\..\img\${APPNAME}-Icon.ico"
+UninstallIcon "..\..\img\${APPNAME}-Icon.ico"
 InstallDirRegKey HKLM "Software\${APPNAME}" ""
 InstallDir "$PROGRAMFILES64\obs-studio"
 OutFile "..\release\win-x64\${APPNAME}-win-x64-installer.exe"
@@ -38,7 +38,7 @@ Function .onInit
 	InitPluginsDir
 	SetOutPath "$PLUGINSDIR"
 
-	File "/oname=$PLUGINSDIR\Splash.jpg" "..\img\${APPNAME}-SplashScreen.jpg"
+	File "/oname=$PLUGINSDIR\Splash.jpg" "..\..\img\${APPNAME}-SplashScreen.jpg"
 	; Need to download and install this plugin for this to work: https://nsis.sourceforge.io/NewAdvSplash_plug-in (the default plugins can only use BMP files)
 	newadvsplash::show 1500 500 500 0x04025C /NOCANCEL "$PLUGINSDIR\Splash.jpg"
 	Delete "$PLUGINSDIR\Splash.jpg"
@@ -48,8 +48,8 @@ FunctionEnd
 !include "MUI.nsh"
 
 !define MUI_ABORTWARNING
-!define MUI_ICON "..\img\${APPNAME}-Icon.ico"
-!define MUI_UNICON "..\img\${APPNAME}-Icon.ico"
+!define MUI_ICON "..\..\img\${APPNAME}-Icon.ico"
+!define MUI_UNICON "..\..\img\${APPNAME}-Icon.ico"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "..\LICENSE"
@@ -98,9 +98,9 @@ Section "${APPDISPLAYNAME}" Section1
 	; Set Section Files and Shortcuts
 	SetOutPath "$INSTDIR\obs-plugins\64bit\"
 	File /r "..\publish\win-x64\*.*" ; DLL and PDB file
-	File "..\Density\binaries\win-x64\density.dll" ; Density library file
-	File "..\QoirLib\binaries\win-x64\QoirLib.dll" ; QOIR library file
-	File "..\libjpeg-turbo\binaries\win-x64\turbojpeg.dll" ; libjpeg-turbo library file
+	File "..\..\lib\Density\binaries\win-x64\density.dll" ; Density library file
+	File "..\..\lib\QoirLib\binaries\win-x64\QoirLib.dll" ; QOIR library file
+	File "..\..\lib\libjpeg-turbo\binaries\win-x64\turbojpeg.dll" ; libjpeg-turbo library file
 
 	SetOutPath "$INSTDIR\data\obs-plugins\${APPNAME}\locale\"
 	File /r "..\locale\*.*" ; locale files

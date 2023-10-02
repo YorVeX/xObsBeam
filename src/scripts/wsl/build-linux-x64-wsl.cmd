@@ -14,7 +14,7 @@ if not "%ParentFolder%" == "wsl" (
 )
 
 REM Get the name of the project from the parent folders name, assuming that it was Git cloned and has the right name.
-for %%I in (..\..\.) do set "ProjectName=%%~nI"
+for %%I in (..\..\..\.) do set "ProjectName=%%~nI"
 
 REM Prepare the build folder for this project
 wsl mkdir -p %BuildFolderFromLinux%/%ProjectName%
@@ -25,9 +25,6 @@ wsl rm -Rf %BuildFolderFromLinux%/%ProjectName%/*
 REM Copy all necessary code files into the WSL build folder.
 robocopy.exe ..\..\. %BuildFolderFromWindows%\%ProjectName% *.cs *.csproj
 robocopy.exe ..\..\ClangSharpAttributes %BuildFolderFromWindows%\%ProjectName%\ClangSharpAttributes *.cs *.csproj
-robocopy.exe ..\..\libjpeg-turbo %BuildFolderFromWindows%\%ProjectName%\libjpeg-turbo *.cs
-robocopy.exe ..\..\QoirLib %BuildFolderFromWindows%\%ProjectName%\QoirLib *.cs
-robocopy.exe ..\..\Density %BuildFolderFromWindows%\%ProjectName%\Density *.cs
 
 REM Run the build.
 wsl dotnet publish %BuildFolderFromLinux%/%ProjectName% -c Release -o %BuildFolderFromLinux%/%ProjectName%/publish -r linux-x64 /p:NativeLib=Shared /p:SelfContained=true
@@ -45,8 +42,8 @@ copy /Y ..\..\publish\linux-x64\ ..\..\release\linux-x64-glibc-2.31\.config\obs-
 copy /Y ..\..\locale\* ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\data\locale
 
 REM Copy extra binaries to the release structure
-copy /Y ..\..\QoirLib\binaries\linux-x64-glibc-2.31\libQoirLib.so ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit\
-copy /Y ..\..\Density\binaries\linux-x64-glibc-2.31\libdensity.so ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit\
+copy /Y ..\..\..\lib\QoirLib\binaries\linux-x64-glibc-2.31\libQoirLib.so ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit\
+copy /Y ..\..\..\lib\Density\binaries\linux-x64-glibc-2.31\libdensity.so ..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\%ProjectName%\bin\64bit\
 
 REM Final cleanup in WSL
 wsl rm -Rf %BuildFolderFromLinux%/%ProjectName%/*

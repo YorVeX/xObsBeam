@@ -237,7 +237,7 @@ public class PeerDiscovery
             }
             else
               peers.Add(discoveredPeer);
-            Module.Log($"Peer Discovery client: found {discoveredPeer.SenderVersionString} {discoveredPeer.SenderType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
+            Module.Log($"Peer Discovery client: found v{discoveredPeer.SenderVersionString} {discoveredPeer.SenderType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
           }
           catch (Exception ex)
           {
