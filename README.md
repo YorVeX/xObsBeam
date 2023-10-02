@@ -153,9 +153,10 @@ This plugin uses the following libraries/technologies:
 - [System.IO.Pipelines](https://docs.microsoft.com/en-us/dotnet/api/system.io.pipelines?view=net-7.0) PipeWriter/PipeReader for high-efficiency data transfer between sender and receiver
 - [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) for LZ4 compression
 - [QOI](https://qoiformat.org) - ported 1:1 to C#, also some comments were added, see [here](https://github.com/YorVeX/xObsBeam/blob/main/src/Qoi.cs) for the Beam implementation
+- a modified version of [QOY](https://github.com/Chainfire/qoy) - see [source code comments](https://github.com/YorVeX/xObsBeam/blob/main/src/Qoy.cs) for the differences to the original
 - [QOIR](https://github.com/nigeltao/qoir) - optionally loaded from an external dynamic library, more details on the Beam implementation of it [here](https://github.com/YorVeX/xObsBeam/tree/main/lib/QoirLib)
 - [Density](https://github.com/k0dai/density) - optionally loaded from an external dynamic library, more details on the Beam implementation of it [here](https://github.com/YorVeX/xObsBeam/tree/main/lib/Density)
-- a modified version of [QOY](https://github.com/Chainfire/qoy) - see [source code comments](https://github.com/YorVeX/xObsBeam/blob/main/src/Qoy.cs) for the differences to the original
+- [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo) - optionally loaded from an external dynamic library, more details on the Beam implementation of it [here](github.com/YorVeX/xObsBeam/tree/main/lib/libjpeg-turbo)
 
 Compression is simply applied to each frame separately, QOI, QOIR, QOY and JPEG are image codecs and not video codecs anyway and LZ4 and Density not even tailored for images.
 
