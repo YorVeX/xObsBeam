@@ -317,6 +317,12 @@ public class BeamSenderProperties
       propertyCompressionJpegQualityText = Module.ObsText("CompressionJpegQualityText"),
       propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
       propertyCompressionJpegLevelCaption = Module.ObsText("CompressionJpegLevelCaption"),
+      propertyCompressionJpegLibraryMissingWarningId = "compression_jpeg_library_missing_warning_text"u8,
+      propertyCompressionJpegLibraryMissingWarningText = Module.ObsText("CompressionJpegLibraryMissingWarningText"),
+      propertyCompressionJpegLibraryMissingHelpId = "compression_jpeg_library_missing_help"u8,
+      propertyCompressionJpegLibraryMissingHelpCaption = Module.ObsText("CompressionJpegLibraryMissingHelpCaption"),
+      propertyCompressionJpegLibraryMissingHelpText = Module.ObsText("CompressionJpegLibraryMissingHelpText"),
+      propertyCompressionJpegLibraryMissingHelpUrl = "https://github.com/YorVeX/xObsBeam/tree/main/lib/libjpeg-turbo#using-the-wrapper-class"u8,
       propertyCompressionQoiId = "compression_qoi"u8,
       propertyCompressionQoiCaption = Module.ObsText("CompressionQOICaption"),
       propertyCompressionQoiText = Module.ObsText("CompressionQOIText"),
@@ -398,7 +404,6 @@ public class BeamSenderProperties
         // JPEG compression options group
         var compressionJpegGroup = ObsProperties.obs_properties_create();
         var compressionJpegGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionJpegId, (sbyte*)propertyCompressionJpegCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionJpegGroup);
-        ObsProperties.obs_property_set_visible(compressionJpegGroupProperty, Convert.ToByte(EncoderSupport.LibJpegTurbo));
         ObsProperties.obs_property_set_long_description(compressionJpegGroupProperty, (sbyte*)propertyCompressionJpegText);
         ObsProperties.obs_property_set_modified_callback(compressionJpegGroupProperty, &CompressionSettingChangedEventHandler);
         // JPEG compression level (skip frames)
@@ -409,6 +414,17 @@ public class BeamSenderProperties
         var compressionJpegQualityProperty = ObsProperties.obs_properties_add_int_slider(compressionJpegGroup, (sbyte*)propertyCompressionJpegQualityId, (sbyte*)propertyCompressionJpegQualityCaption, 1, 100, 1);
         ObsProperties.obs_property_set_long_description(compressionJpegQualityProperty, (sbyte*)propertyCompressionJpegQualityText);
         ObsProperties.obs_property_set_modified_callback(compressionJpegQualityProperty, &CompressionJpegQualitySettingChangedEventHandler);
+        // JPEG compression warning message shown when library not found
+        if (!EncoderSupport.LibJpegTurbo)
+        {
+          ObsProperties.obs_property_set_enabled(compressionJpegGroupProperty, Convert.ToByte(false));
+          var compressionJpegLibraryMissingWarningProperty = ObsProperties.obs_properties_add_text(compressionGroup, (sbyte*)propertyCompressionJpegLibraryMissingWarningId, (sbyte*)propertyCompressionJpegLibraryMissingWarningText, obs_text_type.OBS_TEXT_INFO);
+          ObsProperties.obs_property_text_set_info_type(compressionJpegLibraryMissingWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
+          var compressionJpegLibraryMissingHelpProperty = ObsProperties.obs_properties_add_button(compressionGroup, (sbyte*)propertyCompressionJpegLibraryMissingHelpId, (sbyte*)propertyCompressionJpegLibraryMissingHelpCaption, null);
+          ObsProperties.obs_property_set_long_description(compressionJpegLibraryMissingHelpProperty, (sbyte*)propertyCompressionJpegLibraryMissingHelpText);
+          ObsProperties.obs_property_button_set_type(compressionJpegLibraryMissingHelpProperty, obs_button_type.OBS_BUTTON_URL);
+          ObsProperties.obs_property_button_set_url(compressionJpegLibraryMissingHelpProperty, (sbyte*)propertyCompressionJpegLibraryMissingHelpUrl);
+        }
 
         // QOI compression options group
         var compressionQoiGroup = ObsProperties.obs_properties_create();
@@ -698,6 +714,8 @@ public class BeamSenderProperties
       propertyCompressionJpegId = "compression_jpeg"u8,
       propertyCompressionJpegQualityId = "compression_jpeg_quality"u8,
       propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
+      propertyCompressionJpegLibraryMissingWarningId = "compression_jpeg_library_missing_warning_text"u8,
+      propertyCompressionJpegLibraryMissingHelpId = "compression_jpeg_library_missing_help"u8,
       propertyCompressionQoiId = "compression_qoi"u8,
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
       propertyCompressionQoyId = "compression_qoy"u8,
@@ -764,6 +782,12 @@ public class BeamSenderProperties
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionDensityId), Convert.ToByte(densityRecommended));
       var jpegRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Jpeg, obsVideoFormat);
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionJpegId), Convert.ToByte(jpegRecommended));
+      if (!EncoderSupport.LibJpegTurbo) // if the JPEG library is missing, a warning text and help button have been added...
+      {
+        // ...only show these if the JPEG option is visible
+        ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionJpegLibraryMissingWarningId), Convert.ToByte(jpegRecommended));
+        ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionJpegLibraryMissingHelpId), Convert.ToByte(jpegRecommended));
+      }
 
       // handle the special case where JPEG is enabled but is hidden by the setting to only show recommended options or the library couldn't be loaded, in this case force disable this option
       if (jpegCompressionEnabled && (!EncoderSupport.LibJpegTurbo || !jpegRecommended))
