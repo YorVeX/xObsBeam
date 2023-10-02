@@ -540,6 +540,7 @@ public class BeamSenderProperties
       propertyCompressionDensityLevelId = "compression_density_level"u8,
       propertyCompressionDensityStrengthId = "compression_density_strength"u8,
       propertyCompressionQoirLevelId = "compression_qoir_level"u8,
+      propertyCompressionJpegId = "compression_jpeg"u8,
       propertyCompressionJpegQualityId = "compression_jpeg_quality"u8,
       propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
       propertyCompressionLz4LevelId = "compression_lz4_level"u8,
@@ -572,6 +573,7 @@ public class BeamSenderProperties
         ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoiLevelId, 10);
         ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoyLevelId, 10);
         ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoirLevelId, 10);
+        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(true));
         ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionJpegQualityId, 90);
         ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionJpegLevelId, 10);
         ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionLz4LevelId, 10);
