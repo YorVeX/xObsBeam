@@ -7,6 +7,7 @@ It is also using the TurboJPEG API, for the license see [LICENSE](LICENSE).
 
 ## Installation and usage
 ### Using the wrapper class
+<!-- ⚠️ The "JPEG Help" button in the Beam settings window links here (to this anchor) and needs to be changed in case this URL or heading name changes. -->
 #### Windows
 In order to use the wrapper class the binary libjpeg-turbo library is needed. For Windows the necessary `turbojpeg.dll` version 2.1.91 (3.0 beta 2) is directly provided here for your convenience. If you want to get it from the original source: it is included in the package [libjpeg-turbo-2.1.91-vc64.exe](https://sourceforge.net/projects/libjpeg-turbo/files/2.1.91%20%283.0%20beta2%29/libjpeg-turbo-2.1.91-vc64.exe).
 This DLL should be placed in the same folder as the xObsBeam plugin for simplicity. Alternatively it can be placed in the `bin` folder of the OBS installation (where also obs64.exe is located), into Windows system directories where these libraries typically reside in, or into a directory that is in your PATH environment variable.
