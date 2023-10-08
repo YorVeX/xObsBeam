@@ -1,5 +1,5 @@
 {
-  "omnisharp.enableRoslynAnalyzers": true,
+  "dotnet.server.useOmnisharp": true,
   "omnisharp.enableEditorConfigSupport": true,
   "todo-tree.highlights.useColourScheme": true
 }
