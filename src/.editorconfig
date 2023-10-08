@@ -224,7 +224,7 @@ dotnet_naming_style.pascal_case_style.capitalization = pascal_case
 
 file_header_template = SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX\nSPDX-License-Identifier: MIT
 
-[libjpeg-turbo/**]
+[LibJpegTurbo.cs]
 # disable naming rules, as this wrapper is a mapping of the original C API
 dotnet_diagnostic.IDE1006.severity = none
 
