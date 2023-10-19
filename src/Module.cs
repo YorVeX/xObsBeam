@@ -130,11 +130,7 @@ public static class Module
           Output.Start();
         break;
       case obs_frontend_event.OBS_FRONTEND_EVENT_EXIT:
-        if (Output.IsActive)
-        {
-          Log("OBS exiting, stopping output...", ObsLogLevel.Debug);
-          Output.Stop();
-        }
+        Output.Shutdown();
         break;
     }
   }

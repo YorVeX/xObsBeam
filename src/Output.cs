@@ -24,6 +24,7 @@ public static class Output
   static ulong _audioFrameCycleCounter;
   static readonly BeamSender _beamSender = new(Beam.SenderTypes.Output);
   static bool _firstFrame = true;
+  static bool _obsShutdown;
 
   #region Helper methods
   public static unsafe void Register()
@@ -49,7 +50,7 @@ public static class Output
       Obs.obs_output_create((sbyte*)id, (sbyte*)id, null, null);
   }
 
-  public static unsafe bool IsReady => (_outputData.Output != null);
+  public static unsafe bool IsReady => (!_obsShutdown && (_outputData.Output != null));
 
   public static unsafe bool IsActive => ((_outputData.Output != null) && Convert.ToBoolean(Obs.obs_output_active(_outputData.Output)));
 
@@ -72,6 +73,7 @@ public static class Output
     else
       Module.Log("Output not started, already running.");
   }
+
   public static unsafe void Stop()
   {
     if (IsActive)
@@ -82,6 +84,12 @@ public static class Output
     }
     else
       Module.Log("Output not stopped, wasn't running.");
+  }
+
+  public static unsafe void Shutdown()
+  {
+    _obsShutdown = true;
+    Stop();
   }
 
   public static unsafe void Dispose()
