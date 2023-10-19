@@ -5,10 +5,11 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace xObsBeam;
 
-public class PeerDiscovery
+public partial class PeerDiscovery
 {
   public enum ConnectionTypes
   {
@@ -26,15 +27,15 @@ public class PeerDiscovery
     public string IP;
     public int Port;
 
-    public string SocketUniqueIdentifier => (!IsEmpty ? $"{Identifier}{StringSeparator}{InterfaceId}" : "");
+    public string SocketUniqueIdentifier => !IsEmpty ? $"{Identifier}{StringSeparator}{InterfaceId}" : "";
 
-    public string SocketListItemName => (!IsEmpty ? $"{Identifier} [{SenderType}] / {IP}:{Port}" : "");
+    public string SocketListItemName => !IsEmpty ? $"{Identifier} [{SenderType}] / {IP}:{Port}" : "";
 
-    public string PipeListItemName => (!IsEmpty ? $"{Identifier} [{SenderType}]" : "");
+    public string PipeListItemName => !IsEmpty ? $"{Identifier} [{SenderType}]" : "";
 
-    public string SocketListItemValue => (!IsEmpty ? $"{Identifier}{StringSeparator}{InterfaceId}{StringSeparator}{SenderType}{StringSeparator}{IP}:{Port}" : "");
+    public string SocketListItemValue => !IsEmpty ? $"{Identifier}{StringSeparator}{InterfaceId}{StringSeparator}{SenderType}{StringSeparator}{IP}:{Port}" : "";
 
-    public string PipeListItemValue => (!IsEmpty ? $"{Identifier}{StringSeparator}{SenderType}" : "");
+    public string PipeListItemValue => !IsEmpty ? $"{Identifier}{StringSeparator}{SenderType}" : "";
 
     public static Peer FromListItemValue(string listItem)
     {
@@ -71,7 +72,7 @@ public class PeerDiscovery
     public static Peer FromMulticastString(string multicastString)
     {
       var peerStrings = multicastString.Split(StringSeparator, StringSplitOptions.TrimEntries);
-      if ((peerStrings.Length != 9) || (peerStrings[0] != MulticastPrefix) || (peerStrings[1] != "Service"))
+      if (peerStrings.Length != 9 || peerStrings[0] != MulticastPrefix || peerStrings[1] != "Service")
         throw new ArgumentException("Invalid multicast string.");
       return new Peer
       {
@@ -163,12 +164,12 @@ public class PeerDiscovery
         var queryItems = queryMessage.Split(StringSeparator, StringSplitOptions.TrimEntries);
         Module.Log($"Peer Discovery server: {_serverPeer.SenderType} \"{_serverPeer.Identifier}\" received query: {queryMessage}", ObsLogLevel.Debug);
 
-        if ((queryItems.Length == 2) && (queryItems[0] == MulticastPrefix) && (queryItems[1] == "Discover"))
+        if (queryItems.Length == 2 && queryItems[0] == MulticastPrefix && queryItems[1] == "Discover")
         {
           // send a response to the original sender
           foreach (var networkInterface in GetNetworkInterfacesWithIds())
           {
-            if ((_serviceAddress != IPAddress.Any) && (_serviceAddress.ToString() != networkInterface.Item1.Address.ToString()))
+            if (_serviceAddress != IPAddress.Any && _serviceAddress.ToString() != networkInterface.Item1.Address.ToString())
               continue;
 
             var responseBytes = Encoding.UTF8.GetBytes(_serverPeer.ToMulticastString(networkInterface.Item2, networkInterface.Item1.Address.ToString()));
@@ -228,7 +229,7 @@ public class PeerDiscovery
             try { discoveredPeer = Peer.FromMulticastString(responseString); } catch { continue; }
             if (!currentPeer.IsEmpty) // searching for a specific identifier? then don't fill the list with other peers that are not interesting
             {
-              if ((currentPeer.Identifier == discoveredPeer.Identifier) && (currentPeer.InterfaceId == discoveredPeer.InterfaceId) && (discoveredPeer.SenderVersionString == Module.ModuleVersionString))
+              if (currentPeer.Identifier == discoveredPeer.Identifier && currentPeer.InterfaceId == discoveredPeer.InterfaceId && discoveredPeer.SenderVersionString == Module.ModuleVersionString)
               {
                 Module.Log($"Peer Discovery client: found specific {discoveredPeer.SenderVersionString} {discoveredPeer.SenderType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
                 peers.Add(discoveredPeer); // add only this entry to the list...
@@ -291,7 +292,7 @@ public class PeerDiscovery
           if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
           {
 
-            string identifierString = ((networkInterface.NetworkInterfaceType == NetworkInterfaceType.Loopback) ? "localhost" : networkInterface.GetPhysicalAddress().ToString());
+            string identifierString = networkInterface.NetworkInterfaceType == NetworkInterfaceType.Loopback ? "localhost" : networkInterface.GetPhysicalAddress().ToString();
             if (string.IsNullOrEmpty(identifierString))
               identifierString = networkInterface.Name;
             string hashIdentifier = BitConverter.ToString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(identifierString))).Replace("-", "");
@@ -303,5 +304,13 @@ public class PeerDiscovery
     }
     return networkInterfaces;
   }
-}
 
+  // source: https://regex101.com/r/JCLOZL/15
+  [GeneratedRegex(@"\b(127\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|0?10\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|172\.0?1[6-9]\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|172\.0?2[0-9]\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|172\.0?3[01]\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|192\.168\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|169\.254\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|::1|[fF][cCdD][0-9a-fA-F]{2}(?:[:][0-9a-fA-F]{0,4}){0,7}|[fF][eE][89aAbB][0-9a-fA-F](?:[:][0-9a-fA-F]{0,4}){0,7})(?:\/([789]|1?[0-9]{2}))?\b")]
+  private static partial Regex RegexLocalAddress();
+
+  public static bool IsLocalAddress(IPAddress address)
+  {
+    return (IPAddress.IsLoopback(address) || RegexLocalAddress().IsMatch(address.ToString()));
+  }
+}
