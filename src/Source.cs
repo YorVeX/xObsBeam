@@ -40,6 +40,7 @@ public class Source
   #region Source instance fields
   public bool IsAudioOnly;
   readonly BeamReceiver BeamReceiver = new();
+  public bool NetworkInterfacesHaveLocalAddress { get; private set; }
   IntPtr ContextPointer;
   ulong CurrentVideoTimestamp;
   ulong CurrentAudioTimestamp;
@@ -96,6 +97,11 @@ public class Source
   private static unsafe Source GetSource(obs_source* source)
   {
     return _sourceList.First(x => (((Context*)x.Value.ContextPointer)->Source == source)).Value;
+  }
+
+  private static unsafe Source GetSource(obs_data* settings)
+  {
+    return _sourceList.First(x => (((Context*)x.Value.ContextPointer)->Settings == settings)).Value;
   }
 
   private static unsafe Source GetSource(void* data)
@@ -395,6 +401,24 @@ public class Source
     }
   }
 
+  public unsafe void CheckNetworkInterfaces(obs_properties* properties, obs_data* settings)
+  {
+    fixed (byte*
+      propertyConnectionTypeSocketId = "connection_type_socket"u8,
+      propertyNetworkInterfaceNoLocalAddressWarningId = "network_interface_no_local_address_warning_text"u8
+    )
+    {
+      var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
+      var networkInterfaceAddress = NetworkInterfaceAddress;
+      Module.Log($"Network interface set to: {NetworkInterfaceName}", ObsLogLevel.Info);
+      bool showNoLocalAddressWarning = (!connectionTypePipe &&
+                                        (((networkInterfaceAddress == IPAddress.Any) && !NetworkInterfacesHaveLocalAddress) ||
+                                        ((networkInterfaceAddress != IPAddress.Any) && (!PeerDiscovery.IsLocalAddress(networkInterfaceAddress)))));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceNoLocalAddressWarningId), Convert.ToByte(showNoLocalAddressWarning));
+      if (showNoLocalAddressWarning)
+        Module.Log($"{NetworkInterfaceName}: {Module.ObsTextString("NetworkInterfaceNoLocalAddressWarningText")}", ObsLogLevel.Warning);
+    }
+  }
   #endregion Helper methods
 
 #pragma warning disable IDE1006
@@ -595,6 +619,8 @@ public class Source
   {
     Module.Log("source_get_properties called", ObsLogLevel.Debug);
 
+    var thisSource = GetSource(data);
+
     var properties = ObsProperties.obs_properties_create();
     ObsProperties.obs_properties_set_flags(properties, ObsProperties.OBS_PROPERTIES_DEFER_UPDATE);
     fixed (byte*
@@ -648,7 +674,9 @@ public class Source
       propertyManualConnectionSettingsCaption = Module.ObsText("ManualConnectionSettingsCaption"),
       propertyNetworkInterfaceListId = "network_interface_list"u8,
       propertyNetworkInterfaceListCaption = Module.ObsText("NetworkInterfaceListCaption"),
-      propertyNetworkInterfaceListText = Module.ObsText("NetworkInterfaceListText")
+      propertyNetworkInterfaceListText = Module.ObsText("NetworkInterfaceListText"),
+      propertyNetworkInterfaceNoLocalAddressWarningId = "network_interface_no_local_address_warning_text"u8,
+      propertyNetworkInterfaceNoLocalAddressWarningText = Module.ObsText("NetworkInterfaceNoLocalAddressWarningText")
     )
     {
       // render delay limit
@@ -704,13 +732,14 @@ public class Source
       ObsProperties.obs_property_text_set_info_type(peerDiscoveryIdentifierConflictWarning, obs_text_info_type.OBS_TEXT_INFO_WARNING);
 
       // start peer discovery in the background while continuing to add properties elements
-      var discoveryTask = Task.Run(() => GetSource(data).DiscoverFeeds(peerDiscoveryAvailablePipeFeedsList, peerDiscoveryAvailableSocketFeedsList, peerDiscoveryIdentifierConflictWarning));
+      var discoveryTask = Task.Run(() => thisSource.DiscoverFeeds(peerDiscoveryAvailablePipeFeedsList, peerDiscoveryAvailableSocketFeedsList, peerDiscoveryIdentifierConflictWarning));
 
       // network interface selection
-      var networkInterfacesList = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyNetworkInterfaceListId, (sbyte*)propertyNetworkInterfaceListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
-      ObsProperties.obs_property_set_long_description(networkInterfacesList, (sbyte*)propertyNetworkInterfaceListText);
+      var networkInterfacesListProperty = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyNetworkInterfaceListId, (sbyte*)propertyNetworkInterfaceListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
+      ObsProperties.obs_property_set_long_description(networkInterfacesListProperty, (sbyte*)propertyNetworkInterfaceListText);
       fixed (byte* networkInterfaceAnyListItem = "Any: 0.0.0.0"u8)
-        ObsProperties.obs_property_list_add_string(networkInterfacesList, (sbyte*)networkInterfaceAnyListItem, (sbyte*)networkInterfaceAnyListItem);
+        ObsProperties.obs_property_list_add_string(networkInterfacesListProperty, (sbyte*)networkInterfaceAnyListItem, (sbyte*)networkInterfaceAnyListItem);
+      thisSource.NetworkInterfacesHaveLocalAddress = false;
       foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
       {
         if (networkInterface.OperationalStatus == OperationalStatus.Up)
@@ -720,12 +749,20 @@ public class Source
             if (ip.Address.AddressFamily != AddressFamily.InterNetwork)
               continue;
             string networkInterfaceDisplayName = networkInterface.Name + ": " + ip.Address + " / " + ip.IPv4Mask;
-            Module.Log($"Found network interface: {networkInterfaceDisplayName}", ObsLogLevel.Debug);
+            if (PeerDiscovery.IsLocalAddress(ip.Address))
+              thisSource.NetworkInterfacesHaveLocalAddress = true;
+            Module.Log($"Found network interface: {networkInterfaceDisplayName} (Local: {PeerDiscovery.IsLocalAddress(ip.Address)})", ObsLogLevel.Debug);
             fixed (byte* networkInterfaceListItem = Encoding.UTF8.GetBytes(networkInterfaceDisplayName))
-              ObsProperties.obs_property_list_add_string(networkInterfacesList, (sbyte*)networkInterfaceListItem, (sbyte*)networkInterfaceListItem);
+              ObsProperties.obs_property_list_add_string(networkInterfacesListProperty, (sbyte*)networkInterfaceListItem, (sbyte*)networkInterfaceListItem);
           }
         }
       }
+      ObsProperties.obs_property_set_modified_callback(networkInterfacesListProperty, &NetworkInterfaceChangedEventHandler);
+
+      // warning if the selected interface doesn't have a local address
+      var networkInterfaceNoLocalAddressWarningProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyNetworkInterfaceNoLocalAddressWarningId, (sbyte*)propertyNetworkInterfaceNoLocalAddressWarningText, obs_text_type.OBS_TEXT_INFO);
+      ObsProperties.obs_property_text_set_info_type(networkInterfaceNoLocalAddressWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
+      ObsProperties.obs_property_set_visible(networkInterfaceNoLocalAddressWarningProperty, Convert.ToByte(false));
 
       // manual connection settings checkbox
       var manualConnectionSettingsProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyManualConnectionSettingsId, (sbyte*)propertyManualConnectionSettingsCaption);
@@ -919,6 +956,7 @@ public class Source
       ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(!connectionTypePipe));
       var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
       ConnectionTypeChanged(connectionTypePipe, useManualConnectionSettings, properties);
+      GetSource(settings).CheckNetworkInterfaces(properties, settings);
       return Convert.ToByte(true);
     }
   }
@@ -936,8 +974,16 @@ public class Source
       ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(connectionTypePipe));
       var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
       ConnectionTypeChanged(connectionTypePipe, useManualConnectionSettings, properties);
+      GetSource(settings).CheckNetworkInterfaces(properties, settings);
       return Convert.ToByte(true);
     }
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte NetworkInterfaceChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    GetSource(settings).CheckNetworkInterfaces(properties, settings);
+    return Convert.ToByte(true);
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]

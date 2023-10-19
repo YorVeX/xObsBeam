@@ -963,6 +963,25 @@ public class BeamSenderProperties
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(QoiCompression || QoyCompression || QoirCompression || JpegCompression || Lz4Compression || DensityCompression));
     }
   }
+
+  public unsafe void CheckNetworkInterfaces(obs_properties* properties, obs_data* settings)
+  {
+    fixed (byte*
+      propertyConnectionTypeSocketId = "connection_type_socket"u8,
+      propertyNetworkInterfaceNoLocalAddressWarningId = "network_interface_no_local_address_warning_text"u8
+    )
+    {
+      var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
+      var networkInterfaceAddress = NetworkInterfaceAddress;
+      Module.Log($"{UniquePrefix} Network interface set to: {NetworkInterfaceName}", ObsLogLevel.Info);
+      bool showNoLocalAddressWarning = (!connectionTypePipe &&
+                                        (((networkInterfaceAddress == IPAddress.Any) && !NetworkInterfacesHaveLocalAddress) ||
+                                        ((networkInterfaceAddress != IPAddress.Any) && (!PeerDiscovery.IsLocalAddress(networkInterfaceAddress)))));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceNoLocalAddressWarningId), Convert.ToByte(showNoLocalAddressWarning));
+      if (showNoLocalAddressWarning)
+        Module.Log($"{UniquePrefix} {NetworkInterfaceName}: {Module.ObsTextString("NetworkInterfaceNoLocalAddressWarningText")}", ObsLogLevel.Warning);
+    }
+  }
   #endregion Event handler helper functions
 
   #region Event handlers
@@ -1016,6 +1035,7 @@ public class BeamSenderProperties
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe && !automaticListenPort));
       var senderProperties = GetProperties(properties);
+      senderProperties.CheckNetworkInterfaces(properties, settings);
       Module.Log($"{senderProperties.UniquePrefix} Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
       senderProperties.EventHandlerNeedSenderRestartCheck("ConnectionTypePipeChangedEventHandler");
       return Convert.ToByte(true);
@@ -1040,6 +1060,7 @@ public class BeamSenderProperties
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe && !automaticListenPort));
       var senderProperties = GetProperties(properties);
+      senderProperties.CheckNetworkInterfaces(properties, settings);
       Module.Log($"{senderProperties.UniquePrefix} Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
       senderProperties.EventHandlerNeedSenderRestartCheck("ConnectionTypeSocketChangedEventHandler");
       return Convert.ToByte(true);
@@ -1050,24 +1071,8 @@ public class BeamSenderProperties
   public static unsafe byte NetworkInterfaceChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     var senderProperties = GetProperties(properties);
-    fixed (byte*
-      propertyConnectionTypeSocketId = "connection_type_socket"u8,
-      propertyNetworkInterfaceNoLocalAddressWarningId = "network_interface_no_local_address_warning_text"u8
-    )
-    {
-      var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
-      var networkInterfaceAddress = senderProperties.NetworkInterfaceAddress;
-      //TODO: also do all of this for receiver sources
-      Module.Log($"{senderProperties.UniquePrefix} Network interface set to: {senderProperties.NetworkInterfaceName}", ObsLogLevel.Info);
-      bool showNoLocalAddressWarning = (!connectionTypePipe &&
-                                        (((networkInterfaceAddress == IPAddress.Any) && !senderProperties.NetworkInterfacesHaveLocalAddress) ||
-                                        ((networkInterfaceAddress != IPAddress.Any) && (!PeerDiscovery.IsLocalAddress(networkInterfaceAddress)))));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceNoLocalAddressWarningId), Convert.ToByte(showNoLocalAddressWarning));
-      if (showNoLocalAddressWarning)
-        Module.Log($"{senderProperties.UniquePrefix} {networkInterfaceAddress}: {Module.ObsTextString("NetworkInterfaceNoLocalAddressWarningText")}", ObsLogLevel.Warning);
-    }
+    senderProperties.CheckNetworkInterfaces(properties, settings);
     senderProperties.EventHandlerNeedSenderRestartCheck("NetworkInterfaceChangedEventHandler");
-
     return Convert.ToByte(true);
   }
 
