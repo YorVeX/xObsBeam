@@ -141,7 +141,7 @@ sealed class BeamSenderClient
         if (receiveTimestampType == Beam.ReceiveTimestampTypes.Receive)
         {
           var lastSentTimestamp = Interlocked.Read(ref _lastSentTimestamp);
-          if (lastSentTimestamp > timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
+          if (lastSentTimestamp >= timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
           {
             var receiveDelayMs = (lastSentTimestamp - timestamp) / 1_000_000;
             // Module.Log($"<{ClientId}> Receiver received video frame {timestamp} with a delay of {receiveDelayMs} ms", ObsLogLevel.Debug);
@@ -151,7 +151,7 @@ sealed class BeamSenderClient
         else if (receiveTimestampType == Beam.ReceiveTimestampTypes.Render)
         {
           var lastSentTimestamp = Interlocked.Read(ref _lastSentTimestamp);
-          if (lastSentTimestamp > timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
+          if (lastSentTimestamp >= timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
           {
             var renderDelayMs = (lastSentTimestamp - timestamp) / 1_000_000;
             // Module.Log($"<{ClientId}> Receiver rendered video frame {timestamp} with a delay of {renderDelayMs} ms", ObsLogLevel.Debug);
