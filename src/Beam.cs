@@ -9,6 +9,7 @@ namespace xObsBeam;
 
 public class Beam
 {
+  const int ReceiveTimestampPairLength = (sizeof(byte) + sizeof(long)) * 2;
 
   public enum SenderTypes
   {
@@ -54,6 +55,8 @@ public class Beam
   public static SequencePosition GetReceiveTimestamp(ReadOnlySequence<byte> sequence, out ReceiveTimestampTypes receiveTimestampType, out ulong timestamp)
   {
     var reader = new SequenceReader<byte>(sequence);
+    if (reader.Length > ReceiveTimestampPairLength)
+      reader.Advance(reader.Length - ReceiveTimestampPairLength); // skip past outdated timestamp information
     if (!reader.TryRead(out byte byteResult))
       throw new ArgumentException("Failed to read enough data from sequence.");
     if (!reader.TryReadLittleEndian(out long longResult))
