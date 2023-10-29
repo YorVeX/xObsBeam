@@ -538,6 +538,9 @@ public class BeamReceiver
               renderDelayAverage = (int)renderDelays.Average();
             }
 
+            if (readResult.Buffer.Length > (videoHeader.DataSize * 3))
+              Module.Log($"Warning: High receive buffer size of {readResult.Buffer.Length} bytes (> {videoHeader.DataSize * 3} bytes).", ObsLogLevel.Warning);
+
             var rawDataBuffer = RawDataBufferPool.Rent((int)rawVideoDataSize);
             if (videoHeader.Compression == Beam.CompressionTypes.None)
               readResult.Buffer.Slice(0, videoHeader.DataSize).CopyTo(rawDataBuffer);
