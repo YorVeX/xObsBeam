@@ -123,7 +123,7 @@ sealed class BeamSenderClient
       _ = Task.Run(() => CheckReceiverAliveLoopAsync(cancellationToken), cancellationToken);
       while (!cancellationToken.IsCancellationRequested)
       {
-        ReadResult readResult = await pipeReader.ReadAtLeastAsync(sizeof(byte) + sizeof(ulong), cancellationToken);
+        ReadResult readResult = await pipeReader.ReadAtLeastAsync(Beam.ReceiveTimestampLength, cancellationToken);
         if (readResult.IsCanceled || (readResult.Buffer.IsEmpty && readResult.IsCompleted))
         {
           if (readResult.IsCanceled)
@@ -136,25 +136,25 @@ sealed class BeamSenderClient
           }
           break;
         }
-        pipeReader.AdvanceTo(Beam.GetReceiveTimestamp(readResult.Buffer, out Beam.ReceiveTimestampTypes receiveTimestampType, out ulong timestamp), readResult.Buffer.End);
         _lastFrameTime = DateTime.UtcNow;
-        if (receiveTimestampType == Beam.ReceiveTimestampTypes.Receive)
+        pipeReader.AdvanceTo(Beam.GetReceiveTimestamps(readResult.Buffer, ClientId, out var receiveTimestamp, out var renderTimestamp), readResult.Buffer.End);
+        if (receiveTimestamp > 0)
         {
           var lastSentTimestamp = Interlocked.Read(ref _lastSentTimestamp);
-          if (lastSentTimestamp >= timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
+          if (lastSentTimestamp >= receiveTimestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
           {
-            var receiveDelayMs = (lastSentTimestamp - timestamp) / 1_000_000;
-            // Module.Log($"<{ClientId}> Receiver received video frame {timestamp} with a delay of {receiveDelayMs} ms", ObsLogLevel.Debug);
+            var receiveDelayMs = (lastSentTimestamp - receiveTimestamp) / 1_000_000;
+            // Module.Log($"<{ClientId}> Receiver received video frame {receiveTimestamp} with a delay of {receiveDelayMs} ms ({lastSentTimestamp} - {receiveTimestamp})", ObsLogLevel.Debug);
             Interlocked.Exchange(ref _receiveDelayMs, (long)receiveDelayMs);
           }
         }
-        else if (receiveTimestampType == Beam.ReceiveTimestampTypes.Render)
+        if (renderTimestamp > 0)
         {
           var lastSentTimestamp = Interlocked.Read(ref _lastSentTimestamp);
-          if (lastSentTimestamp >= timestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
+          if (lastSentTimestamp >= renderTimestamp) // an offset reset on the receiver side after a reconnect can cause a "future timestamp", ignore those
           {
-            var renderDelayMs = (lastSentTimestamp - timestamp) / 1_000_000;
-            // Module.Log($"<{ClientId}> Receiver rendered video frame {timestamp} with a delay of {renderDelayMs} ms", ObsLogLevel.Debug);
+            var renderDelayMs = (lastSentTimestamp - renderTimestamp) / 1_000_000;
+            // Module.Log($"<{ClientId}> Receiver rendered video frame {renderTimestamp} with a delay of {renderDelayMs} ms ({lastSentTimestamp} - {renderTimestamp})", ObsLogLevel.Debug);
             Interlocked.Exchange(ref _renderDelayMs, (long)renderDelayMs);
           }
         }

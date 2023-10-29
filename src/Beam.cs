@@ -9,7 +9,8 @@ namespace xObsBeam;
 
 public class Beam
 {
-  const int ReceiveTimestampPairLength = (sizeof(byte) + sizeof(long)) * 2;
+  public const int ReceiveTimestampLength = (sizeof(byte) + sizeof(long));
+  public const int MaxReceiveTimestampLength = ReceiveTimestampLength * 4; // sometimes we might get timestamps of the same type in a row, they then shouldn't make us discard the other type
 
   public enum SenderTypes
   {
@@ -52,17 +53,29 @@ public class Beam
     return (Type)result;
   }
 
-  public static SequencePosition GetReceiveTimestamp(ReadOnlySequence<byte> sequence, out ReceiveTimestampTypes receiveTimestampType, out ulong timestamp)
+  public static SequencePosition GetReceiveTimestamps(ReadOnlySequence<byte> sequence, string clientId, out ulong receiveTimestamp, out ulong renderTimestamp)
   {
+    receiveTimestamp = 0;
+    renderTimestamp = 0;
     var reader = new SequenceReader<byte>(sequence);
-    if (reader.Length > ReceiveTimestampPairLength)
-      reader.Advance(reader.Length - ReceiveTimestampPairLength); // skip past outdated timestamp information
-    if (!reader.TryRead(out byte byteResult))
-      throw new ArgumentException("Failed to read enough data from sequence.");
-    if (!reader.TryReadLittleEndian(out long longResult))
-      throw new ArgumentException("Failed to read enough data from sequence.");
-    timestamp = (ulong)longResult;
-    receiveTimestampType = (ReceiveTimestampTypes)byteResult;
+    if (reader.Length > MaxReceiveTimestampLength)
+    {
+      Module.Log($"<{clientId}> Discarding excessive timestamp info from receiver ({reader.Length - MaxReceiveTimestampLength} bytes).", ObsLogLevel.Debug);
+      reader.Advance(reader.Length - MaxReceiveTimestampLength); // skip past outdated timestamp information to keep unnecessary work for the following loop to a minimum
+    }
+    while (reader.TryRead(out byte byteResult))
+    {
+      if (!reader.TryReadLittleEndian(out long longResult))
+      {
+        reader.Rewind(1); // leave the ReceiveTimestampTypes byte in the buffer for the next round
+        break;
+      }
+      // with this loop if a timestamp type is received more than once, only the last one will be used
+      if ((ReceiveTimestampTypes)byteResult == ReceiveTimestampTypes.Receive)
+        receiveTimestamp = (ulong)longResult;
+      else if ((ReceiveTimestampTypes)byteResult == ReceiveTimestampTypes.Render)
+        renderTimestamp = (ulong)longResult;
+    }
     return reader.Position;
   }
 
