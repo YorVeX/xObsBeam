@@ -148,6 +148,8 @@ public class Source
     var context = (Context*)ContextPointer;
     var settings = context->Settings;
 
+    CurrentVideoTimestamp = 0;
+    CurrentAudioTimestamp = 0;
     context->ReceiveDelay = -1;
     context->RenderDelay = -1;
 
@@ -846,7 +848,6 @@ public class Source
     {
       if (thisSource.IsAudioOnly || (thisSource.BeamReceiver?.AudioBuffer != null))
       {
-        thisSource.BeamReceiver?.SetLastOutputFrameTimestamp(thisSource.CurrentAudioTimestamp);
         if (thisSource.BeamReceiver?.AudioBuffer != null)
         {
           Task.Run(() =>
@@ -858,7 +859,6 @@ public class Source
       }
       else
       {
-        thisSource.BeamReceiver?.SetLastOutputFrameTimestamp(thisSource.CurrentVideoTimestamp);
         if (thisSource.BeamReceiver?.FrameBuffer != null)
         {
           Task.Run(() =>
@@ -1137,6 +1137,9 @@ public class Source
     }
     else
     {
+      if (CurrentVideoTimestamp > 0)
+        BeamReceiver!.SetLastOutputFrameTimestamp(CurrentVideoTimestamp);
+
       context->Video->timestamp = videoFrame.AdjustedTimestamp;
       context->ReceiveDelay = videoFrame.Header.ReceiveDelay;
       context->RenderDelay = videoFrame.RenderDelayAverage;
@@ -1189,6 +1192,9 @@ public class Source
     uint audioPlaneSize = _audioBytesPerChannel * audioFrame.Header.Frames;
     fixed (byte* audioData = audioFrame.Data) // temporary pinning is sufficient, since Obs.obs_source_output_audio() creates a copy of the data anyway
     {
+      if (IsAudioOnly && (CurrentAudioTimestamp > 0))
+        BeamReceiver!.SetLastOutputFrameTimestamp(CurrentAudioTimestamp);
+
       uint currentOffset = 0;
       // audio data in the array is already in the correct order, but the array offsets need to be set correctly according to the plane/channel layout
       for (int planeIndex = 0; planeIndex < _audioPlanes; planeIndex++)
