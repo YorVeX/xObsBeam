@@ -112,7 +112,7 @@ sealed class BeamSenderClient
     /*
     One reason to have this method is because the mere existence of an actively used receiving channel on the underlying socket ensures proper disconnect detection also for the sender.
     Another is that it is used to implement timeout detection for cases where the connection is still open but the receiver is not reading data anymore.
-    As a side effect the frame timestamp information from the receiver can also be useful for debugging purposes.
+    The timestamp information itself is used to calculate the delay between sending and receiving a frame. It can also be useful for debugging purposes.
     */
     if (pipeReader == null)
       return;
@@ -179,7 +179,7 @@ sealed class BeamSenderClient
     2. The PipeWriter workflow ends with "FlushAsync" (implicitly through WriteAsync). Since this call is async it could still be busy while the next frame is already being processed (and in tests this indeed has occasionally happened).
        As part of this processing the next call to PipeWriter.GetMemory() would be made, but: "Calling GetMemory or GetSpan while there's an incomplete call to FlushAsync isn't safe.", see:
        https://learn.microsoft.com/en-us/dotnet/standard/io/pipelines#pipewriter-common-problems
-    3. If compression is done asynchonously, frames could be finished by their worker threads in the wrong order, the queue gives enough time to collect all frames before sending them out in the correct order.
+    3. If compression is done asynchronously, frames could be finished by their worker threads in the wrong order, the queue gives enough time to collect all frames before sending them out in the correct order.
     */
     try
     {
