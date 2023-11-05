@@ -34,9 +34,11 @@ sealed class BeamSenderClient
   public BeamSenderClient(string clientId, Socket socket, Beam.VideoHeader videoHeader, Beam.AudioHeader audioHeader)
   {
     ClientId = clientId;
-    _videoDataPool = ArrayPool<byte>.Create(videoHeader.DataSize, BeamSender.MaxFrameQueueSize);
+    if (videoHeader.DataSize > 0)
+      _videoDataPool = ArrayPool<byte>.Create(videoHeader.DataSize, BeamSender.MaxFrameQueueSize);
     _audioHeader = audioHeader;
-    _audioDataPool = ArrayPool<byte>.Create(audioHeader.DataSize, BeamSender.MaxFrameQueueSize * 2);
+    if (audioHeader.DataSize > 0)
+      _audioDataPool = ArrayPool<byte>.Create(audioHeader.DataSize, BeamSender.MaxFrameQueueSize * 2);
     Module.Log($"<{ClientId}> New client connected.", ObsLogLevel.Info);
     _socket = socket;
   }
