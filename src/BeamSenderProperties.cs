@@ -42,7 +42,7 @@ public class BeamSenderProperties
   unsafe obs_properties* Properties;
   readonly Beam.SenderTypes PropertiesType;
   bool NeedSenderRestart;
-  readonly string UniquePrefix;
+  public string UniquePrefix;
   #endregion Instance fields
 
   #region Public properties
@@ -232,6 +232,7 @@ public class BeamSenderProperties
   #endregion Public properties
 
   #region Instance methods
+  // called by filters
   public unsafe BeamSenderProperties(Beam.SenderTypes propertiesType, Filter filter, obs_source* source, obs_data* settings)
   {
     Initialize(settings);
@@ -247,6 +248,7 @@ public class BeamSenderProperties
     ContextPointer = context;
   }
 
+  // called by the output and relays
   public unsafe BeamSenderProperties(Beam.SenderTypes propertiesType)
   {
     PropertiesType = propertiesType;
@@ -265,7 +267,7 @@ public class BeamSenderProperties
 
   private unsafe void Initialize(obs_data* settings)
   {
-    // compression settings use global variables that need to be initialized - for an output this is called from settings_update during OBS startup, for filters from the constructor
+    // compression settings use global variables that need to be initialized - for an output this is called from settings_update during OBS startup, for filters from the constructor, for relays it's not needed as they don't compress
     if (!_initialized)
     {
       _initialized = true;
@@ -276,11 +278,14 @@ public class BeamSenderProperties
 
 #pragma warning disable IDE1006
   #region Callbacks
-  public unsafe obs_properties* settings_get_properties(void* data)
+  public unsafe obs_properties* settings_get_properties(void* data, obs_properties* properties = null, obs_properties* propertiesParent = null)
   {
     _initializedEventHandlers.Clear(); // settings have been freshly opened, reset this
-    var properties = ObsProperties.obs_properties_create();
-    ObsProperties.obs_properties_set_flags(properties, ObsProperties.OBS_PROPERTIES_DEFER_UPDATE);
+    if (properties == null)
+    {
+      properties = ObsProperties.obs_properties_create();
+      ObsProperties.obs_properties_set_flags(properties, ObsProperties.OBS_PROPERTIES_DEFER_UPDATE);
+    }
 
     fixed (byte*
       propertyEnableId = "enable"u8,
@@ -288,6 +293,8 @@ public class BeamSenderProperties
       propertyEnableOutputText = Module.ObsText("EnableOutputText"),
       propertyEnableFilterCaption = Module.ObsText("EnableFilterCaption"),
       propertyEnableFilterText = Module.ObsText("EnableFilterText"),
+      propertyEnableRelayCaption = Module.ObsText("EnableRelayCaption"),
+      propertyEnableRelayText = Module.ObsText("EnableRelayText"),
       propertyIdentifierId = "identifier"u8,
       propertyIdentifierCaption = Module.ObsText("IdentifierCaption"),
       propertyIdentifierText = Module.ObsText("IdentifierText"),
@@ -377,6 +384,11 @@ public class BeamSenderProperties
         enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableOutputCaption);
         ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableOutputText);
       }
+      else if (PropertiesType == Beam.SenderTypes.Relay) // ...or relay
+      {
+        enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableRelayCaption);
+        ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableRelayText);
+      }
       else // ...or filter
       {
         enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableFilterCaption);
@@ -389,7 +401,7 @@ public class BeamSenderProperties
       ObsProperties.obs_property_set_long_description(identifierProperty, (sbyte*)propertyIdentifierText);
       ObsProperties.obs_property_set_modified_callback(identifierProperty, &IdentifierSettingChangedEventHandler);
 
-      if (PropertiesType != Beam.SenderTypes.FilterAudio)
+      if (PropertiesType is not Beam.SenderTypes.FilterAudio and not Beam.SenderTypes.Relay)
       {
         // compression group
         var compressionGroup = ObsProperties.obs_properties_create();
@@ -545,8 +557,9 @@ public class BeamSenderProperties
       ObsProperties.obs_property_set_modified_callback(automaticListenPortProperty, &AutomaticListenPortEnabledChangedEventHandler);
 
     }
-    Properties = properties;
-    ContextPointer->Properties = properties;
+
+    Properties = (propertiesParent != null ? propertiesParent : properties);
+    ContextPointer->Properties = Properties;
 
     return properties;
   }
@@ -561,6 +574,7 @@ public class BeamSenderProperties
       propertyIdentifierFilterAvDefaultText = "Beam Sender Filter (Audio/Video)"u8,
       propertyIdentifierFilterVideoDefaultText = "Beam Sender Filter (Video only)"u8,
       propertyIdentifierFilterAudioDefaultText = "Beam Sender Filter (Audio only)"u8,
+      propertyIdentifierRelayDefaultText = "Beam Sender Relay"u8,
       propertyCompressionShowOnlyRecommendedId = "compression_recommended_only"u8,
       propertyCompressionQoiLevelId = "compression_qoi_level"u8,
       propertyCompressionQoyLevelId = "compression_qoy_level"u8,
@@ -585,16 +599,18 @@ public class BeamSenderProperties
       }
       else
       {
-        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(true)); // a filter is not blocking anything and disabling it should be rarely necessary, so it can be enabled by default
+        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(true)); // a filter or relay is not blocking anything and disabling it should be rarely necessary, so it can be enabled by default
         if (propertiesType == Beam.SenderTypes.FilterAudioVideo)
           ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierFilterAvDefaultText);
         else if (propertiesType == Beam.SenderTypes.FilterVideo)
           ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierFilterVideoDefaultText);
         else if (propertiesType == Beam.SenderTypes.FilterAudio)
           ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierFilterAudioDefaultText);
+        else if (propertiesType == Beam.SenderTypes.Relay)
+          ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierRelayDefaultText);
       }
 
-      if (propertiesType != Beam.SenderTypes.FilterAudio)
+      if (propertiesType is not Beam.SenderTypes.FilterAudio and not Beam.SenderTypes.Relay)
       {
         ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionShowOnlyRecommendedId, Convert.ToByte(true));
         ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoiLevelId, 10);
@@ -707,7 +723,7 @@ public class BeamSenderProperties
 
   private void EventHandlerNeedSenderRestartCheck(string eventHandlerName)
   {
-    if (PropertiesType == Beam.SenderTypes.Output) // the output just always updates on settings_update
+    if (PropertiesType is Beam.SenderTypes.Output or Beam.SenderTypes.Relay) // the output and relay source just always update on settings_update
       return;
     if (_initializedEventHandlers.Contains(eventHandlerName)) // this is not the init call, something actually changed, therefore a restart is necessary
     {

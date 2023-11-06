@@ -37,8 +37,9 @@ public class Source
   #endregion Class fields
 
   #region Source instance fields
+  public bool IsRelay;
   public bool IsAudioOnly;
-  readonly BeamReceiver BeamReceiver = new();
+  BeamReceiver BeamReceiver = new();
   public bool NetworkInterfacesHaveLocalAddress { get; private set; }
   IntPtr ContextPointer;
   ulong CurrentVideoTimestamp;
@@ -71,6 +72,27 @@ public class Source
       sourceInfo->video_tick = &source_video_tick;
       sourceInfo->update = &source_update;
       sourceInfo->save = &source_save;
+      ObsSource.obs_register_source_s(sourceInfo, (nuint)sizeof(obs_source_info));
+    }
+    ObsBmem.bfree(sourceInfo);
+
+    sourceInfo = ObsBmem.bzalloc<obs_source_info>();
+    fixed (byte* id = "Beam Relay Source"u8)
+    {
+      sourceInfo->id = (sbyte*)id;
+      sourceInfo->type = obs_source_type.OBS_SOURCE_TYPE_INPUT;
+      sourceInfo->icon_type = obs_icon_type.OBS_ICON_TYPE_CUSTOM;
+      sourceInfo->output_flags = ObsSource.OBS_SOURCE_DO_NOT_DUPLICATE;
+      sourceInfo->get_name = &relay_source_get_name;
+      sourceInfo->create = &relay_source_create;
+      sourceInfo->get_width = &source_get_width;
+      sourceInfo->get_height = &source_get_height;
+      sourceInfo->show = &source_show;
+      sourceInfo->hide = &source_hide;
+      sourceInfo->destroy = &source_destroy;
+      sourceInfo->get_defaults = &relay_source_get_defaults;
+      sourceInfo->get_properties = &source_get_properties;
+      sourceInfo->update = &source_update;
       ObsSource.obs_register_source_s(sourceInfo, (nuint)sizeof(obs_source_info));
     }
     ObsBmem.bfree(sourceInfo);
@@ -113,8 +135,13 @@ public class Source
   {
     get
     {
-      fixed (byte* propertyNetworkInterfaceListId = "network_interface_list"u8)
-        return Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(((Context*)ContextPointer)->Settings, (sbyte*)propertyNetworkInterfaceListId))!;
+      fixed (byte*
+        propertyRelayNetworkInterfaceListId = "relay_network_interface_list"u8,
+        propertyNetworkInterfaceListId = "network_interface_list"u8
+      )
+      {
+        return Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(((Context*)ContextPointer)->Settings, (IsRelay ? (sbyte*)propertyRelayNetworkInterfaceListId : (sbyte*)propertyNetworkInterfaceListId)))!;
+      }
     }
   }
 
@@ -159,6 +186,7 @@ public class Source
       propertyTargetHostId = "host"u8,
       propertyTargetPipeNameId = "pipe_name"u8,
       propertyTargetPortId = "port"u8,
+      propertyRelayConnectionTypePipeId = "relay_connection_type_pipe"u8,
       propertyConnectionTypePipeId = "connection_type_pipe"u8,
       propertyManualConnectionSettingsId = "manual_connection_settings"u8,
       propertyPeerDiscoveryAvailablePipeFeedsId = "available_pipe_feeds_list"u8,
@@ -174,7 +202,7 @@ public class Source
       _audioBytesPerChannel = 0;
 
       var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
-      var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
+      var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (IsRelay ? (sbyte*)propertyRelayConnectionTypePipeId : (sbyte*)propertyConnectionTypePipeId)));
       if (connectionTypePipe)
       {
         string targetPipeName = "";
@@ -407,11 +435,12 @@ public class Source
   public unsafe void CheckNetworkInterfaces(obs_properties* properties, obs_data* settings)
   {
     fixed (byte*
-      propertyConnectionTypeSocketId = "connection_type_socket"u8,
-      propertyNetworkInterfaceNoLocalAddressWarningId = "network_interface_no_local_address_warning_text"u8
+      propertyRelayConnectionTypePipeId = "relay_connection_type_pipe"u8,
+      propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyNetworkInterfaceNoLocalAddressWarningId = "receiver_network_interface_no_local_address_warning_text"u8
     )
     {
-      var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
+      var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (IsRelay ? (sbyte*)propertyRelayConnectionTypePipeId : (sbyte*)propertyConnectionTypePipeId)));
       var networkInterfaceAddress = NetworkInterfaceAddress;
       Module.Log($"Network interface set to: {NetworkInterfaceName}", ObsLogLevel.Info);
       bool showNoLocalAddressWarning = (!connectionTypePipe &&
@@ -521,8 +550,70 @@ public class Source
   }
   #endregion Timestamp measure filter API methods
 
-  #region Source API methods
-  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+  #region Relay Source API methods
+  // the sources here need to deviate from the original ones, since they are called before there is an instance holding the IsRelay information
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe sbyte* relay_source_get_name(void* data)
+  {
+    Module.Log("relay_source_get_name called", ObsLogLevel.Debug);
+    fixed (byte* sourceName = "Beam Relay"u8)
+      return (sbyte*)sourceName;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void* relay_source_create(obs_data* settings, obs_source* source)
+  {
+    Module.Log("relay_source_create called", ObsLogLevel.Debug);
+    Context* context = (Context*)Marshal.AllocCoTaskMem(sizeof(Context));
+    context->Settings = settings;
+    context->Source = source;
+    context->Video = ObsBmem.bzalloc<obs_source_frame>();
+    context->Audio = ObsBmem.bzalloc<obs_source_audio>();
+    context->TimestampFilter = null;
+    context->TimestampFilterAdded = false;
+    context->ReceiveDelay = -1;
+    context->RenderDelay = -1;
+    context->SourceId = ++_sourceCount;
+    var thisSource = new Source();
+    _sourceList.TryAdd(context->SourceId, thisSource);
+    thisSource.ContextPointer = (IntPtr)context;
+    thisSource.IsRelay = true;
+    thisSource.BeamReceiver = new(true);
+    thisSource.BeamReceiver.SenderRelayProperties.Settings = settings;
+    thisSource.BeamReceiver.SenderRelayProperties.Source = source;
+    thisSource.BeamReceiver.Disconnected += thisSource.DisconnectedEventHandler;
+    return context;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void relay_source_get_defaults(obs_data* settings)
+  {
+    Module.Log("relay_source_get_defaults called", ObsLogLevel.Debug);
+    fixed (byte*
+      propertyTargetPipeNameId = "pipe_name"u8,
+      propertyTargetPipeNameDefaultText = "Beam Sender"u8,
+      propertyTargetHostId = "host"u8,
+      propertyTargetHostDefaultText = "127.0.0.1"u8,
+      propertyRelayConnectionTypePipeId = "relay_connection_type_pipe"u8,
+      propertyRelayConnectionTypeSocketId = "relay_connection_type_socket"u8,
+      propertyTargetPortId = "port"u8
+    )
+    {
+      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyRelayConnectionTypePipeId, Convert.ToByte(false));
+      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyRelayConnectionTypeSocketId, Convert.ToByte(true));
+      ObsData.obs_data_set_default_string(settings, (sbyte*)propertyTargetPipeNameId, (sbyte*)propertyTargetPipeNameDefaultText);
+      ObsData.obs_data_set_default_string(settings, (sbyte*)propertyTargetHostId, (sbyte*)propertyTargetHostDefaultText);
+      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyTargetPortId, BeamSender.DefaultPort);
+    }
+
+    // add additional defaults for the sender properties of relay sources
+    BeamSenderProperties.settings_get_defaults(Beam.SenderTypes.Relay, settings);
+  }
+  #endregion Relay Source API methods
+
+  #region Receiver Source API methods
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe sbyte* source_get_name(void* data)
   {
     Module.Log("source_get_name called", ObsLogLevel.Debug);
@@ -560,8 +651,11 @@ public class Source
     var thisSource = GetSource(data);
     thisSource.BeamReceiver.Disconnect();
     thisSource.BeamReceiver.Disconnected -= thisSource.DisconnectedEventHandler;
-    thisSource.BeamReceiver.VideoFrameReceived -= thisSource.VideoFrameReceivedEventHandler;
-    thisSource.BeamReceiver.AudioFrameReceived -= thisSource.AudioFrameReceivedEventHandler;
+    if (!thisSource.IsRelay)
+    {
+      thisSource.BeamReceiver.VideoFrameReceived -= thisSource.VideoFrameReceivedEventHandler;
+      thisSource.BeamReceiver.AudioFrameReceived -= thisSource.AudioFrameReceivedEventHandler;
+    }
     var context = (Context*)data;
     ObsBmem.bfree(context->Video);
     ObsBmem.bfree(context->Audio);
@@ -576,11 +670,13 @@ public class Source
   {
     Module.Log("source_show called", ObsLogLevel.Debug);
 
+    var thisSource = GetSource(data);
     // add the timestamp helper filter if it doesn't exist yet
-    ensureTimestampHelperFilterExists(data);
+    if (!thisSource.IsRelay)
+      ensureTimestampHelperFilterExists(data);
 
     // the activate/deactivate events are not triggered by Studio Mode, so we need to connect/disconnect in show/hide events if the source should also work in Studio Mode
-    GetSource(data).Connect();
+    thisSource.Connect();
   }
 
   public static unsafe void ensureTimestampHelperFilterExists(void* data)
@@ -660,9 +756,11 @@ public class Source
       propertyConnectionTypeId = "connection_type"u8,
       propertyConnectionTypeCaption = Module.ObsText("ConnectionTypeCaption"),
       propertyConnectionTypeText = Module.ObsText("ConnectionTypeText"),
+      propertyRelayConnectionTypePipeId = "relay_connection_type_pipe"u8,
       propertyConnectionTypePipeId = "connection_type_pipe"u8,
       propertyConnectionTypePipeCaption = Module.ObsText("ConnectionTypePipeCaption"),
       propertyConnectionTypePipeText = Module.ObsText("ConnectionTypePipeText"),
+      propertyRelayConnectionTypeSocketId = "relay_connection_type_socket"u8,
       propertyConnectionTypeSocketId = "connection_type_socket"u8,
       propertyConnectionTypeSocketCaption = Module.ObsText("ConnectionTypeSocketCaption"),
       propertyConnectionTypeSocketText = Module.ObsText("ConnectionTypeSocketText"),
@@ -675,22 +773,29 @@ public class Source
       propertyManualConnectionSettingsId = "manual_connection_settings"u8,
       propertyManualConnectionSettingsText = Module.ObsText("ManualConnectionSettingsText"),
       propertyManualConnectionSettingsCaption = Module.ObsText("ManualConnectionSettingsCaption"),
+      propertyRelayNetworkInterfaceListId = "relay_network_interface_list"u8,
       propertyNetworkInterfaceListId = "network_interface_list"u8,
       propertyNetworkInterfaceListCaption = Module.ObsText("NetworkInterfaceListCaption"),
       propertyNetworkInterfaceListText = Module.ObsText("NetworkInterfaceListText"),
-      propertyNetworkInterfaceNoLocalAddressWarningId = "network_interface_no_local_address_warning_text"u8,
-      propertyNetworkInterfaceNoLocalAddressWarningText = Module.ObsText("NetworkInterfaceNoLocalAddressWarningText")
+      propertyNetworkInterfaceNoLocalAddressWarningId = "receiver_network_interface_no_local_address_warning_text"u8,
+      propertyNetworkInterfaceNoLocalAddressWarningText = Module.ObsText("NetworkInterfaceNoLocalAddressWarningText"),
+      propertyRelayId = "relay"u8,
+      propertyRelayCaption = Module.ObsText("RelayGroupCaption"),
+      propertyRelayText = Module.ObsText("RelayGroupText")
     )
     {
       // render delay limit
-      var renderDelayLimitProperty = ObsProperties.obs_properties_add_int_slider(properties, (sbyte*)propertyRenderDelayLimitId, (sbyte*)propertyRenderDelayLimitCaption, 0, 5000, 50);
-      ObsProperties.obs_property_set_long_description(renderDelayLimitProperty, (sbyte*)propertyRenderDelayLimitText);
-      ObsProperties.obs_property_int_set_suffix(renderDelayLimitProperty, (sbyte*)propertyRenderDelayLimitSuffix);
-      ObsProperties.obs_property_set_modified_callback(renderDelayLimitProperty, &RenderDelayLimitOrFrameBufferChangedEventHandler);
-      // warning if the render delay is set below the frame buffer time
-      var renderDelayLimitBelowFrameBufferTimeWarningProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyRenderDelayLimitBelowFrameBufferTimeWarningId, (sbyte*)propertyRenderDelayLimitBelowFrameBufferTimeWarningText, obs_text_type.OBS_TEXT_INFO);
-      ObsProperties.obs_property_text_set_info_type(renderDelayLimitBelowFrameBufferTimeWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
-      ObsProperties.obs_property_set_visible(renderDelayLimitBelowFrameBufferTimeWarningProperty, Convert.ToByte(false));
+      if (!thisSource.IsRelay)
+      {
+        var renderDelayLimitProperty = ObsProperties.obs_properties_add_int_slider(properties, (sbyte*)propertyRenderDelayLimitId, (sbyte*)propertyRenderDelayLimitCaption, 0, 5000, 50);
+        ObsProperties.obs_property_set_long_description(renderDelayLimitProperty, (sbyte*)propertyRenderDelayLimitText);
+        ObsProperties.obs_property_int_set_suffix(renderDelayLimitProperty, (sbyte*)propertyRenderDelayLimitSuffix);
+        ObsProperties.obs_property_set_modified_callback(renderDelayLimitProperty, &RenderDelayLimitOrFrameBufferChangedEventHandler);
+        // warning if the render delay is set below the frame buffer time
+        var renderDelayLimitBelowFrameBufferTimeWarningProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyRenderDelayLimitBelowFrameBufferTimeWarningId, (sbyte*)propertyRenderDelayLimitBelowFrameBufferTimeWarningText, obs_text_type.OBS_TEXT_INFO);
+        ObsProperties.obs_property_text_set_info_type(renderDelayLimitBelowFrameBufferTimeWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
+        ObsProperties.obs_property_set_visible(renderDelayLimitBelowFrameBufferTimeWarningProperty, Convert.ToByte(false));
+      }
 
       // label that can display the current delays for an active feed
       var receiveAndRenderDelayProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyReceiveAndRenderDelayId, (sbyte*)propertyReceiveAndRenderDelayCaption, obs_text_type.OBS_TEXT_INFO);
@@ -699,26 +804,29 @@ public class Source
       ObsProperties.obs_property_set_long_description(receiveAndRenderDelayRefreshButton, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonText);
 
       // frame buffer
-      var frameBufferTimeProperty = ObsProperties.obs_properties_add_int_slider(properties, (sbyte*)propertyFrameBufferTimeId, (sbyte*)propertyFrameBufferTimeCaption, 0, 5000, 100);
-      ObsProperties.obs_property_set_long_description(frameBufferTimeProperty, (sbyte*)propertyFrameBufferTimeText);
-      ObsProperties.obs_property_int_set_suffix(frameBufferTimeProperty, (sbyte*)propertyFrameBufferTimeSuffix);
-      ObsProperties.obs_property_set_modified_callback(frameBufferTimeProperty, &RenderDelayLimitOrFrameBufferChangedEventHandler);
-      // frame buffer time memory usage info
-      ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoId, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoText, obs_text_type.OBS_TEXT_INFO);
-      // frame buffer fixed render delay
-      var frameBufferTimeFixedRenderDelayProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyFrameBufferTimeFixedRenderDelayId, (sbyte*)propertyFrameBufferTimeFixedRenderDelayCaption);
-      ObsProperties.obs_property_set_long_description(frameBufferTimeFixedRenderDelayProperty, (sbyte*)propertyFrameBufferTimeFixedRenderDelayText);
+      if (!thisSource.IsRelay)
+      {
+        var frameBufferTimeProperty = ObsProperties.obs_properties_add_int_slider(properties, (sbyte*)propertyFrameBufferTimeId, (sbyte*)propertyFrameBufferTimeCaption, 0, 5000, 100);
+        ObsProperties.obs_property_set_long_description(frameBufferTimeProperty, (sbyte*)propertyFrameBufferTimeText);
+        ObsProperties.obs_property_int_set_suffix(frameBufferTimeProperty, (sbyte*)propertyFrameBufferTimeSuffix);
+        ObsProperties.obs_property_set_modified_callback(frameBufferTimeProperty, &RenderDelayLimitOrFrameBufferChangedEventHandler);
+        // frame buffer time memory usage info
+        ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoId, (sbyte*)propertyFrameBufferTimeMemoryUsageInfoText, obs_text_type.OBS_TEXT_INFO);
+        // frame buffer fixed render delay
+        var frameBufferTimeFixedRenderDelayProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyFrameBufferTimeFixedRenderDelayId, (sbyte*)propertyFrameBufferTimeFixedRenderDelayCaption);
+        ObsProperties.obs_property_set_long_description(frameBufferTimeFixedRenderDelayProperty, (sbyte*)propertyFrameBufferTimeFixedRenderDelayText);
+      }
 
       // connection type selection group
       var connectionTypePropertyGroup = ObsProperties.obs_properties_create();
       var connectionTypeProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyConnectionTypeId, (sbyte*)propertyConnectionTypeCaption, obs_group_type.OBS_GROUP_NORMAL, connectionTypePropertyGroup);
       ObsProperties.obs_property_set_long_description(connectionTypeProperty, (sbyte*)propertyConnectionTypeText);
       // connection type pipe option
-      var connectionTypePipeProperty = ObsProperties.obs_properties_add_bool(connectionTypePropertyGroup, (sbyte*)propertyConnectionTypePipeId, (sbyte*)propertyConnectionTypePipeCaption);
+      var connectionTypePipeProperty = ObsProperties.obs_properties_add_bool(connectionTypePropertyGroup, (thisSource.IsRelay ? (sbyte*)propertyRelayConnectionTypePipeId : (sbyte*)propertyConnectionTypePipeId), (sbyte*)propertyConnectionTypePipeCaption);
       ObsProperties.obs_property_set_long_description(connectionTypePipeProperty, (sbyte*)propertyConnectionTypePipeText);
       ObsProperties.obs_property_set_modified_callback(connectionTypePipeProperty, &ConnectionTypePipeChangedEventHandler);
       // connection type socket option
-      var connectionTypeSocketProperty = ObsProperties.obs_properties_add_bool(connectionTypePropertyGroup, (sbyte*)propertyConnectionTypeSocketId, (sbyte*)propertyConnectionTypeSocketCaption);
+      var connectionTypeSocketProperty = ObsProperties.obs_properties_add_bool(connectionTypePropertyGroup, (thisSource.IsRelay ? (sbyte*)propertyRelayConnectionTypeSocketId : (sbyte*)propertyConnectionTypeSocketId), (sbyte*)propertyConnectionTypeSocketCaption);
       ObsProperties.obs_property_set_long_description(connectionTypeSocketProperty, (sbyte*)propertyConnectionTypeSocketText);
       ObsProperties.obs_property_set_modified_callback(connectionTypeSocketProperty, &ConnectionTypeSocketChangedEventHandler);
 
@@ -738,7 +846,7 @@ public class Source
       var discoveryTask = Task.Run(() => thisSource.DiscoverFeeds(peerDiscoveryAvailablePipeFeedsList, peerDiscoveryAvailableSocketFeedsList, peerDiscoveryIdentifierConflictWarning));
 
       // network interface selection
-      var networkInterfacesListProperty = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyNetworkInterfaceListId, (sbyte*)propertyNetworkInterfaceListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
+      var networkInterfacesListProperty = ObsProperties.obs_properties_add_list(properties, (thisSource.IsRelay ? (sbyte*)propertyRelayNetworkInterfaceListId : (sbyte*)propertyNetworkInterfaceListId), (sbyte*)propertyNetworkInterfaceListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
       ObsProperties.obs_property_set_long_description(networkInterfacesListProperty, (sbyte*)propertyNetworkInterfaceListText);
       fixed (byte* networkInterfaceAnyListItem = "Any: 0.0.0.0"u8)
         ObsProperties.obs_property_list_add_string(networkInterfacesListProperty, (sbyte*)networkInterfaceAnyListItem, (sbyte*)networkInterfaceAnyListItem);
@@ -782,6 +890,19 @@ public class Source
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_int(properties, (sbyte*)propertyTargetPortId, (sbyte*)propertyTargetPortCaption, 1024, 65535, 1), (sbyte*)propertyTargetPortText);
 
       discoveryTask.Wait();
+
+      // add relay source properties within its own group
+      if (thisSource.IsRelay)
+      {
+        // relay settings group
+        var relayPropertyGroup = ObsProperties.obs_properties_create();
+        var relayProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyRelayId, (sbyte*)propertyRelayCaption, obs_group_type.OBS_GROUP_NORMAL, relayPropertyGroup);
+        ObsProperties.obs_property_set_long_description(relayProperty, (sbyte*)propertyRelayText);
+
+        // add relay properties
+        thisSource.BeamReceiver.SenderRelayProperties.settings_get_properties(data, relayPropertyGroup, properties);
+      }
+      //TODO: make it smart enough to not list itself?
     }
     return properties;
   }
@@ -878,7 +999,7 @@ public class Source
   }
 
 #pragma warning restore IDE1006
-  #endregion Source API methods
+  #endregion Relay Source API methods
 
   #region Event handlers
 
@@ -948,15 +1069,18 @@ public class Source
   public static unsafe byte ConnectionTypePipeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
+      propertyRelayConnectionTypePipeId = "relay_connection_type_pipe"u8,
       propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyRelayConnectionTypeSocketId = "relay_connection_type_socket"u8,
       propertyConnectionTypeSocketId = "connection_type_socket"u8,
       propertyManualConnectionSettingsId = "manual_connection_settings"u8
     )
     {
-      var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(!connectionTypePipe));
+      var thisSource = GetSource(settings);
+      var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (thisSource.IsRelay ? (sbyte*)propertyRelayConnectionTypePipeId : (sbyte*)propertyConnectionTypePipeId)));
+      ObsData.obs_data_set_bool(settings, (thisSource.IsRelay ? (sbyte*)propertyRelayConnectionTypeSocketId : (sbyte*)propertyConnectionTypeSocketId), Convert.ToByte(!connectionTypePipe));
       var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
-      ConnectionTypeChanged(connectionTypePipe, useManualConnectionSettings, properties);
+      ConnectionTypeChanged(connectionTypePipe, useManualConnectionSettings, thisSource.IsRelay, properties);
       GetSource(settings).CheckNetworkInterfaces(properties, settings);
       return Convert.ToByte(true);
     }
@@ -966,15 +1090,18 @@ public class Source
   public static unsafe byte ConnectionTypeSocketChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
+      propertyRelayConnectionTypePipeId = "relay_connection_type_pipe"u8,
       propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyRelayConnectionTypeSocketId = "relay_connection_type_socket"u8,
       propertyConnectionTypeSocketId = "connection_type_socket"u8,
       propertyManualConnectionSettingsId = "manual_connection_settings"u8
     )
     {
-      var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(connectionTypePipe));
+      var thisSource = GetSource(settings);
+      var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (thisSource.IsRelay ? (sbyte*)propertyRelayConnectionTypeSocketId : (sbyte*)propertyConnectionTypeSocketId)));
+      ObsData.obs_data_set_bool(settings, (thisSource.IsRelay ? (sbyte*)propertyRelayConnectionTypePipeId : (sbyte*)propertyConnectionTypePipeId), Convert.ToByte(connectionTypePipe));
       var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
-      ConnectionTypeChanged(connectionTypePipe, useManualConnectionSettings, properties);
+      ConnectionTypeChanged(connectionTypePipe, useManualConnectionSettings, thisSource.IsRelay, properties);
       GetSource(settings).CheckNetworkInterfaces(properties, settings);
       return Convert.ToByte(true);
     }
@@ -1073,24 +1200,27 @@ public class Source
   public static unsafe byte ManualConnectionSettingsChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
+      propertyRelayConnectionTypePipeId = "relay_connection_type_pipe"u8,
       propertyConnectionTypePipeId = "connection_type_pipe"u8,
       propertyManualConnectionSettingsId = "manual_connection_settings"u8,
       propertyDiscoveredPeersListId = "discovered_peers_list"u8
     )
     {
+      var thisSource = GetSource(settings);
       var useManualConnectionSettings = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyManualConnectionSettingsId));
-      var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
-      ConnectionTypeChanged(connectionTypePipe, useManualConnectionSettings, properties);
+      var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (thisSource.IsRelay ? (sbyte*)propertyRelayConnectionTypePipeId : (sbyte*)propertyConnectionTypePipeId)));
+      ConnectionTypeChanged(connectionTypePipe, useManualConnectionSettings, thisSource.IsRelay, properties);
     }
     return Convert.ToByte(true);
   }
 
-  private static unsafe void ConnectionTypeChanged(bool connectionTypePipe, bool useManualConnectionSettings, obs_properties* properties)
+  private static unsafe void ConnectionTypeChanged(bool connectionTypePipe, bool useManualConnectionSettings, bool isRelay, obs_properties* properties)
   {
     fixed (byte*
       propertyTargetHostId = "host"u8,
       propertyTargetPipeNameId = "pipe_name"u8,
       propertyTargetPortId = "port"u8,
+      propertyRelayNetworkInterfaceListId = "relay_network_interface_list"u8,
       propertyNetworkInterfaceListId = "network_interface_list"u8,
       propertyPeerDiscoveryAvailablePipeFeedsId = "available_pipe_feeds_list"u8,
       propertyPeerDiscoveryAvailableSocketFeedsId = "available_socket_feeds_list"u8
@@ -1098,7 +1228,7 @@ public class Source
     {
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetHostId), Convert.ToByte(!connectionTypePipe && useManualConnectionSettings));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetPipeNameId), Convert.ToByte(connectionTypePipe && useManualConnectionSettings));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (isRelay ? (sbyte*)propertyRelayNetworkInterfaceListId : (sbyte*)propertyNetworkInterfaceListId)), Convert.ToByte(!connectionTypePipe));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyTargetPortId), Convert.ToByte(!connectionTypePipe && useManualConnectionSettings));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyPeerDiscoveryAvailablePipeFeedsId), Convert.ToByte(connectionTypePipe));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyPeerDiscoveryAvailableSocketFeedsId), Convert.ToByte(!connectionTypePipe));
