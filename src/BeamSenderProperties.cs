@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
+// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using System.Collections.Concurrent;
@@ -384,7 +384,7 @@ public class BeamSenderProperties
         ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableOutputText);
         ObsProperties.obs_property_set_modified_callback(enableProperty, &EnableChangedEventHandler);
       }
-      else if (PropertiesType != Beam.SenderTypes.Relay) // ...or filter (exclude relays, as they're controlled by show/hide of its source, so that it's consistent with receiver sources)
+      else // ...or filter
       {
         var enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableFilterCaption);
         ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableFilterText);
