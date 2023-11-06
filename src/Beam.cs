@@ -15,6 +15,7 @@ public class Beam
   public enum SenderTypes
   {
     None,
+    Relay,
     Output,
     FilterAudioVideo,
     FilterAudio,

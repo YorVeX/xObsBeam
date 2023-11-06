@@ -31,7 +31,6 @@ public class BeamReceiver
   readonly ConcurrentQueue<ulong> _lastRenderedFrameTimestamps = new();
   unsafe void* _turboJpegDecompress = null;
   unsafe qoir_decode_options_struct* _qoirDecodeOptions;
-
   public ArrayPool<byte> RawDataBufferPool { get; private set; } = ArrayPool<byte>.Create();
 
   public FrameBuffer? FrameBuffer { get; private set; }
@@ -57,10 +56,17 @@ public class BeamReceiver
     }
   }
 
+  public bool IsRelay { get; private set; }
+  public BeamSenderProperties SenderRelayProperties { get; private set; } = new(Beam.SenderTypes.Relay);
   public bool IsConnected { get; private set; }
 
   public int FrameBufferTimeMs { get; set; }
   public bool FrameBufferFixedDelay { get; set; }
+
+  public BeamReceiver(bool isRelay = false)
+  {
+    IsRelay = isRelay;
+  }
 
   public void Connect(IPAddress bindAddress, string hostname, int port, PeerDiscovery.Peer currentPeer = default)
   {
