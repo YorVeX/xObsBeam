@@ -391,6 +391,16 @@ public class BeamReceiver
     pipeReader = PipeReader.Create(stream);
     pipeWriter = PipeWriter.Create(stream);
 
+    BeamSender beamSender = new(Beam.SenderTypes.Relay);
+    if (IsRelay)
+    {
+      SenderRelayProperties.UniquePrefix = SenderRelayProperties.Identifier;
+      if (SenderRelayProperties.UsePipe)
+        beamSender.Start(SenderRelayProperties.Identifier, SenderRelayProperties.Identifier);
+      else
+        beamSender.Start(SenderRelayProperties.Identifier, SenderRelayProperties.NetworkInterfaceAddress, SenderRelayProperties.Port, SenderRelayProperties.AutomaticPort);
+    }
+
     var videoHeader = new Beam.VideoHeader();
     var audioHeader = new Beam.AudioHeader();
 
@@ -471,55 +481,64 @@ public class BeamReceiver
               break;
             }
 
-            bool sizeChanged = false;
-            lock (_sizeLock)
+            if (IsRelay)
             {
-              sizeChanged = ((_width != videoHeader.Width) || (_height != videoHeader.Height));
-              _width = videoHeader.Width;
-              _height = videoHeader.Height;
+              //TODO: try to avoid .ToArray(), RelayVideo will copy the data anyway
+              beamSender.RelayVideo(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray());
             }
-            if (sizeChanged || firstVideoFrame) // re-allocate the arrays matching the new necessary size
+            else
             {
-              firstVideoFrame = false;
-
-              if ((_frameTimestampOffset > videoHeader.Timestamp) || // if this receiver was previously connected to a different sender, in this case the offset needs to be reset
-                  (_frameTimestampOffset == 0)) // if this receiver was never connected to any sender before, in this case the offset needs to be initially set
+              bool sizeChanged = false;
+              lock (_sizeLock)
               {
-                _frameTimestampOffset = videoHeader.Timestamp;
-                Module.Log($"Video data: Frame timestamp offset initialized to: {_frameTimestampOffset}", ObsLogLevel.Debug);
+                sizeChanged = ((_width != videoHeader.Width) || (_height != videoHeader.Height));
+                _width = videoHeader.Width;
+                _height = videoHeader.Height;
+              }
+              if (sizeChanged || firstVideoFrame) // re-allocate the arrays matching the new necessary size
+              {
+                firstVideoFrame = false;
+
+                if ((_frameTimestampOffset > videoHeader.Timestamp) || // if this receiver was previously connected to a different sender, in this case the offset needs to be reset
+                    (_frameTimestampOffset == 0)) // if this receiver was never connected to any sender before, in this case the offset needs to be initially set
+                {
+                  _frameTimestampOffset = videoHeader.Timestamp;
+                  Module.Log($"Video data: Frame timestamp offset initialized to: {_frameTimestampOffset}", ObsLogLevel.Debug);
+                }
+
+                AudioBuffer = null; // received a video frame, meaning we don't need the buffer for audio-only feeds
+
+                renderDelayAveragingFrameCount = (int)(senderFps / 2);
+                renderDelays = new int[renderDelayAveragingFrameCount];
+
+                planeInfo = Beam.GetVideoPlaneInfo(videoHeader.Format, videoHeader.Width, videoHeader.Height);
+
+                if (videoHeader.Compression == Beam.CompressionTypes.Density)
+                  rawVideoDataSize = (uint)Density.density_decompress_safe_size(planeInfo.DataSize);
+                else
+                  rawVideoDataSize = planeInfo.DataSize;
+                if (rawVideoDataSize == 0) // unsupported format
+                  break;
+
+                receivedFrameData = new byte[rawVideoDataSize];
+                RawDataBufferPool = ArrayPool<byte>.Create((int)rawVideoDataSize, 2);
+
+                if (FrameBufferTimeMs > 0)
+                {
+                  var localFps = GetLocalFps();
+                  FrameBuffer = new FrameBuffer(FrameBufferTimeMs, FrameBufferFixedDelay, senderFps, localFps, RawDataBufferPool);
+                  Module.Log($"Buffering {FrameBuffer.VideoFrameBufferCount} video frames based on a frame buffer time of {FrameBuffer.FrameBufferTimeMs} ms for {senderFps:F} sender FPS (local: {localFps:F} FPS).", ObsLogLevel.Info);
+                }
+                else
+                {
+                  FrameBuffer = null;
+                  Module.Log("Frame buffering disabled.", ObsLogLevel.Info);
+                }
               }
 
-              AudioBuffer = null; // received a video frame, meaning we don't need the buffer for audio-only feeds
+              videoHeader.Timestamp -= _frameTimestampOffset; // apply the offset
 
-              renderDelayAveragingFrameCount = (int)(senderFps / 2);
-              renderDelays = new int[renderDelayAveragingFrameCount];
-
-              planeInfo = Beam.GetVideoPlaneInfo(videoHeader.Format, videoHeader.Width, videoHeader.Height);
-
-              if (videoHeader.Compression == Beam.CompressionTypes.Density)
-                rawVideoDataSize = (uint)Density.density_decompress_safe_size(planeInfo.DataSize);
-              else
-                rawVideoDataSize = planeInfo.DataSize;
-              if (rawVideoDataSize == 0) // unsupported format
-                break;
-
-              receivedFrameData = new byte[rawVideoDataSize];
-              RawDataBufferPool = ArrayPool<byte>.Create((int)rawVideoDataSize, 2);
-
-              if (FrameBufferTimeMs > 0)
-              {
-                var localFps = GetLocalFps();
-                FrameBuffer = new FrameBuffer(FrameBufferTimeMs, FrameBufferFixedDelay, senderFps, localFps, RawDataBufferPool);
-                Module.Log($"Buffering {FrameBuffer.VideoFrameBufferCount} video frames based on a frame buffer time of {FrameBuffer.FrameBufferTimeMs} ms for {senderFps:F} sender FPS (local: {localFps:F} FPS).", ObsLogLevel.Info);
-              }
-              else
-              {
-                FrameBuffer = null;
-                Module.Log("Frame buffering disabled.", ObsLogLevel.Info);
-              }
             }
-
-            videoHeader.Timestamp -= _frameTimestampOffset; // apply the offset
 
             // tell the sender the current video frame timestamp that was received - only done for frames that were not skipped by the sender
             pipeWriter.GetSpan(sizeof(byte))[0] = (byte)Beam.ReceiveTimestampTypes.Receive;
@@ -536,112 +555,120 @@ public class BeamReceiver
               break;
             }
 
-            // average render delay calculation
-            renderDelays[renderDelayAveragingCycle] = videoHeader.RenderDelay;
-            if (++renderDelayAveragingCycle >= renderDelayAveragingFrameCount)
+            if (!IsRelay)
             {
-              renderDelayAveragingCycle = 0;
-              renderDelayAverage = (int)renderDelays.Average();
-            }
-
-            if (readResult.Buffer.Length > (videoHeader.DataSize * 3))
-              Module.Log($"Warning: High receive buffer size of {readResult.Buffer.Length} bytes (> {videoHeader.DataSize * 3} bytes).", ObsLogLevel.Warning);
-
-            var rawDataBuffer = RawDataBufferPool.Rent((int)rawVideoDataSize);
-            if (videoHeader.Compression == Beam.CompressionTypes.None)
-              readResult.Buffer.Slice(0, videoHeader.DataSize).CopyTo(rawDataBuffer);
-            else
-            {
-              readResult.Buffer.Slice(0, videoHeader.DataSize).CopyTo(receivedFrameData);
-
-              switch (videoHeader.Compression)
+              // average render delay calculation
+              renderDelays[renderDelayAveragingCycle] = videoHeader.RenderDelay;
+              if (++renderDelayAveragingCycle >= renderDelayAveragingFrameCount)
               {
-                case Beam.CompressionTypes.Lz4:
-                  int decompressedSizeLz4 = LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, rawDataBuffer, 0, (int)rawVideoDataSize);
-                  if (decompressedSizeLz4 != rawVideoDataSize)
-                    Module.Log($"LZ4 decompression failed, expected {rawVideoDataSize} bytes, got {decompressedSizeLz4} bytes.", ObsLogLevel.Error);
-                  break;
-                case Beam.CompressionTypes.Qoi:
-                  Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
-                  break;
-                case Beam.CompressionTypes.Qoy:
-                  Qoy.Decode(receivedFrameData, videoHeader.Width, videoHeader.Height, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
-                  break;
-                case Beam.CompressionTypes.Qoir:
-                  QoirDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
-                  break;
-                case Beam.CompressionTypes.Density:
-                  DensityDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
-                  break;
-                case Beam.CompressionTypes.Jpeg:
-                  if (EncoderSupport.FormatIsYuv(videoHeader.Format))
-                  {
-                    if (!jpegInitialized)
-                    {
-                      // can't do this in first frame handling code, since with compression level setting enabled the first frame might have been a raw one
-                      jpegInitialized = true;
-                      if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12) // for this case we need an extra buffer and plane info for conversion to NV12, since JPEG decompression for this always outputs I420
-                      {
-                        conversionBuffer = new byte[rawVideoDataSize];
-                        i420PlaneInfo = Beam.GetVideoPlaneInfo(video_format.VIDEO_FORMAT_I420, videoHeader.Width, videoHeader.Height);
-                      }
-                      else if (videoHeader.Format is video_format.VIDEO_FORMAT_YVYU or video_format.VIDEO_FORMAT_UYVY or video_format.VIDEO_FORMAT_YUY2) // for this case we need an extra buffer and plane info for conversion to these packed formats, since JPEG decompression for this always outputs I422
-                      {
-                        conversionBuffer = new byte[rawVideoDataSize];
-                        i422PlaneInfo = Beam.GetVideoPlaneInfo(video_format.VIDEO_FORMAT_I422, videoHeader.Width, videoHeader.Height);
-                      }
-                    }
-
-                    if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12)
-                    {
-                      // for this case we need to decompress to an intermediate buffer for conversion to NV12, since for JPEG it was previously converted to I420
-                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, conversionBuffer, i420PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
-                      EncoderSupport.I420ToNv12(conversionBuffer, rawDataBuffer, planeInfo, i420PlaneInfo);
-                    }
-                    else if (videoHeader.Format == video_format.VIDEO_FORMAT_YVYU)
-                    {
-                      // for this case we need to decompress to an intermediate buffer for conversion to YVYU, since for JPEG it was previously converted to I422
-                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, conversionBuffer, i422PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
-                      EncoderSupport.I422ToYvyu(conversionBuffer, rawDataBuffer, i422PlaneInfo);
-                    }
-                    else if (videoHeader.Format == video_format.VIDEO_FORMAT_UYVY)
-                    {
-                      // for this case we need to decompress to an intermediate buffer for conversion to UYVY, since for JPEG it was previously converted to I422
-                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, conversionBuffer, i422PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
-                      EncoderSupport.I422ToUyvy(conversionBuffer, rawDataBuffer, i422PlaneInfo);
-                    }
-                    else if (videoHeader.Format == video_format.VIDEO_FORMAT_YUY2)
-                    {
-                      // for this case we need to decompress to an intermediate buffer for conversion to YUY2, since for JPEG it was previously converted to I422
-                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, conversionBuffer, i422PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
-                      EncoderSupport.I422ToYuy2(conversionBuffer, rawDataBuffer, i422PlaneInfo);
-                    }
-                    else // for I420, I422 and I444 decompression no conversion is needed, decompress directly into the final raw data buffer (both libjpeg-turbo and OBS support these formats)
-                      TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, planeInfo, (int)videoHeader.Width, (int)videoHeader.Height);
-                  }
-                  else
-                    TurboJpegDecompressToBgra(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height, videoHeader.Format);
-                  break;
+                renderDelayAveragingCycle = 0;
+                renderDelayAverage = (int)renderDelays.Average();
               }
-            }
 
-            // process the frame
-            if (FrameBuffer == null)
-            {
-              if (videoHeader.Timestamp < lastVideoTimestamp)
-                Module.Log($"Warning: Received video frame {videoHeader.Timestamp} is older than previous frame {lastVideoTimestamp}. Use a high enough frame buffer if the sender is not compressing from the OBS render thread.", ObsLogLevel.Warning);
+              if (readResult.Buffer.Length > (videoHeader.DataSize * 3))
+                Module.Log($"Warning: High receive buffer size of {readResult.Buffer.Length} bytes (> {videoHeader.DataSize * 3} bytes).", ObsLogLevel.Warning);
+
+              var rawDataBuffer = RawDataBufferPool.Rent((int)rawVideoDataSize);
+              if (videoHeader.Compression == Beam.CompressionTypes.None)
+                readResult.Buffer.Slice(0, videoHeader.DataSize).CopyTo(rawDataBuffer);
               else
-                OnVideoFrameReceived(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime, renderDelayAverage));
-              lastVideoTimestamp = videoHeader.Timestamp;
+              {
+                readResult.Buffer.Slice(0, videoHeader.DataSize).CopyTo(receivedFrameData);
+
+                switch (videoHeader.Compression)
+                {
+                  case Beam.CompressionTypes.Lz4:
+                    int decompressedSizeLz4 = LZ4Codec.Decode(receivedFrameData, 0, videoHeader.DataSize, rawDataBuffer, 0, (int)rawVideoDataSize);
+                    if (decompressedSizeLz4 != rawVideoDataSize)
+                      Module.Log($"LZ4 decompression failed, expected {rawVideoDataSize} bytes, got {decompressedSizeLz4} bytes.", ObsLogLevel.Error);
+                    break;
+                  case Beam.CompressionTypes.Qoi:
+                    Qoi.Decode(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
+                    break;
+                  case Beam.CompressionTypes.Qoy:
+                    Qoy.Decode(receivedFrameData, videoHeader.Width, videoHeader.Height, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
+                    break;
+                  case Beam.CompressionTypes.Qoir:
+                    QoirDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
+                    break;
+                  case Beam.CompressionTypes.Density:
+                    DensityDecompress(receivedFrameData, videoHeader.DataSize, rawDataBuffer, (int)rawVideoDataSize);
+                    break;
+                  case Beam.CompressionTypes.Jpeg:
+                    if (EncoderSupport.FormatIsYuv(videoHeader.Format))
+                    {
+                      if (!jpegInitialized)
+                      {
+                        // can't do this in first frame handling code, since with compression level setting enabled the first frame might have been a raw one
+                        jpegInitialized = true;
+                        if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12) // for this case we need an extra buffer and plane info for conversion to NV12, since JPEG decompression for this always outputs I420
+                        {
+                          conversionBuffer = new byte[rawVideoDataSize];
+                          i420PlaneInfo = Beam.GetVideoPlaneInfo(video_format.VIDEO_FORMAT_I420, videoHeader.Width, videoHeader.Height);
+                        }
+                        else if (videoHeader.Format is video_format.VIDEO_FORMAT_YVYU or video_format.VIDEO_FORMAT_UYVY or video_format.VIDEO_FORMAT_YUY2) // for this case we need an extra buffer and plane info for conversion to these packed formats, since JPEG decompression for this always outputs I422
+                        {
+                          conversionBuffer = new byte[rawVideoDataSize];
+                          i422PlaneInfo = Beam.GetVideoPlaneInfo(video_format.VIDEO_FORMAT_I422, videoHeader.Width, videoHeader.Height);
+                        }
+                      }
+
+                      if (videoHeader.Format == video_format.VIDEO_FORMAT_NV12)
+                      {
+                        // for this case we need to decompress to an intermediate buffer for conversion to NV12, since for JPEG it was previously converted to I420
+                        TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, conversionBuffer, i420PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
+                        EncoderSupport.I420ToNv12(conversionBuffer, rawDataBuffer, planeInfo, i420PlaneInfo);
+                      }
+                      else if (videoHeader.Format == video_format.VIDEO_FORMAT_YVYU)
+                      {
+                        // for this case we need to decompress to an intermediate buffer for conversion to YVYU, since for JPEG it was previously converted to I422
+                        TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, conversionBuffer, i422PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
+                        EncoderSupport.I422ToYvyu(conversionBuffer, rawDataBuffer, i422PlaneInfo);
+                      }
+                      else if (videoHeader.Format == video_format.VIDEO_FORMAT_UYVY)
+                      {
+                        // for this case we need to decompress to an intermediate buffer for conversion to UYVY, since for JPEG it was previously converted to I422
+                        TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, conversionBuffer, i422PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
+                        EncoderSupport.I422ToUyvy(conversionBuffer, rawDataBuffer, i422PlaneInfo);
+                      }
+                      else if (videoHeader.Format == video_format.VIDEO_FORMAT_YUY2)
+                      {
+                        // for this case we need to decompress to an intermediate buffer for conversion to YUY2, since for JPEG it was previously converted to I422
+                        TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, conversionBuffer, i422PlaneInfo, (int)videoHeader.Width, (int)videoHeader.Height);
+                        EncoderSupport.I422ToYuy2(conversionBuffer, rawDataBuffer, i422PlaneInfo);
+                      }
+                      else // for I420, I422 and I444 decompression no conversion is needed, decompress directly into the final raw data buffer (both libjpeg-turbo and OBS support these formats)
+                        TurboJpegDecompressToYuv(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, planeInfo, (int)videoHeader.Width, (int)videoHeader.Height);
+                    }
+                    else
+                      TurboJpegDecompressToBgra(receivedFrameData, (int)rawVideoDataSize, rawDataBuffer, (int)videoHeader.Width, (int)videoHeader.Height, videoHeader.Format);
+                    break;
+                }
+              }
+
+              // process the frame
+              if (FrameBuffer == null)
+              {
+                if (videoHeader.Timestamp < lastVideoTimestamp)
+                  Module.Log($"Warning: Received video frame {videoHeader.Timestamp} is older than previous frame {lastVideoTimestamp}. Use a high enough frame buffer if the sender is not compressing from the OBS render thread.", ObsLogLevel.Warning);
+                else
+                  OnVideoFrameReceived(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime, renderDelayAverage));
+                lastVideoTimestamp = videoHeader.Timestamp;
+              }
+              else
+                FrameBuffer.ProcessFrame(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime, renderDelayAverage));
             }
-            else
-              FrameBuffer.ProcessFrame(new Beam.BeamVideoData(videoHeader, rawDataBuffer, frameReceivedTime, renderDelayAverage));
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
             pipeReader.AdvanceTo(readResult.Buffer.GetPosition(videoHeader.DataSize), readResult.Buffer.End);
 
             if (logCycle >= senderFps)
               Module.Log($"Video data: Expected {videoHeader.DataSize} bytes, received {receiveLength} bytes", ObsLogLevel.Debug);
 
+          }
+          else if (IsRelay)
+          {
+            //TODO: test whether relaying skipped frames (= zero data size) works correctly
+            beamSender.RelayVideo(videoHeader, Array.Empty<byte>());
           }
           if (logCycle++ >= senderFps)
             logCycle = 0;
@@ -680,59 +707,65 @@ public class BeamReceiver
               break;
             }
 
-            if (firstAudioFrame)
+            if (!IsRelay)
             {
-              firstAudioFrame = false;
-              FrameBuffer = null;
-
-              senderFps = (1 / ((1 / (double)audioHeader.SampleRate) * audioHeader.Frames));
-
-              if ((_frameTimestampOffset > audioHeader.Timestamp) || // if this receiver was previously connected to a different sender, in this case the offset needs to be reset
-                  (_frameTimestampOffset == 0)) // if this receiver was never connected to any sender before, in this case the offset needs to be initially set
+              if (firstAudioFrame)
               {
-                _frameTimestampOffset = audioHeader.Timestamp;
-                Module.Log($"Audio data: Frame timestamp offset initialized to: {_frameTimestampOffset}", ObsLogLevel.Debug);
+                firstAudioFrame = false;
+                FrameBuffer = null;
+
+                senderFps = (1 / ((1 / (double)audioHeader.SampleRate) * audioHeader.Frames));
+
+                if ((_frameTimestampOffset > audioHeader.Timestamp) || // if this receiver was previously connected to a different sender, in this case the offset needs to be reset
+                    (_frameTimestampOffset == 0)) // if this receiver was never connected to any sender before, in this case the offset needs to be initially set
+                {
+                  _frameTimestampOffset = audioHeader.Timestamp;
+                  Module.Log($"Audio data: Frame timestamp offset initialized to: {_frameTimestampOffset}", ObsLogLevel.Debug);
+                }
+
+                // initialize render delay averaging
+                renderDelayAveragingFrameCount = (int)(senderFps / 2);
+                renderDelays = new int[renderDelayAveragingFrameCount];
+
+                // initialize frame buffer
+                if (FrameBufferTimeMs > 0)
+                {
+                  AudioBuffer = new AudioBuffer(FrameBufferTimeMs, FrameBufferFixedDelay, senderFps);
+                  Module.Log($"Buffering {AudioBuffer.AudioFrameBufferCount} audio frames based on a frame buffer time of {AudioBuffer.FrameBufferTimeMs} ms for {senderFps:F} sender audio FPS.", ObsLogLevel.Info);
+                }
+                else
+                {
+                  AudioBuffer = null;
+                  Module.Log("Audio frame buffering disabled.", ObsLogLevel.Info);
+                }
               }
 
-              // initialize render delay averaging
-              renderDelayAveragingFrameCount = (int)(senderFps / 2);
-              renderDelays = new int[renderDelayAveragingFrameCount];
-
-              // initialize frame buffer
-              if (FrameBufferTimeMs > 0)
+              // average render delay calculation
+              renderDelays[renderDelayAveragingCycle] = audioHeader.RenderDelay;
+              if (++renderDelayAveragingCycle >= renderDelayAveragingFrameCount)
               {
-                AudioBuffer = new AudioBuffer(FrameBufferTimeMs, FrameBufferFixedDelay, senderFps);
-                Module.Log($"Buffering {AudioBuffer.AudioFrameBufferCount} audio frames based on a frame buffer time of {AudioBuffer.FrameBufferTimeMs} ms for {senderFps:F} sender audio FPS.", ObsLogLevel.Info);
+                renderDelayAveragingCycle = 0;
+                renderDelayAverage = (int)renderDelays.Average();
               }
-              else
+
+              if (logCycle++ >= senderFps)
               {
-                AudioBuffer = null;
-                Module.Log("Audio frame buffering disabled.", ObsLogLevel.Info);
+                logCycle = 0;
+                Module.Log($"Audio data: Received header {audioHeader.Timestamp}, Receive/Render delay: {audioHeader.ReceiveDelay} / {audioHeader.RenderDelay} ({renderDelayAverage}) ms ", ObsLogLevel.Debug);
               }
-            }
-
-            // average render delay calculation
-            renderDelays[renderDelayAveragingCycle] = audioHeader.RenderDelay;
-            if (++renderDelayAveragingCycle >= renderDelayAveragingFrameCount)
-            {
-              renderDelayAveragingCycle = 0;
-              renderDelayAverage = (int)renderDelays.Average();
-            }
-
-            if (logCycle++ >= senderFps)
-            {
-              logCycle = 0;
-              Module.Log($"Audio data: Received header {audioHeader.Timestamp}, Receive/Render delay: {audioHeader.ReceiveDelay} / {audioHeader.RenderDelay} ({renderDelayAverage}) ms ", ObsLogLevel.Debug);
             }
           }
 
-          if (audioHeader.Timestamp > _frameTimestampOffset)
-            audioHeader.Timestamp -= _frameTimestampOffset;
-          else
+          if (!IsRelay) // for relays keep original timestamps
           {
-            // could happen for the very first pair of audio and video frames after connecting
-            Module.Log($"Audio data: Not applying offset {_frameTimestampOffset} to the smaller frame timestamp {audioHeader.Timestamp}.", ObsLogLevel.Debug);
-            audioHeader.Timestamp = 1;
+            if (audioHeader.Timestamp > _frameTimestampOffset)
+              audioHeader.Timestamp -= _frameTimestampOffset;
+            else
+            {
+              // could happen for the very first pair of audio and video frames after connecting
+              Module.Log($"Audio data: Not applying offset {_frameTimestampOffset} to the smaller frame timestamp {audioHeader.Timestamp}.", ObsLogLevel.Debug);
+              audioHeader.Timestamp = 1;
+            }
           }
 
           // read audio data
@@ -748,13 +781,21 @@ public class BeamReceiver
               break;
             }
 
-            // process the frame
-            if ((!firstVideoFrame || (beamType == Beam.Type.AudioOnly)) && (_frameTimestampOffset > 0)) // Beam treats video frames as a kind of header in several ways, ignore audio frames that were received before the first video frame (unless it's an audio-only feed)
+            if (IsRelay)
             {
-              if (AudioBuffer == null)
-                OnAudioFrameReceived(new Beam.BeamAudioData(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray(), frameReceivedTime, renderDelayAverage));
-              else
-                AudioBuffer.ProcessFrame(new Beam.BeamAudioData(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray(), frameReceivedTime, renderDelayAverage));
+              //TODO: try to avoid .ToArray(), RelayAudio will copy the data anyway
+              beamSender.RelayAudio(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray());
+            }
+            else
+            {
+              // process the frame
+              if ((!firstVideoFrame || (beamType == Beam.Type.AudioOnly)) && (_frameTimestampOffset > 0)) // Beam treats video frames as a kind of header in several ways, ignore audio frames that were received before the first video frame (unless it's an audio-only feed)
+              {
+                if (AudioBuffer == null)
+                  OnAudioFrameReceived(new Beam.BeamAudioData(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray(), frameReceivedTime, renderDelayAverage));
+                else
+                  AudioBuffer.ProcessFrame(new Beam.BeamAudioData(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray(), frameReceivedTime, renderDelayAverage));
+              }
             }
 
             long receiveLength = readResult.Buffer.Length; // remember this here, before the buffer is invalidated with the next line
@@ -831,6 +872,19 @@ public class BeamReceiver
       try { pipeStream.Dispose(); } catch (Exception ex) { Module.Log($"{ex.GetType().Name} when disposing pipe: {ex.Message}", ObsLogLevel.Error); }
     }
     Module.Log($"Disconnected from {endpointName}.", ObsLogLevel.Info);
+
+    if (IsRelay)
+    {
+      try
+      {
+        beamSender.Stop();
+      }
+      catch (Exception ex)
+      {
+        Module.Log($"{ex.GetType().Name} while trying to stop relay sender: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
+      }
+    }
+
     TurboJpegDecompressDestroy();
     QoirDecompressDestroy();
     stream?.Close();
