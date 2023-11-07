@@ -378,23 +378,18 @@ public class BeamSenderProperties
     )
     {
       // enable or disable the output...
-      obs_property* enableProperty;
       if (PropertiesType == Beam.SenderTypes.Output)
       {
-        enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableOutputCaption);
+        var enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableOutputCaption);
         ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableOutputText);
+        ObsProperties.obs_property_set_modified_callback(enableProperty, &EnableChangedEventHandler);
       }
-      else if (PropertiesType == Beam.SenderTypes.Relay) // ...or relay
+      else if (PropertiesType != Beam.SenderTypes.Relay) // ...or filter (exclude relays, as they're controlled by show/hide of its source, so that it's consistent with receiver sources)
       {
-        enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableRelayCaption);
-        ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableRelayText);
-      }
-      else // ...or filter
-      {
-        enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableFilterCaption);
+        var enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableFilterCaption);
         ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableFilterText);
+        ObsProperties.obs_property_set_modified_callback(enableProperty, &EnableChangedEventHandler);
       }
-      ObsProperties.obs_property_set_modified_callback(enableProperty, &EnableChangedEventHandler);
 
       // identifier configuration text box
       var identifierProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierCaption, obs_text_type.OBS_TEXT_DEFAULT);
