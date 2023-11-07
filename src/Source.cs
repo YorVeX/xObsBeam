@@ -342,7 +342,9 @@ public class Source
             if (versionMatch && (previousPipeFeedsListSelectionValue == peerPipeItemValue))
               foundExactPreviousPipePeer = true;
             ObsProperties.obs_property_list_add_string(peerDiscoveryAvailablePipeFeedsList, (sbyte*)peerListPipeItemName, (sbyte*)peerListPipeItemValue);
-            if (!versionMatch)
+            if (!versionMatch ||
+               (IsRelay && (peer.SenderType == Beam.SenderTypes.Relay) && (peer.Identifier == BeamReceiver.SenderRelayProperties.Identifier)) // don't relay ourselves
+            )
               ObsProperties.obs_property_list_item_disable(peerDiscoveryAvailablePipeFeedsList, pipePeerIndex, Convert.ToByte(true));
             pipePeerIndex++;
             if (pipePeerItemValues.Contains(peer.Identifier))
@@ -362,7 +364,9 @@ public class Source
             if (versionMatch && (previousPeerSocketItemUniqueIdentifier == peerSocketItemUniqueIdentifier)) // this matches even when IP and/or port have changed, so we can restore the previous selection, but with updated IP/port
               newSocketFeedsListSelectionValue = peerSocketItemValue;
             ObsProperties.obs_property_list_add_string(peerDiscoveryAvailableSocketFeedsList, (sbyte*)peerListSocketItemName, (sbyte*)peerListSocketItemValue);
-            if (!versionMatch)
+            if (!versionMatch ||
+               (IsRelay && (peer.SenderType == Beam.SenderTypes.Relay) && (peer.Identifier == BeamReceiver.SenderRelayProperties.Identifier)) // don't relay ourselves
+            )
               ObsProperties.obs_property_list_item_disable(peerDiscoveryAvailableSocketFeedsList, socketPeerIndex, Convert.ToByte(true));
             socketPeerIndex++;
             if (socketPeerItemValues.Contains(peerSocketItemUniqueIdentifier))
@@ -902,7 +906,6 @@ public class Source
         // add relay properties
         thisSource.BeamReceiver.SenderRelayProperties.settings_get_properties(data, relayPropertyGroup, properties);
       }
-      //TODO: make it smart enough to not list itself?
     }
     return properties;
   }
