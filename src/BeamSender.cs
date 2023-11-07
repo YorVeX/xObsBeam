@@ -260,6 +260,8 @@ public class BeamSender(Beam.SenderTypes senderType)
         return (_videoPlaneInfo.DataSize > 0);
       if (_senderType == Beam.SenderTypes.FilterAudio)
         return (_audioPlanes > 0);
+      if (_senderType == Beam.SenderTypes.Relay)
+        return true;
       return false;
     }
   }
@@ -598,6 +600,15 @@ public class BeamSender(Beam.SenderTypes senderType)
     }
   }
 
+  public unsafe void RelayVideo(Beam.VideoHeader videoHeader, byte[] data)
+  {
+    foreach (var client in _clients.Values)
+    {
+      client.EnqueueVideoTimestamp(videoHeader.Timestamp);
+      client.EnqueueVideoFrame(videoHeader.Timestamp, videoHeader, data);
+    }
+  }
+
   public unsafe void SendVideo(ulong timestamp, byte* data)
   {
     if (_clients.IsEmpty)
@@ -694,6 +705,13 @@ public class BeamSender(Beam.SenderTypes senderType)
         _videoDataPool!.Return(capturedBeamVideoData.Data);
       }, beamVideoData);
     }
+  }
+
+  public unsafe void RelayAudio(Beam.AudioHeader audioHeader, byte[] data)
+  {
+    // send the audio data to all currently connected clients
+    foreach (var client in _clients.Values)
+      client.EnqueueAudio(audioHeader, data, data.Length);
   }
 
   public unsafe void SendAudio(ulong timestamp, uint frames, audio_data._data_e__FixedBuffer data)

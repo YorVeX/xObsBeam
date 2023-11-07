@@ -22,9 +22,9 @@ sealed class BeamSenderClient
   long _videoFrameCount = -1;
   long _audioFrameCount = -1;
   readonly CancellationTokenSource _cancellationSource = new();
-  readonly ArrayPool<byte>? _videoDataPool;
+  ArrayPool<byte>? _videoDataPool;
   Beam.AudioHeader _audioHeader;
-  readonly ArrayPool<byte>? _audioDataPool;
+  ArrayPool<byte>? _audioDataPool;
   DateTime _lastFrameTime = DateTime.MaxValue;
   ulong _lastSentTimestamp;
   readonly ManualResetEvent _sendLoopExited = new(false);
@@ -393,7 +393,8 @@ sealed class BeamSenderClient
     else if (videoFrameCount > 2)
       Module.Log($"<{ClientId}> Warning: Send queue size {videoFrameCount} ({_frameTimestampQueue.Count}) at video frame {timestamp}.", ObsLogLevel.Warning);
 
-    var frame = new Beam.BeamVideoData(videoHeader, _videoDataPool!.Rent(videoHeader.DataSize), timestamp);
+    _videoDataPool ??= ArrayPool<byte>.Create(videoHeader.DataSize, BeamSender.MaxFrameQueueSize);
+    var frame = new Beam.BeamVideoData(videoHeader, _videoDataPool.Rent(videoHeader.DataSize), timestamp);
     videoData.AsSpan(0, videoHeader.DataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory, OBS allocates this all in one piece so it can be copied in one go without worrying about planes
     _frames.AddOrUpdate(timestamp, frame, (key, oldValue) => frame);
     _frameAvailable.Set();
@@ -435,6 +436,18 @@ sealed class BeamSenderClient
 
     _frameTimestampQueue.Enqueue(timestamp); // EnqueueAudio() is always called from a sync context, so we can safely add the timestamps to the queue here and have it in the right order
     _frames.AddOrUpdate(timestamp, frame, (key, oldValue) => frame);
+    Interlocked.Increment(ref _audioFrameCount);
+    _frameAvailable.Set();
+  }
+
+  public unsafe void EnqueueAudio(Beam.AudioHeader audioHeader, byte[] audioData, int dataSize)
+  {
+    _audioDataPool ??= ArrayPool<byte>.Create(audioHeader.DataSize, BeamSender.MaxFrameQueueSize * 2);
+    var frame = new Beam.BeamAudioData(audioHeader, _audioDataPool.Rent(dataSize), audioHeader.Frames, dataSize, audioHeader.Timestamp); // get an audio data memory buffer from the pool, avoiding allocations
+    new ReadOnlySpan<byte>(audioData, 0, dataSize).CopyTo(frame.Data); // copy the data to the managed array pool memory
+
+    _frameTimestampQueue.Enqueue(audioHeader.Timestamp); // EnqueueAudio() is always called from a sync context, so we can safely add the timestamps to the queue here and have it in the right order
+    _frames.AddOrUpdate(audioHeader.Timestamp, frame, (key, oldValue) => frame);
     Interlocked.Increment(ref _audioFrameCount);
     _frameAvailable.Set();
   }
