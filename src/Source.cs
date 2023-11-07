@@ -894,6 +894,18 @@ public class Source
       ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_int(properties, (sbyte*)propertyTargetPortId, (sbyte*)propertyTargetPortCaption, 1024, 65535, 1), (sbyte*)propertyTargetPortText);
 
       discoveryTask.Wait();
+
+      // add relay source properties within its own group
+      if (thisSource.IsRelay)
+      {
+        // relay settings group
+        var relayPropertyGroup = ObsProperties.obs_properties_create();
+        var relayProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyRelayId, (sbyte*)propertyRelayCaption, obs_group_type.OBS_GROUP_NORMAL, relayPropertyGroup);
+        ObsProperties.obs_property_set_long_description(relayProperty, (sbyte*)propertyRelayText);
+
+        // add relay properties
+        thisSource.BeamReceiver.SenderRelayProperties.settings_get_properties(data, relayPropertyGroup, properties);
+      }
     }
     return properties;
   }
