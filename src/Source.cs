@@ -1003,8 +1003,23 @@ public class Source
       string availableFeedsListSelection = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailableFeedsId))!;
       if (string.IsNullOrEmpty(availableFeedsListSelection) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
         return Convert.ToByte(false);
-      fixed (byte* propertyTargetPipeName = Encoding.UTF8.GetBytes(availableFeedsListSelection))
+      PeerDiscovery.Peer selectedPeer;
+      try
+      {
+        selectedPeer = PeerDiscovery.Peer.FromListItemValue(availableFeedsListSelection);
+      }
+      catch
+      {
+        return Convert.ToByte(false);
+      }
+      fixed (byte*
+        propertyTargetPipeName = Encoding.UTF8.GetBytes(selectedPeer.Identifier),
+        propertyNoFeedsSelectedText = Module.ObsText("PeerDiscoveryNoFeedSelectedText")
+      )
+      {
         ObsData.obs_data_set_string(settings, (sbyte*)propertyTargetPipeNameId, (sbyte*)propertyTargetPipeName);
+        ObsData.obs_data_set_string(settings, (sbyte*)propertyPeerDiscoveryAvailableFeedsId, (sbyte*)propertyNoFeedsSelectedText); // reset the selection, as this was only used as a helper and isn't meant to be persisted
+      }
     }
     return Convert.ToByte(true);
   }
@@ -1025,18 +1040,29 @@ public class Source
         return Convert.ToByte(false);
 
       // if in manual mode this list is a helper to fill the manual fields
+      string availableFeedsListSelection = Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailableFeedsId))!;
+      if (string.IsNullOrEmpty(availableFeedsListSelection) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) || (availableFeedsListSelection == Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
+        return Convert.ToByte(false);
       PeerDiscovery.Peer selectedPeer;
       try
       {
-        selectedPeer = PeerDiscovery.Peer.FromListItemValue(Marshal.PtrToStringUTF8((IntPtr)ObsData.obs_data_get_string(settings, (sbyte*)propertyPeerDiscoveryAvailableFeedsId))!);
+        selectedPeer = PeerDiscovery.Peer.FromListItemValue(availableFeedsListSelection);
       }
       catch
       {
         return Convert.ToByte(false);
       }
-      fixed (byte* propertyTargetHostText = Encoding.UTF8.GetBytes(selectedPeer.IP))
+
+      fixed (byte*
+        propertyTargetHostText = Encoding.UTF8.GetBytes(selectedPeer.IP),
+        propertyNoFeedsSelectedText = Module.ObsText("PeerDiscoveryNoFeedSelectedText")
+      )
+      {
         ObsData.obs_data_set_string(settings, (sbyte*)propertyTargetHostId, (sbyte*)propertyTargetHostText);
-      ObsData.obs_data_set_int(settings, (sbyte*)propertyTargetPortId, selectedPeer.Port);
+        ObsData.obs_data_set_int(settings, (sbyte*)propertyTargetPortId, selectedPeer.Port);
+        ObsData.obs_data_set_string(settings, (sbyte*)propertyPeerDiscoveryAvailableFeedsId, (sbyte*)propertyNoFeedsSelectedText); // reset the selection, as this was only used as a helper and isn't meant to be persisted
+      }
+
       return Convert.ToByte(true);
     }
   }
