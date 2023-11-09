@@ -3,7 +3,6 @@
 
 using System.Collections.Concurrent;
 using System.Net;
-using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -190,7 +189,7 @@ public class BeamSenderProperties
       if (configuredNetworkInterfaceName == "Any: 0.0.0.0")
         return IPAddress.Any;
 
-      foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
+      foreach (var networkInterface in NetworkInterfaces.GetAllNetworkInterfaces())
       {
         foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
         {
@@ -515,18 +514,18 @@ public class BeamSenderProperties
       fixed (byte* networkInterfaceAnyListItem = "Any: 0.0.0.0"u8)
         ObsProperties.obs_property_list_add_string(networkInterfacesListProperty, (sbyte*)networkInterfaceAnyListItem, (sbyte*)networkInterfaceAnyListItem);
       NetworkInterfacesHaveLocalAddress = false;
-      foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
+      foreach (var networkInterface in NetworkInterfaces.GetAllNetworkInterfaces())
       {
-        if (networkInterface.OperationalStatus == OperationalStatus.Up)
+        if (networkInterface.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up)
         {
           foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
           {
             if (ip.Address.AddressFamily != AddressFamily.InterNetwork)
               continue;
             string networkInterfaceDisplayName = networkInterface.Name + ": " + ip.Address + " / " + ip.IPv4Mask;
-            if (PeerDiscovery.IsLocalAddress(ip.Address))
+            if (NetworkInterfaces.IsLocalAddress(ip.Address))
               NetworkInterfacesHaveLocalAddress = true;
-            Module.Log($"{UniquePrefix} Found network interface: {networkInterfaceDisplayName} (Local: {PeerDiscovery.IsLocalAddress(ip.Address)})", ObsLogLevel.Debug);
+            Module.Log($"{UniquePrefix} Found network interface: {networkInterfaceDisplayName} (Local: {NetworkInterfaces.IsLocalAddress(ip.Address)})", ObsLogLevel.Debug);
             fixed (byte* networkInterfaceListItem = Encoding.UTF8.GetBytes(networkInterfaceDisplayName))
               ObsProperties.obs_property_list_add_string(networkInterfacesListProperty, (sbyte*)networkInterfaceListItem, (sbyte*)networkInterfaceListItem);
           }
@@ -976,7 +975,7 @@ public class BeamSenderProperties
       Module.Log($"{UniquePrefix} Network interface set to: {NetworkInterfaceName}", ObsLogLevel.Info);
       bool showNoLocalAddressWarning = (!connectionTypePipe &&
                                         (((networkInterfaceAddress == IPAddress.Any) && !NetworkInterfacesHaveLocalAddress) ||
-                                        ((networkInterfaceAddress != IPAddress.Any) && (!PeerDiscovery.IsLocalAddress(networkInterfaceAddress)))));
+                                        ((networkInterfaceAddress != IPAddress.Any) && (!NetworkInterfaces.IsLocalAddress(networkInterfaceAddress)))));
       ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceNoLocalAddressWarningId), Convert.ToByte(showNoLocalAddressWarning));
       if (showNoLocalAddressWarning)
         Module.Log($"{UniquePrefix} {NetworkInterfaceName}: {Module.ObsTextString("NetworkInterfaceNoLocalAddressWarningText")}", ObsLogLevel.Warning);

@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 using System.Net;
-using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace xObsBeam;
 
@@ -167,7 +165,7 @@ public partial class PeerDiscovery
         if (queryItems.Length == 2 && queryItems[0] == MulticastPrefix && queryItems[1] == "Discover")
         {
           // send a response to the original sender
-          foreach (var networkInterface in GetNetworkInterfacesWithIds())
+          foreach (var networkInterface in NetworkInterfaces.GetUnicastAddressesWithIds())
           {
             if (_serviceAddress != IPAddress.Any && _serviceAddress.ToString() != networkInterface.Item1.Address.ToString())
               continue;
@@ -189,7 +187,7 @@ public partial class PeerDiscovery
     }
   }
 
-  public static async Task<List<Peer>> Discover(Peer currentPeer = default, int waitTimeMs = 200)
+  public static async Task<List<Peer>> Discover(Peer currentPeer = default, int waitTimeMs = 100)
   {
     Module.Log("Peer Discovery client: Starting discovery...", ObsLogLevel.Debug);
     var peers = new List<Peer>();
@@ -261,56 +259,5 @@ public partial class PeerDiscovery
       }
     }, cancelAfterTimeout.Token);
     return peers;
-  }
-
-  public static List<UnicastIPAddressInformation> GetNetworkInterfaces()
-  {
-    var networkInterfaces = new List<UnicastIPAddressInformation>();
-    foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
-    {
-      if (networkInterface.OperationalStatus == OperationalStatus.Up)
-      {
-        foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
-        {
-          if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
-            networkInterfaces.Add(ip);
-        }
-      }
-    }
-    return networkInterfaces;
-  }
-
-  public static List<(UnicastIPAddressInformation, string)> GetNetworkInterfacesWithIds()
-  {
-    var networkInterfaces = new List<(UnicastIPAddressInformation, string)>();
-    foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
-    {
-      if (networkInterface.OperationalStatus == OperationalStatus.Up)
-      {
-        foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
-        {
-          if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
-          {
-
-            string identifierString = networkInterface.NetworkInterfaceType == NetworkInterfaceType.Loopback ? "localhost" : networkInterface.GetPhysicalAddress().ToString();
-            if (string.IsNullOrEmpty(identifierString))
-              identifierString = networkInterface.Name;
-            string hashIdentifier = BitConverter.ToString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(identifierString))).Replace("-", "");
-            networkInterfaces.Add((ip, hashIdentifier));
-            // Module.Log("NIC: \"" + networkInterface.Name + "\": " + ip.Address + " / " + identifierString + " / " + hashIdentifier, ObsLogLevel.Debug);
-          }
-        }
-      }
-    }
-    return networkInterfaces;
-  }
-
-  // source: https://regex101.com/r/JCLOZL/15
-  [GeneratedRegex(@"\b(127\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|0?10\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|172\.0?1[6-9]\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|172\.0?2[0-9]\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|172\.0?3[01]\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|192\.168\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|169\.254\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|::1|[fF][cCdD][0-9a-fA-F]{2}(?:[:][0-9a-fA-F]{0,4}){0,7}|[fF][eE][89aAbB][0-9a-fA-F](?:[:][0-9a-fA-F]{0,4}){0,7})(?:\/([789]|1?[0-9]{2}))?\b")]
-  private static partial Regex RegexLocalAddress();
-
-  public static bool IsLocalAddress(IPAddress address)
-  {
-    return (IPAddress.IsLoopback(address) || RegexLocalAddress().IsMatch(address.ToString()));
   }
 }
