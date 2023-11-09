@@ -22,12 +22,10 @@ public static partial class NetworkInterfaces
   private static List<(UnicastIPAddressInformation, string)> _unicastAddressesWithIds = new();
   private static object _networkInterfacesLock = new();
 
-  // a static constructor doesn't do well here, since it's only called when the first method of this class is called, and we want to have the list of network interfaces available as soon as possible
-  // so rather make sure that this is called early in the application startup
-  public static void Initialize()
+  // this is not called before the first method from this class was used, meaning the first call to GetAllNetworkInterfaces() or GetUnicastAddressesWithIds() will implicitly invoke this
+  static NetworkInterfaces()
   {
-    Module.Log($"Caching list of network interfaces.", ObsLogLevel.Debug);
-    Task.Run(UpdateNetworkInterfaces);
+    UpdateNetworkInterfaces();
     NetworkChange.NetworkAvailabilityChanged += (sender, e) =>
     {
       Module.Log($"Refreshing list of network interfaces after NetworkAvailabilityChanged event.", ObsLogLevel.Debug);

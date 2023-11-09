@@ -197,8 +197,6 @@ public static class Module
     Source.Register();
     Filter.Register();
 
-    NetworkInterfaces.Initialize();
-
     Version version = thisAssembly.GetName().Version!;
     ModuleVersionString = $"{version.Major}.{version.Minor}.{version.Build}";
     Log($"Version {ModuleVersionString} loaded (built with .NET {Environment.Version}).", ObsLogLevel.Info);
