@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
+﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using System.Collections.Concurrent;
@@ -390,393 +390,391 @@ public class BeamSenderProperties
         ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableFilterText);
         ObsProperties.obs_property_set_modified_callback(enableProperty, &EnableChangedEventHandler);
       }
-      ObsProperties.obs_property_set_modified_callback(enableProperty, &EnableChangedEventHandler);
-    }
 
-    // identifier configuration text box
-    var identifierProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierCaption, obs_text_type.OBS_TEXT_DEFAULT);
-    ObsProperties.obs_property_set_long_description(identifierProperty, (sbyte*)propertyIdentifierText);
-    ObsProperties.obs_property_set_modified_callback(identifierProperty, &IdentifierSettingChangedEventHandler);
+      // identifier configuration text box
+      var identifierProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierCaption, obs_text_type.OBS_TEXT_DEFAULT);
+      ObsProperties.obs_property_set_long_description(identifierProperty, (sbyte*)propertyIdentifierText);
+      ObsProperties.obs_property_set_modified_callback(identifierProperty, &IdentifierSettingChangedEventHandler);
 
-    if (PropertiesType is not Beam.SenderTypes.FilterAudio and not Beam.SenderTypes.Relay)
-    {
-      // compression group
-      var compressionGroup = ObsProperties.obs_properties_create();
-      var compressionGroupProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyCompressionId, (sbyte*)propertyCompressionCaption, obs_group_type.OBS_GROUP_NORMAL, compressionGroup);
-      // show only recommended compression options toggle
-      var compressionShowOnlyRecommendedProperty = ObsProperties.obs_properties_add_bool(compressionGroup, (sbyte*)propertyCompressionShowOnlyRecommendedId, (sbyte*)propertyCompressionShowOnlyRecommendedCaption);
-      ObsProperties.obs_property_set_long_description(compressionShowOnlyRecommendedProperty, (sbyte*)propertyCompressionShowOnlyRecommendedText);
-      ObsProperties.obs_property_set_modified_callback(compressionShowOnlyRecommendedProperty, &CompressionSettingChangedEventHandler);
-      // compression help button
-      var compressionHelpProperty = ObsProperties.obs_properties_add_button(compressionGroup, (sbyte*)propertyCompressionHelpId, (sbyte*)propertyCompressionHelpCaption, null);
-      ObsProperties.obs_property_set_long_description(compressionHelpProperty, (sbyte*)propertyCompressionHelpText);
-      ObsProperties.obs_property_button_set_type(compressionHelpProperty, obs_button_type.OBS_BUTTON_URL);
-      ObsProperties.obs_property_button_set_url(compressionHelpProperty, (sbyte*)propertyCompressionHelpUrl);
-
-      // JPEG compression options group
-      var compressionJpegGroup = ObsProperties.obs_properties_create();
-      var compressionJpegGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionJpegId, (sbyte*)propertyCompressionJpegCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionJpegGroup);
-      ObsProperties.obs_property_set_long_description(compressionJpegGroupProperty, (sbyte*)propertyCompressionJpegText);
-      ObsProperties.obs_property_set_modified_callback(compressionJpegGroupProperty, &CompressionSettingChangedEventHandler);
-      // JPEG compression level (skip frames)
-      var compressionJpegLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionJpegGroup, (sbyte*)propertyCompressionJpegLevelId, (sbyte*)propertyCompressionJpegLevelCaption, 1, 10, 1);
-      ObsProperties.obs_property_set_long_description(compressionJpegLevelProperty, (sbyte*)propertyCompressionLevelText);
-      ObsProperties.obs_property_set_modified_callback(compressionJpegLevelProperty, &CompressionSettingChangedEventHandler);
-      // JPEG compression quality
-      var compressionJpegQualityProperty = ObsProperties.obs_properties_add_int_slider(compressionJpegGroup, (sbyte*)propertyCompressionJpegQualityId, (sbyte*)propertyCompressionJpegQualityCaption, 1, 100, 1);
-      ObsProperties.obs_property_set_long_description(compressionJpegQualityProperty, (sbyte*)propertyCompressionJpegQualityText);
-      ObsProperties.obs_property_set_modified_callback(compressionJpegQualityProperty, &CompressionJpegQualitySettingChangedEventHandler);
-      // JPEG compression warning message shown when library not found
-      if (!EncoderSupport.LibJpegTurbo)
+      if (PropertiesType is not Beam.SenderTypes.FilterAudio and not Beam.SenderTypes.Relay)
       {
-        ObsProperties.obs_property_set_enabled(compressionJpegGroupProperty, Convert.ToByte(false));
-        var compressionJpegLibraryMissingWarningProperty = ObsProperties.obs_properties_add_text(compressionGroup, (sbyte*)propertyCompressionJpegLibraryMissingWarningId, (sbyte*)propertyCompressionJpegLibraryMissingWarningText, obs_text_type.OBS_TEXT_INFO);
-        ObsProperties.obs_property_text_set_info_type(compressionJpegLibraryMissingWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
-        var compressionJpegLibraryMissingHelpProperty = ObsProperties.obs_properties_add_button(compressionGroup, (sbyte*)propertyCompressionJpegLibraryMissingHelpId, (sbyte*)propertyCompressionJpegLibraryMissingHelpCaption, null);
-        ObsProperties.obs_property_set_long_description(compressionJpegLibraryMissingHelpProperty, (sbyte*)propertyCompressionJpegLibraryMissingHelpText);
-        ObsProperties.obs_property_button_set_type(compressionJpegLibraryMissingHelpProperty, obs_button_type.OBS_BUTTON_URL);
-        ObsProperties.obs_property_button_set_url(compressionJpegLibraryMissingHelpProperty, (sbyte*)propertyCompressionJpegLibraryMissingHelpUrl);
+        // compression group
+        var compressionGroup = ObsProperties.obs_properties_create();
+        var compressionGroupProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyCompressionId, (sbyte*)propertyCompressionCaption, obs_group_type.OBS_GROUP_NORMAL, compressionGroup);
+        // show only recommended compression options toggle
+        var compressionShowOnlyRecommendedProperty = ObsProperties.obs_properties_add_bool(compressionGroup, (sbyte*)propertyCompressionShowOnlyRecommendedId, (sbyte*)propertyCompressionShowOnlyRecommendedCaption);
+        ObsProperties.obs_property_set_long_description(compressionShowOnlyRecommendedProperty, (sbyte*)propertyCompressionShowOnlyRecommendedText);
+        ObsProperties.obs_property_set_modified_callback(compressionShowOnlyRecommendedProperty, &CompressionSettingChangedEventHandler);
+        // compression help button
+        var compressionHelpProperty = ObsProperties.obs_properties_add_button(compressionGroup, (sbyte*)propertyCompressionHelpId, (sbyte*)propertyCompressionHelpCaption, null);
+        ObsProperties.obs_property_set_long_description(compressionHelpProperty, (sbyte*)propertyCompressionHelpText);
+        ObsProperties.obs_property_button_set_type(compressionHelpProperty, obs_button_type.OBS_BUTTON_URL);
+        ObsProperties.obs_property_button_set_url(compressionHelpProperty, (sbyte*)propertyCompressionHelpUrl);
+
+        // JPEG compression options group
+        var compressionJpegGroup = ObsProperties.obs_properties_create();
+        var compressionJpegGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionJpegId, (sbyte*)propertyCompressionJpegCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionJpegGroup);
+        ObsProperties.obs_property_set_long_description(compressionJpegGroupProperty, (sbyte*)propertyCompressionJpegText);
+        ObsProperties.obs_property_set_modified_callback(compressionJpegGroupProperty, &CompressionSettingChangedEventHandler);
+        // JPEG compression level (skip frames)
+        var compressionJpegLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionJpegGroup, (sbyte*)propertyCompressionJpegLevelId, (sbyte*)propertyCompressionJpegLevelCaption, 1, 10, 1);
+        ObsProperties.obs_property_set_long_description(compressionJpegLevelProperty, (sbyte*)propertyCompressionLevelText);
+        ObsProperties.obs_property_set_modified_callback(compressionJpegLevelProperty, &CompressionSettingChangedEventHandler);
+        // JPEG compression quality
+        var compressionJpegQualityProperty = ObsProperties.obs_properties_add_int_slider(compressionJpegGroup, (sbyte*)propertyCompressionJpegQualityId, (sbyte*)propertyCompressionJpegQualityCaption, 1, 100, 1);
+        ObsProperties.obs_property_set_long_description(compressionJpegQualityProperty, (sbyte*)propertyCompressionJpegQualityText);
+        ObsProperties.obs_property_set_modified_callback(compressionJpegQualityProperty, &CompressionJpegQualitySettingChangedEventHandler);
+        // JPEG compression warning message shown when library not found
+        if (!EncoderSupport.LibJpegTurbo)
+        {
+          ObsProperties.obs_property_set_enabled(compressionJpegGroupProperty, Convert.ToByte(false));
+          var compressionJpegLibraryMissingWarningProperty = ObsProperties.obs_properties_add_text(compressionGroup, (sbyte*)propertyCompressionJpegLibraryMissingWarningId, (sbyte*)propertyCompressionJpegLibraryMissingWarningText, obs_text_type.OBS_TEXT_INFO);
+          ObsProperties.obs_property_text_set_info_type(compressionJpegLibraryMissingWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
+          var compressionJpegLibraryMissingHelpProperty = ObsProperties.obs_properties_add_button(compressionGroup, (sbyte*)propertyCompressionJpegLibraryMissingHelpId, (sbyte*)propertyCompressionJpegLibraryMissingHelpCaption, null);
+          ObsProperties.obs_property_set_long_description(compressionJpegLibraryMissingHelpProperty, (sbyte*)propertyCompressionJpegLibraryMissingHelpText);
+          ObsProperties.obs_property_button_set_type(compressionJpegLibraryMissingHelpProperty, obs_button_type.OBS_BUTTON_URL);
+          ObsProperties.obs_property_button_set_url(compressionJpegLibraryMissingHelpProperty, (sbyte*)propertyCompressionJpegLibraryMissingHelpUrl);
+        }
+
+        // QOI compression options group
+        var compressionQoiGroup = ObsProperties.obs_properties_create();
+        var compressionQoiGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionQoiId, (sbyte*)propertyCompressionQoiCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionQoiGroup);
+        ObsProperties.obs_property_set_long_description(compressionQoiGroupProperty, (sbyte*)propertyCompressionQoiText);
+        ObsProperties.obs_property_set_modified_callback(compressionQoiGroupProperty, &CompressionSettingChangedEventHandler);
+        // QOI compression level (skip frames)
+        var compressionQoiLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoiGroup, (sbyte*)propertyCompressionQoiLevelId, (sbyte*)propertyCompressionQoiLevelCaption, 1, 10, 1);
+        ObsProperties.obs_property_set_long_description(compressionQoiLevelProperty, (sbyte*)propertyCompressionLevelText);
+        ObsProperties.obs_property_set_modified_callback(compressionQoiLevelProperty, &CompressionSettingChangedEventHandler);
+
+        // QOY compression options group
+        var compressionQoyGroup = ObsProperties.obs_properties_create();
+        var compressionQoyGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionQoyId, (sbyte*)propertyCompressionQoyCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionQoyGroup);
+        ObsProperties.obs_property_set_long_description(compressionQoyGroupProperty, (sbyte*)propertyCompressionQoyText);
+        ObsProperties.obs_property_set_modified_callback(compressionQoyGroupProperty, &CompressionSettingChangedEventHandler);
+        // QOY compression level (skip frames)
+        var compressionQoyLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoyGroup, (sbyte*)propertyCompressionQoyLevelId, (sbyte*)propertyCompressionQoyLevelCaption, 1, 10, 1);
+        ObsProperties.obs_property_set_long_description(compressionQoyLevelProperty, (sbyte*)propertyCompressionLevelText);
+        ObsProperties.obs_property_set_modified_callback(compressionQoyLevelProperty, &CompressionSettingChangedEventHandler);
+
+        // QOIR compression options group
+        var compressionQoirGroup = ObsProperties.obs_properties_create();
+        var compressionQoirGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionQoirId, (sbyte*)propertyCompressionQoirCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionQoirGroup);
+        ObsProperties.obs_property_set_visible(compressionQoirGroupProperty, Convert.ToByte(EncoderSupport.QoirLib));
+        ObsProperties.obs_property_set_long_description(compressionQoirGroupProperty, (sbyte*)propertyCompressionQoirText);
+        ObsProperties.obs_property_set_modified_callback(compressionQoirGroupProperty, &CompressionSettingChangedEventHandler);
+        // QOIR compression level (skip frames)
+        var compressionQoirLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoirGroup, (sbyte*)propertyCompressionQoirLevelId, (sbyte*)propertyCompressionQoirLevelCaption, 1, 10, 1);
+        ObsProperties.obs_property_set_long_description(compressionQoirLevelProperty, (sbyte*)propertyCompressionLevelText);
+        ObsProperties.obs_property_set_modified_callback(compressionQoirLevelProperty, &CompressionSettingChangedEventHandler);
+
+        // LZ4 compression options group
+        var compressionLz4Group = ObsProperties.obs_properties_create();
+        var compressionLz4GroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionLz4Id, (sbyte*)propertyCompressionLz4Caption, obs_group_type.OBS_GROUP_CHECKABLE, compressionLz4Group);
+        ObsProperties.obs_property_set_long_description(compressionLz4GroupProperty, (sbyte*)propertyCompressionLz4Text);
+        ObsProperties.obs_property_set_modified_callback(compressionLz4GroupProperty, &CompressionSettingChangedEventHandler);
+        // LZ4 compression level (skip frames)
+        var compressionLz4LevelProperty = ObsProperties.obs_properties_add_int_slider(compressionLz4Group, (sbyte*)propertyCompressionLz4LevelId, (sbyte*)propertyCompressionLz4LevelCaption, 1, 10, 1);
+        ObsProperties.obs_property_set_long_description(compressionLz4LevelProperty, (sbyte*)propertyCompressionLevelText);
+        ObsProperties.obs_property_set_modified_callback(compressionLz4LevelProperty, &CompressionSettingChangedEventHandler);
+
+        // Density compression options group
+        var compressionDensityGroup = ObsProperties.obs_properties_create();
+        var compressionDensityGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionDensityId, (sbyte*)propertyCompressionDensityCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionDensityGroup);
+        ObsProperties.obs_property_set_visible(compressionDensityGroupProperty, Convert.ToByte(EncoderSupport.DensityApi));
+        ObsProperties.obs_property_set_long_description(compressionDensityGroupProperty, (sbyte*)propertyCompressionDensityText);
+        ObsProperties.obs_property_set_modified_callback(compressionDensityGroupProperty, &CompressionSettingChangedEventHandler);
+        // Density compression level (skip frames)
+        var compressionDensityLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionDensityGroup, (sbyte*)propertyCompressionDensityLevelId, (sbyte*)propertyCompressionDensityLevelCaption, 1, 10, 1);
+        ObsProperties.obs_property_set_long_description(compressionDensityLevelProperty, (sbyte*)propertyCompressionLevelText);
+        ObsProperties.obs_property_set_modified_callback(compressionDensityLevelProperty, &CompressionSettingChangedEventHandler);
+        // Density compression strength
+        var compressionDensityStrengthProperty = ObsProperties.obs_properties_add_int_slider(compressionDensityGroup, (sbyte*)propertyCompressionDensityStrengthId, (sbyte*)propertyCompressionDensityStrengthCaption, 1, 3, 1);
+        ObsProperties.obs_property_set_long_description(compressionDensityStrengthProperty, (sbyte*)propertyCompressionDensityStrengthText);
+        ObsProperties.obs_property_set_modified_callback(compressionDensityStrengthProperty, &CompressionSettingChangedEventHandler);
+
+        // warning message shown when video color format conversion is necessary
+        var compressionFormatWarningProperty = ObsProperties.obs_properties_add_text(compressionGroup, (sbyte*)propertyCompressionFormatWarningId, (sbyte*)propertyCompressionFormatWarningText, obs_text_type.OBS_TEXT_INFO);
+        ObsProperties.obs_property_text_set_info_type(compressionFormatWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
+
+        // compress from OBS render thread option
+        var compressionMainThreadProperty = ObsProperties.obs_properties_add_bool(compressionGroup, (sbyte*)propertyCompressionMainThreadId, (sbyte*)propertyCompressionMainThreadCaption);
+        ObsProperties.obs_property_set_long_description(compressionMainThreadProperty, (sbyte*)propertyCompressionMainThreadText);
+        ObsProperties.obs_property_set_modified_callback(compressionMainThreadProperty, &CompressionMainThreadChangedEventHandler);
       }
 
-      // QOI compression options group
-      var compressionQoiGroup = ObsProperties.obs_properties_create();
-      var compressionQoiGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionQoiId, (sbyte*)propertyCompressionQoiCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionQoiGroup);
-      ObsProperties.obs_property_set_long_description(compressionQoiGroupProperty, (sbyte*)propertyCompressionQoiText);
-      ObsProperties.obs_property_set_modified_callback(compressionQoiGroupProperty, &CompressionSettingChangedEventHandler);
-      // QOI compression level (skip frames)
-      var compressionQoiLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoiGroup, (sbyte*)propertyCompressionQoiLevelId, (sbyte*)propertyCompressionQoiLevelCaption, 1, 10, 1);
-      ObsProperties.obs_property_set_long_description(compressionQoiLevelProperty, (sbyte*)propertyCompressionLevelText);
-      ObsProperties.obs_property_set_modified_callback(compressionQoiLevelProperty, &CompressionSettingChangedEventHandler);
+      // connection type selection group
+      var connectionTypeGroup = ObsProperties.obs_properties_create();
+      var connectionTypeGroupProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyConnectionTypeId, (sbyte*)propertyConnectionTypeCaption, obs_group_type.OBS_GROUP_NORMAL, connectionTypeGroup);
+      ObsProperties.obs_property_set_long_description(connectionTypeGroupProperty, (sbyte*)propertyConnectionTypeText);
+      // connection type pipe option
+      var connectionTypePipeProperty = ObsProperties.obs_properties_add_bool(connectionTypeGroup, (sbyte*)propertyConnectionTypePipeId, (sbyte*)propertyConnectionTypePipeCaption);
+      ObsProperties.obs_property_set_long_description(connectionTypePipeProperty, (sbyte*)propertyConnectionTypePipeText);
+      ObsProperties.obs_property_set_modified_callback(connectionTypePipeProperty, &ConnectionTypePipeChangedEventHandler);
+      // connection type socket option
+      var connectionTypeSocketProperty = ObsProperties.obs_properties_add_bool(connectionTypeGroup, (sbyte*)propertyConnectionTypeSocketId, (sbyte*)propertyConnectionTypeSocketCaption);
+      ObsProperties.obs_property_set_long_description(connectionTypeSocketProperty, (sbyte*)propertyConnectionTypeSocketText);
+      ObsProperties.obs_property_set_modified_callback(connectionTypeSocketProperty, &ConnectionTypeSocketChangedEventHandler);
 
-      // QOY compression options group
-      var compressionQoyGroup = ObsProperties.obs_properties_create();
-      var compressionQoyGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionQoyId, (sbyte*)propertyCompressionQoyCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionQoyGroup);
-      ObsProperties.obs_property_set_long_description(compressionQoyGroupProperty, (sbyte*)propertyCompressionQoyText);
-      ObsProperties.obs_property_set_modified_callback(compressionQoyGroupProperty, &CompressionSettingChangedEventHandler);
-      // QOY compression level (skip frames)
-      var compressionQoyLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoyGroup, (sbyte*)propertyCompressionQoyLevelId, (sbyte*)propertyCompressionQoyLevelCaption, 1, 10, 1);
-      ObsProperties.obs_property_set_long_description(compressionQoyLevelProperty, (sbyte*)propertyCompressionLevelText);
-      ObsProperties.obs_property_set_modified_callback(compressionQoyLevelProperty, &CompressionSettingChangedEventHandler);
-
-      // QOIR compression options group
-      var compressionQoirGroup = ObsProperties.obs_properties_create();
-      var compressionQoirGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionQoirId, (sbyte*)propertyCompressionQoirCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionQoirGroup);
-      ObsProperties.obs_property_set_visible(compressionQoirGroupProperty, Convert.ToByte(EncoderSupport.QoirLib));
-      ObsProperties.obs_property_set_long_description(compressionQoirGroupProperty, (sbyte*)propertyCompressionQoirText);
-      ObsProperties.obs_property_set_modified_callback(compressionQoirGroupProperty, &CompressionSettingChangedEventHandler);
-      // QOIR compression level (skip frames)
-      var compressionQoirLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionQoirGroup, (sbyte*)propertyCompressionQoirLevelId, (sbyte*)propertyCompressionQoirLevelCaption, 1, 10, 1);
-      ObsProperties.obs_property_set_long_description(compressionQoirLevelProperty, (sbyte*)propertyCompressionLevelText);
-      ObsProperties.obs_property_set_modified_callback(compressionQoirLevelProperty, &CompressionSettingChangedEventHandler);
-
-      // LZ4 compression options group
-      var compressionLz4Group = ObsProperties.obs_properties_create();
-      var compressionLz4GroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionLz4Id, (sbyte*)propertyCompressionLz4Caption, obs_group_type.OBS_GROUP_CHECKABLE, compressionLz4Group);
-      ObsProperties.obs_property_set_long_description(compressionLz4GroupProperty, (sbyte*)propertyCompressionLz4Text);
-      ObsProperties.obs_property_set_modified_callback(compressionLz4GroupProperty, &CompressionSettingChangedEventHandler);
-      // LZ4 compression level (skip frames)
-      var compressionLz4LevelProperty = ObsProperties.obs_properties_add_int_slider(compressionLz4Group, (sbyte*)propertyCompressionLz4LevelId, (sbyte*)propertyCompressionLz4LevelCaption, 1, 10, 1);
-      ObsProperties.obs_property_set_long_description(compressionLz4LevelProperty, (sbyte*)propertyCompressionLevelText);
-      ObsProperties.obs_property_set_modified_callback(compressionLz4LevelProperty, &CompressionSettingChangedEventHandler);
-
-      // Density compression options group
-      var compressionDensityGroup = ObsProperties.obs_properties_create();
-      var compressionDensityGroupProperty = ObsProperties.obs_properties_add_group(compressionGroup, (sbyte*)propertyCompressionDensityId, (sbyte*)propertyCompressionDensityCaption, obs_group_type.OBS_GROUP_CHECKABLE, compressionDensityGroup);
-      ObsProperties.obs_property_set_visible(compressionDensityGroupProperty, Convert.ToByte(EncoderSupport.DensityApi));
-      ObsProperties.obs_property_set_long_description(compressionDensityGroupProperty, (sbyte*)propertyCompressionDensityText);
-      ObsProperties.obs_property_set_modified_callback(compressionDensityGroupProperty, &CompressionSettingChangedEventHandler);
-      // Density compression level (skip frames)
-      var compressionDensityLevelProperty = ObsProperties.obs_properties_add_int_slider(compressionDensityGroup, (sbyte*)propertyCompressionDensityLevelId, (sbyte*)propertyCompressionDensityLevelCaption, 1, 10, 1);
-      ObsProperties.obs_property_set_long_description(compressionDensityLevelProperty, (sbyte*)propertyCompressionLevelText);
-      ObsProperties.obs_property_set_modified_callback(compressionDensityLevelProperty, &CompressionSettingChangedEventHandler);
-      // Density compression strength
-      var compressionDensityStrengthProperty = ObsProperties.obs_properties_add_int_slider(compressionDensityGroup, (sbyte*)propertyCompressionDensityStrengthId, (sbyte*)propertyCompressionDensityStrengthCaption, 1, 3, 1);
-      ObsProperties.obs_property_set_long_description(compressionDensityStrengthProperty, (sbyte*)propertyCompressionDensityStrengthText);
-      ObsProperties.obs_property_set_modified_callback(compressionDensityStrengthProperty, &CompressionSettingChangedEventHandler);
-
-      // warning message shown when video color format conversion is necessary
-      var compressionFormatWarningProperty = ObsProperties.obs_properties_add_text(compressionGroup, (sbyte*)propertyCompressionFormatWarningId, (sbyte*)propertyCompressionFormatWarningText, obs_text_type.OBS_TEXT_INFO);
-      ObsProperties.obs_property_text_set_info_type(compressionFormatWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
-
-      // compress from OBS render thread option
-      var compressionMainThreadProperty = ObsProperties.obs_properties_add_bool(compressionGroup, (sbyte*)propertyCompressionMainThreadId, (sbyte*)propertyCompressionMainThreadCaption);
-      ObsProperties.obs_property_set_long_description(compressionMainThreadProperty, (sbyte*)propertyCompressionMainThreadText);
-      ObsProperties.obs_property_set_modified_callback(compressionMainThreadProperty, &CompressionMainThreadChangedEventHandler);
-    }
-
-    // connection type selection group
-    var connectionTypeGroup = ObsProperties.obs_properties_create();
-    var connectionTypeGroupProperty = ObsProperties.obs_properties_add_group(properties, (sbyte*)propertyConnectionTypeId, (sbyte*)propertyConnectionTypeCaption, obs_group_type.OBS_GROUP_NORMAL, connectionTypeGroup);
-    ObsProperties.obs_property_set_long_description(connectionTypeGroupProperty, (sbyte*)propertyConnectionTypeText);
-    // connection type pipe option
-    var connectionTypePipeProperty = ObsProperties.obs_properties_add_bool(connectionTypeGroup, (sbyte*)propertyConnectionTypePipeId, (sbyte*)propertyConnectionTypePipeCaption);
-    ObsProperties.obs_property_set_long_description(connectionTypePipeProperty, (sbyte*)propertyConnectionTypePipeText);
-    ObsProperties.obs_property_set_modified_callback(connectionTypePipeProperty, &ConnectionTypePipeChangedEventHandler);
-    // connection type socket option
-    var connectionTypeSocketProperty = ObsProperties.obs_properties_add_bool(connectionTypeGroup, (sbyte*)propertyConnectionTypeSocketId, (sbyte*)propertyConnectionTypeSocketCaption);
-    ObsProperties.obs_property_set_long_description(connectionTypeSocketProperty, (sbyte*)propertyConnectionTypeSocketText);
-    ObsProperties.obs_property_set_modified_callback(connectionTypeSocketProperty, &ConnectionTypeSocketChangedEventHandler);
-
-    // network interface selection
-    var networkInterfacesListProperty = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyNetworkInterfaceListId, (sbyte*)propertyNetworkInterfaceListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
-    ObsProperties.obs_property_set_long_description(networkInterfacesListProperty, (sbyte*)propertyNetworkInterfaceListText);
-    fixed (byte* networkInterfaceAnyListItem = "Any: 0.0.0.0"u8)
-      ObsProperties.obs_property_list_add_string(networkInterfacesListProperty, (sbyte*)networkInterfaceAnyListItem, (sbyte*)networkInterfaceAnyListItem);
-    NetworkInterfacesHaveLocalAddress = false;
-    foreach (var networkInterface in NetworkInterfaces.GetAllNetworkInterfaces())
-    {
-      if (networkInterface.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up)
+      // network interface selection
+      var networkInterfacesListProperty = ObsProperties.obs_properties_add_list(properties, (sbyte*)propertyNetworkInterfaceListId, (sbyte*)propertyNetworkInterfaceListCaption, obs_combo_type.OBS_COMBO_TYPE_LIST, obs_combo_format.OBS_COMBO_FORMAT_STRING);
+      ObsProperties.obs_property_set_long_description(networkInterfacesListProperty, (sbyte*)propertyNetworkInterfaceListText);
+      fixed (byte* networkInterfaceAnyListItem = "Any: 0.0.0.0"u8)
+        ObsProperties.obs_property_list_add_string(networkInterfacesListProperty, (sbyte*)networkInterfaceAnyListItem, (sbyte*)networkInterfaceAnyListItem);
+      NetworkInterfacesHaveLocalAddress = false;
+      foreach (var networkInterface in NetworkInterfaces.GetAllNetworkInterfaces())
       {
-        foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
+        if (networkInterface.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up)
         {
-          if (ip.Address.AddressFamily != AddressFamily.InterNetwork)
-            continue;
-          string networkInterfaceDisplayName = networkInterface.Name + ": " + ip.Address + " / " + ip.IPv4Mask;
-          if (NetworkInterfaces.IsLocalAddress(ip.Address))
-            NetworkInterfacesHaveLocalAddress = true;
-          Module.Log($"{UniquePrefix} Found network interface: {networkInterfaceDisplayName} (Local: {NetworkInterfaces.IsLocalAddress(ip.Address)})", ObsLogLevel.Debug);
-          fixed (byte* networkInterfaceListItem = Encoding.UTF8.GetBytes(networkInterfaceDisplayName))
-            ObsProperties.obs_property_list_add_string(networkInterfacesListProperty, (sbyte*)networkInterfaceListItem, (sbyte*)networkInterfaceListItem);
+          foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
+          {
+            if (ip.Address.AddressFamily != AddressFamily.InterNetwork)
+              continue;
+            string networkInterfaceDisplayName = networkInterface.Name + ": " + ip.Address + " / " + ip.IPv4Mask;
+            if (NetworkInterfaces.IsLocalAddress(ip.Address))
+              NetworkInterfacesHaveLocalAddress = true;
+            Module.Log($"{UniquePrefix} Found network interface: {networkInterfaceDisplayName} (Local: {NetworkInterfaces.IsLocalAddress(ip.Address)})", ObsLogLevel.Debug);
+            fixed (byte* networkInterfaceListItem = Encoding.UTF8.GetBytes(networkInterfaceDisplayName))
+              ObsProperties.obs_property_list_add_string(networkInterfacesListProperty, (sbyte*)networkInterfaceListItem, (sbyte*)networkInterfaceListItem);
+          }
         }
       }
+      ObsProperties.obs_property_set_modified_callback(networkInterfacesListProperty, &NetworkInterfaceChangedEventHandler);
+
+      // warning if the selected interface doesn't have a local address
+      var networkInterfaceNoLocalAddressWarningProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyNetworkInterfaceNoLocalAddressWarningId, (sbyte*)propertyNetworkInterfaceNoLocalAddressWarningText, obs_text_type.OBS_TEXT_INFO);
+      ObsProperties.obs_property_text_set_info_type(networkInterfaceNoLocalAddressWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
+      ObsProperties.obs_property_set_visible(networkInterfaceNoLocalAddressWarningProperty, Convert.ToByte(false));
+
+      // listen port configuration
+      var automaticListenPortProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyAutomaticListenPortId, (sbyte*)propertyAutomaticListenPortCaption);
+      ObsProperties.obs_property_set_long_description(automaticListenPortProperty, (sbyte*)propertyAutomaticListenPortText);
+      ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_int(properties, (sbyte*)propertyListenPortId, (sbyte*)propertyListenPortCaption, 1024, 65535, 1), (sbyte*)propertyListenPortText);
+      ObsProperties.obs_property_set_modified_callback(automaticListenPortProperty, &AutomaticListenPortEnabledChangedEventHandler);
+
     }
-    ObsProperties.obs_property_set_modified_callback(networkInterfacesListProperty, &NetworkInterfaceChangedEventHandler);
 
-    // warning if the selected interface doesn't have a local address
-    var networkInterfaceNoLocalAddressWarningProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyNetworkInterfaceNoLocalAddressWarningId, (sbyte*)propertyNetworkInterfaceNoLocalAddressWarningText, obs_text_type.OBS_TEXT_INFO);
-    ObsProperties.obs_property_text_set_info_type(networkInterfaceNoLocalAddressWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
-    ObsProperties.obs_property_set_visible(networkInterfaceNoLocalAddressWarningProperty, Convert.ToByte(false));
-
-    // listen port configuration
-    var automaticListenPortProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyAutomaticListenPortId, (sbyte*)propertyAutomaticListenPortCaption);
-    ObsProperties.obs_property_set_long_description(automaticListenPortProperty, (sbyte*)propertyAutomaticListenPortText);
-    ObsProperties.obs_property_set_long_description(ObsProperties.obs_properties_add_int(properties, (sbyte*)propertyListenPortId, (sbyte*)propertyListenPortCaption, 1024, 65535, 1), (sbyte*)propertyListenPortText);
-    ObsProperties.obs_property_set_modified_callback(automaticListenPortProperty, &AutomaticListenPortEnabledChangedEventHandler);
-
-  }
-
-  Properties = (propertiesParent != null ? propertiesParent : properties);
+    Properties = (propertiesParent != null ? propertiesParent : properties);
     ContextPointer->Properties = Properties;
 
     return properties;
   }
 
-public static unsafe void settings_get_defaults(Beam.SenderTypes propertiesType, obs_data* settings)
-{
-  Module.Log($"{propertiesType} settings_get_defaults called", ObsLogLevel.Debug);
-  fixed (byte*
-    propertyEnableId = "enable"u8,
-    propertyIdentifierId = "identifier"u8,
-    propertyIdentifierOutputDefaultText = "Beam Sender Output"u8,
-    propertyIdentifierFilterAvDefaultText = "Beam Sender Filter (Audio/Video)"u8,
-    propertyIdentifierFilterVideoDefaultText = "Beam Sender Filter (Video only)"u8,
-    propertyIdentifierFilterAudioDefaultText = "Beam Sender Filter (Audio only)"u8,
-    propertyIdentifierRelayDefaultText = "Beam Sender Relay"u8,
-    propertyCompressionShowOnlyRecommendedId = "compression_recommended_only"u8,
-    propertyCompressionQoiLevelId = "compression_qoi_level"u8,
-    propertyCompressionQoyLevelId = "compression_qoy_level"u8,
-    propertyCompressionDensityLevelId = "compression_density_level"u8,
-    propertyCompressionDensityStrengthId = "compression_density_strength"u8,
-    propertyCompressionQoirLevelId = "compression_qoir_level"u8,
-    propertyCompressionJpegId = "compression_jpeg"u8,
-    propertyCompressionJpegQualityId = "compression_jpeg_quality"u8,
-    propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
-    propertyCompressionLz4LevelId = "compression_lz4_level"u8,
-    propertyCompressionMainThreadId = "compression_main_thread"u8,
-    propertyConnectionTypePipeId = "connection_type_pipe"u8,
-    propertyConnectionTypeSocketId = "connection_type_socket"u8,
-    propertyAutomaticListenPortId = "auto_listen_port"u8,
-    propertyListenPortId = "listen_port"u8
-  )
+  public static unsafe void settings_get_defaults(Beam.SenderTypes propertiesType, obs_data* settings)
   {
-    if (propertiesType == Beam.SenderTypes.Output)
+    Module.Log($"{propertiesType} settings_get_defaults called", ObsLogLevel.Debug);
+    fixed (byte*
+      propertyEnableId = "enable"u8,
+      propertyIdentifierId = "identifier"u8,
+      propertyIdentifierOutputDefaultText = "Beam Sender Output"u8,
+      propertyIdentifierFilterAvDefaultText = "Beam Sender Filter (Audio/Video)"u8,
+      propertyIdentifierFilterVideoDefaultText = "Beam Sender Filter (Video only)"u8,
+      propertyIdentifierFilterAudioDefaultText = "Beam Sender Filter (Audio only)"u8,
+      propertyIdentifierRelayDefaultText = "Beam Sender Relay"u8,
+      propertyCompressionShowOnlyRecommendedId = "compression_recommended_only"u8,
+      propertyCompressionQoiLevelId = "compression_qoi_level"u8,
+      propertyCompressionQoyLevelId = "compression_qoy_level"u8,
+      propertyCompressionDensityLevelId = "compression_density_level"u8,
+      propertyCompressionDensityStrengthId = "compression_density_strength"u8,
+      propertyCompressionQoirLevelId = "compression_qoir_level"u8,
+      propertyCompressionJpegId = "compression_jpeg"u8,
+      propertyCompressionJpegQualityId = "compression_jpeg_quality"u8,
+      propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
+      propertyCompressionLz4LevelId = "compression_lz4_level"u8,
+      propertyCompressionMainThreadId = "compression_main_thread"u8,
+      propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyConnectionTypeSocketId = "connection_type_socket"u8,
+      propertyAutomaticListenPortId = "auto_listen_port"u8,
+      propertyListenPortId = "listen_port"u8
+    )
     {
-      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(false)); // an active output blocks several OBS settings, enabling this should be a conscious decision by the user
-      ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierOutputDefaultText);
-    }
-    else
-    {
-      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(true)); // a filter or relay is not blocking anything and disabling it should be rarely necessary, so it can be enabled by default
-      if (propertiesType == Beam.SenderTypes.FilterAudioVideo)
-        ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierFilterAvDefaultText);
-      else if (propertiesType == Beam.SenderTypes.FilterVideo)
-        ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierFilterVideoDefaultText);
-      else if (propertiesType == Beam.SenderTypes.FilterAudio)
-        ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierFilterAudioDefaultText);
-      else if (propertiesType == Beam.SenderTypes.Relay)
-        ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierRelayDefaultText);
-    }
+      if (propertiesType == Beam.SenderTypes.Output)
+      {
+        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(false)); // an active output blocks several OBS settings, enabling this should be a conscious decision by the user
+        ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierOutputDefaultText);
+      }
+      else
+      {
+        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyEnableId, Convert.ToByte(true)); // a filter or relay is not blocking anything and disabling it should be rarely necessary, so it can be enabled by default
+        if (propertiesType == Beam.SenderTypes.FilterAudioVideo)
+          ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierFilterAvDefaultText);
+        else if (propertiesType == Beam.SenderTypes.FilterVideo)
+          ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierFilterVideoDefaultText);
+        else if (propertiesType == Beam.SenderTypes.FilterAudio)
+          ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierFilterAudioDefaultText);
+        else if (propertiesType == Beam.SenderTypes.Relay)
+          ObsData.obs_data_set_default_string(settings, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierRelayDefaultText);
+      }
 
-    if (propertiesType is not Beam.SenderTypes.FilterAudio and not Beam.SenderTypes.Relay)
-    {
-      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionShowOnlyRecommendedId, Convert.ToByte(true));
-      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoiLevelId, 10);
-      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoyLevelId, 10);
-      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoirLevelId, 10);
-      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(true));
-      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionJpegQualityId, 90);
-      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionJpegLevelId, 10);
-      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionLz4LevelId, 10);
-      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionDensityLevelId, 10);
-      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionDensityStrengthId, 2);
-      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionMainThreadId, Convert.ToByte(true));
+      if (propertiesType is not Beam.SenderTypes.FilterAudio and not Beam.SenderTypes.Relay)
+      {
+        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionShowOnlyRecommendedId, Convert.ToByte(true));
+        ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoiLevelId, 10);
+        ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoyLevelId, 10);
+        ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionQoirLevelId, 10);
+        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(true));
+        ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionJpegQualityId, 90);
+        ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionJpegLevelId, 10);
+        ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionLz4LevelId, 10);
+        ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionDensityLevelId, 10);
+        ObsData.obs_data_set_default_int(settings, (sbyte*)propertyCompressionDensityStrengthId, 2);
+        ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyCompressionMainThreadId, Convert.ToByte(true));
+      }
+      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(false));
+      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(true));
+      ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyAutomaticListenPortId, Convert.ToByte(true));
+      ObsData.obs_data_set_default_int(settings, (sbyte*)propertyListenPortId, BeamSender.DefaultPort);
     }
-    ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(false));
-    ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(true));
-    ObsData.obs_data_set_default_bool(settings, (sbyte*)propertyAutomaticListenPortId, Convert.ToByte(true));
-    ObsData.obs_data_set_default_int(settings, (sbyte*)propertyListenPortId, BeamSender.DefaultPort);
   }
-}
 
-public unsafe void settings_update(obs_data* settings)
-{
-  Module.Log($"{UniquePrefix} settings_update called", ObsLogLevel.Debug);
-  Initialize(settings);
-  RestartSenderIfNecessary(settings, (PropertiesType == Beam.SenderTypes.Output));
-}
+  public unsafe void settings_update(obs_data* settings)
+  {
+    Module.Log($"{UniquePrefix} settings_update called", ObsLogLevel.Debug);
+    Initialize(settings);
+    RestartSenderIfNecessary(settings, (PropertiesType == Beam.SenderTypes.Output));
+  }
 
-public unsafe void settings_save(obs_data* settings)
-{
-  Module.Log($"{UniquePrefix} settings_save called", ObsLogLevel.Debug);
-  RestartSenderIfNecessary(settings);
-}
-#endregion Callbacks
+  public unsafe void settings_save(obs_data* settings)
+  {
+    Module.Log($"{UniquePrefix} settings_save called", ObsLogLevel.Debug);
+    RestartSenderIfNecessary(settings);
+  }
+  #endregion Callbacks
 #pragma warning restore IDE1006
 
-public bool NativeVideoFormatSupport(Beam.CompressionTypes compressionType, video_format videoFormat)
-{
-  if (!RequiredVideoFormats.ContainsKey(compressionType))
-    return true;
-  return RequiredVideoFormats[compressionType].Contains(videoFormat);
-}
-
-public unsafe video_format GetRequiredVideoFormatConversion()
-{
-  video_format requiredVideoFormat = video_format.VIDEO_FORMAT_NONE;
-  if (RequireVideoFormats == null)
-    return requiredVideoFormat;
-
-  // get current video format
-  obs_video_info* obsVideoInfo = ObsBmem.bzalloc<obs_video_info>();
-  if (Convert.ToBoolean(Obs.obs_get_video_info(obsVideoInfo)) && (obsVideoInfo != null))
+  public bool NativeVideoFormatSupport(Beam.CompressionTypes compressionType, video_format videoFormat)
   {
-    // some compression algorithms can only work with specific color formats
-    if (!RequireVideoFormats.Contains(obsVideoInfo->output_format)) // is a specific format required that is not the currently configured format?
-      requiredVideoFormat = RequireVideoFormats[0]; // the first item on the list is always the preferred format
+    if (!RequiredVideoFormats.ContainsKey(compressionType))
+      return true;
+    return RequiredVideoFormats[compressionType].Contains(videoFormat);
   }
-  ObsBmem.bfree(obsVideoInfo);
-  return requiredVideoFormat;
-}
 
-public unsafe video_format GetRequiredVideoFormatConversion(video_format currentFormat)
-{
-  video_format requiredVideoFormat = video_format.VIDEO_FORMAT_NONE;
-  if (RequireVideoFormats == null)
-    return requiredVideoFormat;
-
-  // some compression algorithms can only work with specific color formats
-  if (!RequireVideoFormats.Contains(currentFormat)) // is a specific format required that is not the currently configured format?
-    requiredVideoFormat = RequireVideoFormats[0]; // the first item on the list is always the preferred format
-
-  return requiredVideoFormat;
-}
-
-#region Event handler helper functions
-private unsafe void RestartSenderIfNecessary(obs_data* settings, bool forceRestart = false)
-{
-  if (!NeedSenderRestart && !forceRestart)
-    return;
-  fixed (byte* propertyEnableId = "enable"u8)
+  public unsafe video_format GetRequiredVideoFormatConversion()
   {
-    var isEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId));
-    if (PropertiesType == Beam.SenderTypes.Output)
+    video_format requiredVideoFormat = video_format.VIDEO_FORMAT_NONE;
+    if (RequireVideoFormats == null)
+      return requiredVideoFormat;
+
+    // get current video format
+    obs_video_info* obsVideoInfo = ObsBmem.bzalloc<obs_video_info>();
+    if (Convert.ToBoolean(Obs.obs_get_video_info(obsVideoInfo)) && (obsVideoInfo != null))
     {
-      if (Output.IsReady)
+      // some compression algorithms can only work with specific color formats
+      if (!RequireVideoFormats.Contains(obsVideoInfo->output_format)) // is a specific format required that is not the currently configured format?
+        requiredVideoFormat = RequireVideoFormats[0]; // the first item on the list is always the preferred format
+    }
+    ObsBmem.bfree(obsVideoInfo);
+    return requiredVideoFormat;
+  }
+
+  public unsafe video_format GetRequiredVideoFormatConversion(video_format currentFormat)
+  {
+    video_format requiredVideoFormat = video_format.VIDEO_FORMAT_NONE;
+    if (RequireVideoFormats == null)
+      return requiredVideoFormat;
+
+    // some compression algorithms can only work with specific color formats
+    if (!RequireVideoFormats.Contains(currentFormat)) // is a specific format required that is not the currently configured format?
+      requiredVideoFormat = RequireVideoFormats[0]; // the first item on the list is always the preferred format
+
+    return requiredVideoFormat;
+  }
+
+  #region Event handler helper functions
+  private unsafe void RestartSenderIfNecessary(obs_data* settings, bool forceRestart = false)
+  {
+    if (!NeedSenderRestart && !forceRestart)
+      return;
+    fixed (byte* propertyEnableId = "enable"u8)
+    {
+      var isEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId));
+      if (PropertiesType == Beam.SenderTypes.Output)
       {
-        if (Output.IsActive || !isEnabled) // need to stop the output to apply settings changes
+        if (Output.IsReady)
         {
-          Output.Stop();
-          if (isEnabled) // a bit of delay is necessary if the output was started before
-            Task.Delay(1000).ContinueWith((t) => Output.Start());
+          if (Output.IsActive || !isEnabled) // need to stop the output to apply settings changes
+          {
+            Output.Stop();
+            if (isEnabled) // a bit of delay is necessary if the output was started before
+              Task.Delay(1000).ContinueWith((t) => Output.Start());
+          }
+          else if (isEnabled)
+            Output.Start();
+        }
+      }
+      else if (Filter != null)
+      {
+        if (Filter.IsActive || !isEnabled) // need to stop the filter to apply settings changes
+        {
+          Filter.Disable();
+          if (isEnabled) // a bit of delay is necessary if the filter was started before
+            Task.Delay(1000).ContinueWith((t) => Filter.Enable());
         }
         else if (isEnabled)
-          Output.Start();
+          Filter.Enable();
       }
     }
-    else if (Filter != null)
+    NeedSenderRestart = false;
+  }
+
+  private void EventHandlerNeedSenderRestartCheck(string eventHandlerName)
+  {
+    if (PropertiesType is Beam.SenderTypes.Output or Beam.SenderTypes.Relay) // the output and relay source just always update on settings_update
+      return;
+    if (_initializedEventHandlers.Contains(eventHandlerName)) // this is not the init call, something actually changed, therefore a restart is necessary
     {
-      if (Filter.IsActive || !isEnabled) // need to stop the filter to apply settings changes
+      NeedSenderRestart = true;
+      Module.Log($"{UniquePrefix} sender restart requested from {eventHandlerName}.", ObsLogLevel.Debug);
+    }
+    else // this is just the init call after opening the settings, the setting didn't actually change, therefore no restart is necessary
+      _initializedEventHandlers.Add(eventHandlerName);
+  }
+
+  private unsafe void UpdateCompressionSettings(obs_data* settings)
+  {
+    fixed (byte*
+      propertyCompressionShowOnlyRecommendedId = "compression_recommended_only"u8,
+      propertyCompressionJpegId = "compression_jpeg"u8,
+      propertyCompressionJpegQualityId = "compression_jpeg_quality"u8,
+      propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
+      propertyCompressionJpegLibraryMissingWarningId = "compression_jpeg_library_missing_warning_text"u8,
+      propertyCompressionJpegLibraryMissingHelpId = "compression_jpeg_library_missing_help"u8,
+      propertyCompressionQoiId = "compression_qoi"u8,
+      propertyCompressionQoiLevelId = "compression_qoi_level"u8,
+      propertyCompressionQoyId = "compression_qoy"u8,
+      propertyCompressionQoyLevelId = "compression_qoy_level"u8,
+      propertyCompressionQoirId = "compression_qoir"u8,
+      propertyCompressionQoirLevelId = "compression_qoir_level"u8,
+      propertyCompressionLz4Id = "compression_lz4"u8,
+      propertyCompressionLz4LevelId = "compression_lz4_level"u8,
+      propertyCompressionDensityId = "compression_density"u8,
+      propertyCompressionDensityLevelId = "compression_density_level"u8,
+      propertyCompressionMainThreadId = "compression_main_thread"u8,
+      propertyCompressionFormatWarningId = "compression_format_warning_text"u8
+    )
+    {
+      // get current settings after the change
+      var showOnlyRecommended = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionShowOnlyRecommendedId));
+      var jpegCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionJpegId));
+      var qoiCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoiId));
+      var qoyCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoyId));
+      var qoirCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoirId));
+      var lz4CompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionLz4Id));
+      var densityCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionDensityId));
+
+      // get video format currently configured in OBS
+      obs_video_info* obsVideoInfo = ObsBmem.bzalloc<obs_video_info>();
+      video_format obsVideoFormat = video_format.VIDEO_FORMAT_NONE;
+      if (Convert.ToBoolean(Obs.obs_get_video_info(obsVideoInfo)) && (obsVideoInfo != null))
+        obsVideoFormat = obsVideoInfo->output_format;
+      ObsBmem.bfree(obsVideoInfo);
+
+      // fixed list of compression algorithms and their supported video formats
+      RequiredVideoFormats.Clear();
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Qoi, new[] { video_format.VIDEO_FORMAT_BGRA });
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Qoir, new[] { video_format.VIDEO_FORMAT_BGRA });
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Qoy, new[] { video_format.VIDEO_FORMAT_NV12 });
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Jpeg, new[]
       {
-        Filter.Disable();
-        if (isEnabled) // a bit of delay is necessary if the filter was started before
-          Task.Delay(1000).ContinueWith((t) => Filter.Enable());
-      }
-      else if (isEnabled)
-        Filter.Enable();
-    }
-  }
-  NeedSenderRestart = false;
-}
-
-private void EventHandlerNeedSenderRestartCheck(string eventHandlerName)
-{
-  if (PropertiesType is Beam.SenderTypes.Output or Beam.SenderTypes.Relay) // the output and relay source just always update on settings_update
-    return;
-  if (_initializedEventHandlers.Contains(eventHandlerName)) // this is not the init call, something actually changed, therefore a restart is necessary
-  {
-    NeedSenderRestart = true;
-    Module.Log($"{UniquePrefix} sender restart requested from {eventHandlerName}.", ObsLogLevel.Debug);
-  }
-  else // this is just the init call after opening the settings, the setting didn't actually change, therefore no restart is necessary
-    _initializedEventHandlers.Add(eventHandlerName);
-}
-
-private unsafe void UpdateCompressionSettings(obs_data* settings)
-{
-  fixed (byte*
-    propertyCompressionShowOnlyRecommendedId = "compression_recommended_only"u8,
-    propertyCompressionJpegId = "compression_jpeg"u8,
-    propertyCompressionJpegQualityId = "compression_jpeg_quality"u8,
-    propertyCompressionJpegLevelId = "compression_jpeg_level"u8,
-    propertyCompressionJpegLibraryMissingWarningId = "compression_jpeg_library_missing_warning_text"u8,
-    propertyCompressionJpegLibraryMissingHelpId = "compression_jpeg_library_missing_help"u8,
-    propertyCompressionQoiId = "compression_qoi"u8,
-    propertyCompressionQoiLevelId = "compression_qoi_level"u8,
-    propertyCompressionQoyId = "compression_qoy"u8,
-    propertyCompressionQoyLevelId = "compression_qoy_level"u8,
-    propertyCompressionQoirId = "compression_qoir"u8,
-    propertyCompressionQoirLevelId = "compression_qoir_level"u8,
-    propertyCompressionLz4Id = "compression_lz4"u8,
-    propertyCompressionLz4LevelId = "compression_lz4_level"u8,
-    propertyCompressionDensityId = "compression_density"u8,
-    propertyCompressionDensityLevelId = "compression_density_level"u8,
-    propertyCompressionMainThreadId = "compression_main_thread"u8,
-    propertyCompressionFormatWarningId = "compression_format_warning_text"u8
-  )
-  {
-    // get current settings after the change
-    var showOnlyRecommended = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionShowOnlyRecommendedId));
-    var jpegCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionJpegId));
-    var qoiCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoiId));
-    var qoyCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoyId));
-    var qoirCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionQoirId));
-    var lz4CompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionLz4Id));
-    var densityCompressionEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyCompressionDensityId));
-
-    // get video format currently configured in OBS
-    obs_video_info* obsVideoInfo = ObsBmem.bzalloc<obs_video_info>();
-    video_format obsVideoFormat = video_format.VIDEO_FORMAT_NONE;
-    if (Convert.ToBoolean(Obs.obs_get_video_info(obsVideoInfo)) && (obsVideoInfo != null))
-      obsVideoFormat = obsVideoInfo->output_format;
-    ObsBmem.bfree(obsVideoInfo);
-
-    // fixed list of compression algorithms and their supported video formats
-    RequiredVideoFormats.Clear();
-    RequiredVideoFormats.Add(Beam.CompressionTypes.Qoi, new[] { video_format.VIDEO_FORMAT_BGRA });
-    RequiredVideoFormats.Add(Beam.CompressionTypes.Qoir, new[] { video_format.VIDEO_FORMAT_BGRA });
-    RequiredVideoFormats.Add(Beam.CompressionTypes.Qoy, new[] { video_format.VIDEO_FORMAT_NV12 });
-    RequiredVideoFormats.Add(Beam.CompressionTypes.Jpeg, new[]
-    {
         video_format.VIDEO_FORMAT_I420, // native support by libjpeg-turbo
         video_format.VIDEO_FORMAT_I40A, // no native support by libjpeg-turbo, alpha will be dropped so that it becomes I420
         video_format.VIDEO_FORMAT_I422, // native support by libjpeg-turbo
@@ -793,330 +791,330 @@ private unsafe void UpdateCompressionSettings(obs_data* settings)
         video_format.VIDEO_FORMAT_RGBA, // native support by libjpeg-turbo
       });
 
-    // if only recommended items are configured to be shown: hide compression algorithms that don't natively support the current OBS video format or have a superior alternative available
-    var qoiRecommended = !showOnlyRecommended || (NativeVideoFormatSupport(Beam.CompressionTypes.Qoi, obsVideoFormat) && !EncoderSupport.QoirLib);
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionQoiId), Convert.ToByte(qoiRecommended));
-    var qoirRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Qoir, obsVideoFormat);
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionQoirId), Convert.ToByte(qoirRecommended));
-    var qoyRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Qoy, obsVideoFormat);
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionQoyId), Convert.ToByte(qoyRecommended));
-    var lz4Recommended = !showOnlyRecommended || (NativeVideoFormatSupport(Beam.CompressionTypes.Lz4, obsVideoFormat) && !EncoderSupport.DensityApi);
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionLz4Id), Convert.ToByte(lz4Recommended));
-    var densityRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Density, obsVideoFormat);
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionDensityId), Convert.ToByte(densityRecommended));
-    var jpegRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Jpeg, obsVideoFormat);
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionJpegId), Convert.ToByte(jpegRecommended));
-    if (!EncoderSupport.LibJpegTurbo) // if the JPEG library is missing, a warning text and help button have been added...
-    {
-      // ...only show these if the JPEG option is visible
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionJpegLibraryMissingWarningId), Convert.ToByte(jpegRecommended));
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionJpegLibraryMissingHelpId), Convert.ToByte(jpegRecommended));
-    }
+      // if only recommended items are configured to be shown: hide compression algorithms that don't natively support the current OBS video format or have a superior alternative available
+      var qoiRecommended = !showOnlyRecommended || (NativeVideoFormatSupport(Beam.CompressionTypes.Qoi, obsVideoFormat) && !EncoderSupport.QoirLib);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionQoiId), Convert.ToByte(qoiRecommended));
+      var qoirRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Qoir, obsVideoFormat);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionQoirId), Convert.ToByte(qoirRecommended));
+      var qoyRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Qoy, obsVideoFormat);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionQoyId), Convert.ToByte(qoyRecommended));
+      var lz4Recommended = !showOnlyRecommended || (NativeVideoFormatSupport(Beam.CompressionTypes.Lz4, obsVideoFormat) && !EncoderSupport.DensityApi);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionLz4Id), Convert.ToByte(lz4Recommended));
+      var densityRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Density, obsVideoFormat);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionDensityId), Convert.ToByte(densityRecommended));
+      var jpegRecommended = !showOnlyRecommended || NativeVideoFormatSupport(Beam.CompressionTypes.Jpeg, obsVideoFormat);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionJpegId), Convert.ToByte(jpegRecommended));
+      if (!EncoderSupport.LibJpegTurbo) // if the JPEG library is missing, a warning text and help button have been added...
+      {
+        // ...only show these if the JPEG option is visible
+        ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionJpegLibraryMissingWarningId), Convert.ToByte(jpegRecommended));
+        ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionJpegLibraryMissingHelpId), Convert.ToByte(jpegRecommended));
+      }
 
-    // handle the special case where JPEG is enabled but is hidden by the setting to only show recommended options or the library couldn't be loaded, in this case force disable this option
-    if (jpegCompressionEnabled && (!EncoderSupport.LibJpegTurbo || !jpegRecommended))
-    {
-      jpegCompressionEnabled = false;
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(jpegCompressionEnabled));
-    }
+      // handle the special case where JPEG is enabled but is hidden by the setting to only show recommended options or the library couldn't be loaded, in this case force disable this option
+      if (jpegCompressionEnabled && (!EncoderSupport.LibJpegTurbo || !jpegRecommended))
+      {
+        jpegCompressionEnabled = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(jpegCompressionEnabled));
+      }
 
-    // handle the special case where QOIR is enabled but is hidden by the setting to only show recommended options or the library couldn't be loaded, in this case force disable this option
-    if (qoirCompressionEnabled && (!EncoderSupport.QoirLib || !qoirRecommended))
-    {
-      qoirCompressionEnabled = false;
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(qoirCompressionEnabled));
-    }
+      // handle the special case where QOIR is enabled but is hidden by the setting to only show recommended options or the library couldn't be loaded, in this case force disable this option
+      if (qoirCompressionEnabled && (!EncoderSupport.QoirLib || !qoirRecommended))
+      {
+        qoirCompressionEnabled = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(qoirCompressionEnabled));
+      }
 
-    // handle the special case where Density is enabled but is hidden by the setting to only show recommended options or the library couldn't be loaded, in this case force disable this option
-    if (densityCompressionEnabled && (!EncoderSupport.DensityApi || !densityRecommended))
-    {
-      densityCompressionEnabled = false;
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(densityCompressionEnabled));
-    }
+      // handle the special case where Density is enabled but is hidden by the setting to only show recommended options or the library couldn't be loaded, in this case force disable this option
+      if (densityCompressionEnabled && (!EncoderSupport.DensityApi || !densityRecommended))
+      {
+        densityCompressionEnabled = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(densityCompressionEnabled));
+      }
 
-    // handle the special case where LZ4 is enabled but is hidden by the setting to only show recommended options, in this case force disable this option
-    if (lz4CompressionEnabled && !lz4Recommended)
-    {
-      lz4CompressionEnabled = false;
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(lz4CompressionEnabled));
-    }
+      // handle the special case where LZ4 is enabled but is hidden by the setting to only show recommended options, in this case force disable this option
+      if (lz4CompressionEnabled && !lz4Recommended)
+      {
+        lz4CompressionEnabled = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(lz4CompressionEnabled));
+      }
 
-    // handle the special case where QOI is enabled but is hidden by the setting to only show recommended options, in this case force disable this option
-    if (qoiCompressionEnabled && !qoiRecommended)
-    {
-      qoiCompressionEnabled = false;
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(qoiCompressionEnabled));
-    }
+      // handle the special case where QOI is enabled but is hidden by the setting to only show recommended options, in this case force disable this option
+      if (qoiCompressionEnabled && !qoiRecommended)
+      {
+        qoiCompressionEnabled = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(qoiCompressionEnabled));
+      }
 
-    // handle the special case where QOY is enabled but is hidden by the setting to only show recommended options, in this case force disable this option
-    if (qoyCompressionEnabled && !qoyRecommended)
-    {
-      qoyCompressionEnabled = false;
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(qoyCompressionEnabled));
-    }
+      // handle the special case where QOY is enabled but is hidden by the setting to only show recommended options, in this case force disable this option
+      if (qoyCompressionEnabled && !qoyRecommended)
+      {
+        qoyCompressionEnabled = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(qoyCompressionEnabled));
+      }
 
-    // react to setting changes, avoid mixing incompatible settings
-    if (jpegCompressionEnabled && !JpegCompression)
-    {
-      JpegCompression = jpegCompressionEnabled;
-      QoiCompression = false;
-      QoyCompression = false;
-      QoirCompression = false;
-      Lz4Compression = false;
-      DensityCompression = false;
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(QoyCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(Lz4Compression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(DensityCompression));
-    }
-    else if (qoiCompressionEnabled && !QoiCompression)
-    {
-      QoiCompression = qoiCompressionEnabled;
-      QoyCompression = false;
-      JpegCompression = false;
-      Lz4Compression = false;
-      QoirCompression = false;
-      DensityCompression = false;
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(QoyCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(Lz4Compression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(DensityCompression));
-    }
-    else if (qoyCompressionEnabled && !QoyCompression)
-    {
-      QoyCompression = qoyCompressionEnabled;
-      QoiCompression = false;
-      JpegCompression = false;
-      Lz4Compression = false;
-      QoirCompression = false;
-      DensityCompression = false;
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(QoyCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(Lz4Compression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(DensityCompression));
-    }
-    else if (qoirCompressionEnabled && !QoirCompression)
-    {
-      QoirCompression = qoirCompressionEnabled;
-      QoiCompression = false;
-      QoyCompression = false;
-      Lz4Compression = false;
-      JpegCompression = false;
-      DensityCompression = false;
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(QoyCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(Lz4Compression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(DensityCompression));
-    }
-    else if (lz4CompressionEnabled && !Lz4Compression)
-    {
-      Lz4Compression = lz4CompressionEnabled;
-      QoiCompression = false;
-      QoyCompression = false;
-      JpegCompression = false;
-      QoirCompression = false;
-      DensityCompression = false;
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(QoyCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(DensityCompression));
-    }
-    else if (densityCompressionEnabled && !DensityCompression)
-    {
-      DensityCompression = densityCompressionEnabled;
-      QoiCompression = false;
-      QoyCompression = false;
-      Lz4Compression = false;
-      JpegCompression = false;
-      QoirCompression = false;
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(QoyCompression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(Lz4Compression));
-      ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
-    }
-    else
-    {
-      JpegCompression = jpegCompressionEnabled;
-      QoiCompression = qoiCompressionEnabled;
-      QoyCompression = qoyCompressionEnabled;
-      QoirCompression = qoirCompressionEnabled;
-      Lz4Compression = lz4CompressionEnabled;
-      DensityCompression = densityCompressionEnabled;
-    }
+      // react to setting changes, avoid mixing incompatible settings
+      if (jpegCompressionEnabled && !JpegCompression)
+      {
+        JpegCompression = jpegCompressionEnabled;
+        QoiCompression = false;
+        QoyCompression = false;
+        QoirCompression = false;
+        Lz4Compression = false;
+        DensityCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(QoyCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(Lz4Compression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(DensityCompression));
+      }
+      else if (qoiCompressionEnabled && !QoiCompression)
+      {
+        QoiCompression = qoiCompressionEnabled;
+        QoyCompression = false;
+        JpegCompression = false;
+        Lz4Compression = false;
+        QoirCompression = false;
+        DensityCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(QoyCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(Lz4Compression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(DensityCompression));
+      }
+      else if (qoyCompressionEnabled && !QoyCompression)
+      {
+        QoyCompression = qoyCompressionEnabled;
+        QoiCompression = false;
+        JpegCompression = false;
+        Lz4Compression = false;
+        QoirCompression = false;
+        DensityCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(QoyCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(Lz4Compression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(DensityCompression));
+      }
+      else if (qoirCompressionEnabled && !QoirCompression)
+      {
+        QoirCompression = qoirCompressionEnabled;
+        QoiCompression = false;
+        QoyCompression = false;
+        Lz4Compression = false;
+        JpegCompression = false;
+        DensityCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(QoyCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(Lz4Compression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(DensityCompression));
+      }
+      else if (lz4CompressionEnabled && !Lz4Compression)
+      {
+        Lz4Compression = lz4CompressionEnabled;
+        QoiCompression = false;
+        QoyCompression = false;
+        JpegCompression = false;
+        QoirCompression = false;
+        DensityCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(QoyCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionDensityId, Convert.ToByte(DensityCompression));
+      }
+      else if (densityCompressionEnabled && !DensityCompression)
+      {
+        DensityCompression = densityCompressionEnabled;
+        QoiCompression = false;
+        QoyCompression = false;
+        Lz4Compression = false;
+        JpegCompression = false;
+        QoirCompression = false;
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionJpegId, Convert.ToByte(JpegCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoiId, Convert.ToByte(QoiCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoyId, Convert.ToByte(QoyCompression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionLz4Id, Convert.ToByte(Lz4Compression));
+        ObsData.obs_data_set_bool(settings, (sbyte*)propertyCompressionQoirId, Convert.ToByte(QoirCompression));
+      }
+      else
+      {
+        JpegCompression = jpegCompressionEnabled;
+        QoiCompression = qoiCompressionEnabled;
+        QoyCompression = qoyCompressionEnabled;
+        QoirCompression = qoirCompressionEnabled;
+        Lz4Compression = lz4CompressionEnabled;
+        DensityCompression = densityCompressionEnabled;
+      }
 
-    // derive video format requirements from the settings
-    if (QoiCompression || QoirCompression)
-      RequireVideoFormats = RequiredVideoFormats[Beam.CompressionTypes.Qoi];
-    else if (QoyCompression)
-      RequireVideoFormats = RequiredVideoFormats[Beam.CompressionTypes.Qoy];
-    else if (JpegCompression)
-      RequireVideoFormats = RequiredVideoFormats[Beam.CompressionTypes.Jpeg];
-    else
-      RequireVideoFormats = null;
+      // derive video format requirements from the settings
+      if (QoiCompression || QoirCompression)
+        RequireVideoFormats = RequiredVideoFormats[Beam.CompressionTypes.Qoi];
+      else if (QoyCompression)
+        RequireVideoFormats = RequiredVideoFormats[Beam.CompressionTypes.Qoy];
+      else if (JpegCompression)
+        RequireVideoFormats = RequiredVideoFormats[Beam.CompressionTypes.Jpeg];
+      else
+        RequireVideoFormats = null;
 
-    var requiredVideoFormatConversion = GetRequiredVideoFormatConversion();
-    if (requiredVideoFormatConversion != video_format.VIDEO_FORMAT_NONE)
-    {
-      var compressionFormatWarningProperty = ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionFormatWarningId);
-      fixed (byte* propertyCompressionFormatWarningText = Module.ObsText("CompressionFormatWarningText", requiredVideoFormatConversion.ToString().Replace("VIDEO_FORMAT_", "")))
-        ObsProperties.obs_property_set_description(compressionFormatWarningProperty, (sbyte*)propertyCompressionFormatWarningText);
-      ObsProperties.obs_property_set_visible(compressionFormatWarningProperty, Convert.ToByte(true));
+      var requiredVideoFormatConversion = GetRequiredVideoFormatConversion();
+      if (requiredVideoFormatConversion != video_format.VIDEO_FORMAT_NONE)
+      {
+        var compressionFormatWarningProperty = ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionFormatWarningId);
+        fixed (byte* propertyCompressionFormatWarningText = Module.ObsText("CompressionFormatWarningText", requiredVideoFormatConversion.ToString().Replace("VIDEO_FORMAT_", "")))
+          ObsProperties.obs_property_set_description(compressionFormatWarningProperty, (sbyte*)propertyCompressionFormatWarningText);
+        ObsProperties.obs_property_set_visible(compressionFormatWarningProperty, Convert.ToByte(true));
+      }
+      else
+        ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionFormatWarningId), Convert.ToByte(false));
+
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(QoiCompression || QoyCompression || QoirCompression || JpegCompression || Lz4Compression || DensityCompression));
     }
-    else
-      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionFormatWarningId), Convert.ToByte(false));
-
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(Properties, (sbyte*)propertyCompressionMainThreadId), Convert.ToByte(QoiCompression || QoyCompression || QoirCompression || JpegCompression || Lz4Compression || DensityCompression));
   }
-}
 
-public unsafe void CheckNetworkInterfaces(obs_properties* properties, obs_data* settings)
-{
-  fixed (byte*
-    propertyConnectionTypeSocketId = "connection_type_socket"u8,
-    propertyNetworkInterfaceNoLocalAddressWarningId = "network_interface_no_local_address_warning_text"u8
-  )
+  public unsafe void CheckNetworkInterfaces(obs_properties* properties, obs_data* settings)
   {
-    var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
-    var networkInterfaceAddress = NetworkInterfaceAddress;
-    Module.Log($"{UniquePrefix} Network interface set to: {NetworkInterfaceName}", ObsLogLevel.Info);
-    bool showNoLocalAddressWarning = (!connectionTypePipe &&
-                                      (((networkInterfaceAddress == IPAddress.Any) && !NetworkInterfacesHaveLocalAddress) ||
-                                      ((networkInterfaceAddress != IPAddress.Any) && (!NetworkInterfaces.IsLocalAddress(networkInterfaceAddress)))));
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceNoLocalAddressWarningId), Convert.ToByte(showNoLocalAddressWarning));
-    if (showNoLocalAddressWarning)
-      Module.Log($"{UniquePrefix} {NetworkInterfaceName}: {Module.ObsTextString("NetworkInterfaceNoLocalAddressWarningText")}", ObsLogLevel.Warning);
+    fixed (byte*
+      propertyConnectionTypeSocketId = "connection_type_socket"u8,
+      propertyNetworkInterfaceNoLocalAddressWarningId = "network_interface_no_local_address_warning_text"u8
+    )
+    {
+      var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
+      var networkInterfaceAddress = NetworkInterfaceAddress;
+      Module.Log($"{UniquePrefix} Network interface set to: {NetworkInterfaceName}", ObsLogLevel.Info);
+      bool showNoLocalAddressWarning = (!connectionTypePipe &&
+                                        (((networkInterfaceAddress == IPAddress.Any) && !NetworkInterfacesHaveLocalAddress) ||
+                                        ((networkInterfaceAddress != IPAddress.Any) && (!NetworkInterfaces.IsLocalAddress(networkInterfaceAddress)))));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceNoLocalAddressWarningId), Convert.ToByte(showNoLocalAddressWarning));
+      if (showNoLocalAddressWarning)
+        Module.Log($"{UniquePrefix} {NetworkInterfaceName}: {Module.ObsTextString("NetworkInterfaceNoLocalAddressWarningText")}", ObsLogLevel.Warning);
+    }
   }
-}
-#endregion Event handler helper functions
+  #endregion Event handler helper functions
 
-#region Event handlers
-[UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-public static unsafe byte EnableChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-{
-  fixed (byte* propertyEnableId = "enable"u8)
+  #region Event handlers
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte EnableChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
-    var isEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId));
-    var senderProperties = GetProperties(properties);
-    senderProperties.EventHandlerNeedSenderRestartCheck("EnableChangedEventHandler");
-    senderProperties.RestartSenderIfNecessary(settings);
+    fixed (byte* propertyEnableId = "enable"u8)
+    {
+      var isEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId));
+      var senderProperties = GetProperties(properties);
+      senderProperties.EventHandlerNeedSenderRestartCheck("EnableChangedEventHandler");
+      senderProperties.RestartSenderIfNecessary(settings);
+    }
+    return Convert.ToByte(false);
   }
-  return Convert.ToByte(false);
-}
 
-[UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-public static unsafe byte AutomaticListenPortEnabledChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-{
-  fixed (byte*
-    propertyConnectionTypePipeId = "connection_type_pipe"u8,
-    propertyAutomaticListenPortId = "auto_listen_port"u8,
-    propertyListenPortId = "listen_port"u8
-  )
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte AutomaticListenPortEnabledChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
-    var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
-    var automaticListenPort = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyAutomaticListenPortId));
-    var senderProperties = GetProperties(properties);
-    Module.Log($"{senderProperties.UniquePrefix} Automatic listen port enabled: {automaticListenPort}", ObsLogLevel.Debug);
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe && !automaticListenPort));
-    senderProperties.EventHandlerNeedSenderRestartCheck("AutomaticListenPortEnabledChangedEventHandler");
-    return Convert.ToByte(true);
+    fixed (byte*
+      propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyAutomaticListenPortId = "auto_listen_port"u8,
+      propertyListenPortId = "listen_port"u8
+    )
+    {
+      var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
+      var automaticListenPort = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyAutomaticListenPortId));
+      var senderProperties = GetProperties(properties);
+      Module.Log($"{senderProperties.UniquePrefix} Automatic listen port enabled: {automaticListenPort}", ObsLogLevel.Debug);
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe && !automaticListenPort));
+      senderProperties.EventHandlerNeedSenderRestartCheck("AutomaticListenPortEnabledChangedEventHandler");
+      return Convert.ToByte(true);
+    }
   }
-}
 
-[UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-public static unsafe byte ConnectionTypePipeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-{
-  fixed (byte*
-    propertyConnectionTypePipeId = "connection_type_pipe"u8,
-    propertyConnectionTypeSocketId = "connection_type_socket"u8,
-    propertyNetworkInterfaceListId = "network_interface_list"u8,
-    propertyAutomaticListenPortId = "auto_listen_port"u8,
-    propertyListenPortId = "listen_port"u8
-  )
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte ConnectionTypePipeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
-    var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
-    var automaticListenPort = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyAutomaticListenPortId));
-    ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(!connectionTypePipe));
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyAutomaticListenPortId), Convert.ToByte(!connectionTypePipe));
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe && !automaticListenPort));
+    fixed (byte*
+      propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyConnectionTypeSocketId = "connection_type_socket"u8,
+      propertyNetworkInterfaceListId = "network_interface_list"u8,
+      propertyAutomaticListenPortId = "auto_listen_port"u8,
+      propertyListenPortId = "listen_port"u8
+    )
+    {
+      var connectionTypePipe = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypePipeId));
+      var automaticListenPort = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyAutomaticListenPortId));
+      ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypeSocketId, Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyAutomaticListenPortId), Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe && !automaticListenPort));
+      var senderProperties = GetProperties(properties);
+      senderProperties.CheckNetworkInterfaces(properties, settings);
+      Module.Log($"{senderProperties.UniquePrefix} Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
+      senderProperties.EventHandlerNeedSenderRestartCheck("ConnectionTypePipeChangedEventHandler");
+      return Convert.ToByte(true);
+    }
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte ConnectionTypeSocketChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte*
+      propertyConnectionTypePipeId = "connection_type_pipe"u8,
+      propertyConnectionTypeSocketId = "connection_type_socket"u8,
+      propertyNetworkInterfaceListId = "network_interface_list"u8,
+      propertyAutomaticListenPortId = "auto_listen_port"u8,
+      propertyListenPortId = "listen_port"u8
+    )
+    {
+      var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
+      var automaticListenPort = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyAutomaticListenPortId));
+      ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyAutomaticListenPortId), Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
+      ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe && !automaticListenPort));
+      var senderProperties = GetProperties(properties);
+      senderProperties.CheckNetworkInterfaces(properties, settings);
+      Module.Log($"{senderProperties.UniquePrefix} Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
+      senderProperties.EventHandlerNeedSenderRestartCheck("ConnectionTypeSocketChangedEventHandler");
+      return Convert.ToByte(true);
+    }
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte NetworkInterfaceChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
     var senderProperties = GetProperties(properties);
     senderProperties.CheckNetworkInterfaces(properties, settings);
-    Module.Log($"{senderProperties.UniquePrefix} Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
-    senderProperties.EventHandlerNeedSenderRestartCheck("ConnectionTypePipeChangedEventHandler");
+    senderProperties.EventHandlerNeedSenderRestartCheck("NetworkInterfaceChangedEventHandler");
     return Convert.ToByte(true);
   }
-}
 
-[UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-public static unsafe byte ConnectionTypeSocketChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-{
-  fixed (byte*
-    propertyConnectionTypePipeId = "connection_type_pipe"u8,
-    propertyConnectionTypeSocketId = "connection_type_socket"u8,
-    propertyNetworkInterfaceListId = "network_interface_list"u8,
-    propertyAutomaticListenPortId = "auto_listen_port"u8,
-    propertyListenPortId = "listen_port"u8
-  )
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte CompressionSettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
-    var connectionTypePipe = !Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyConnectionTypeSocketId));
-    var automaticListenPort = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyAutomaticListenPortId));
-    ObsData.obs_data_set_bool(settings, (sbyte*)propertyConnectionTypePipeId, Convert.ToByte(connectionTypePipe));
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyAutomaticListenPortId), Convert.ToByte(!connectionTypePipe));
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyNetworkInterfaceListId), Convert.ToByte(!connectionTypePipe));
-    ObsProperties.obs_property_set_visible(ObsProperties.obs_properties_get(properties, (sbyte*)propertyListenPortId), Convert.ToByte(!connectionTypePipe && !automaticListenPort));
+    string propertyName = Marshal.PtrToStringUTF8((IntPtr)ObsProperties.obs_property_name(prop))!;
     var senderProperties = GetProperties(properties);
-    senderProperties.CheckNetworkInterfaces(properties, settings);
-    Module.Log($"{senderProperties.UniquePrefix} Connection type changed to: " + (connectionTypePipe ? "pipe" : "socket"), ObsLogLevel.Debug);
-    senderProperties.EventHandlerNeedSenderRestartCheck("ConnectionTypeSocketChangedEventHandler");
+    senderProperties.UpdateCompressionSettings(settings);
+    senderProperties.EventHandlerNeedSenderRestartCheck("CompressionSettingChangedEventHandler: " + propertyName);
     return Convert.ToByte(true);
   }
-}
 
-[UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-public static unsafe byte NetworkInterfaceChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-{
-  var senderProperties = GetProperties(properties);
-  senderProperties.CheckNetworkInterfaces(properties, settings);
-  senderProperties.EventHandlerNeedSenderRestartCheck("NetworkInterfaceChangedEventHandler");
-  return Convert.ToByte(true);
-}
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte CompressionJpegQualitySettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    GetProperties(properties).EventHandlerNeedSenderRestartCheck("CompressionJpegQualitySettingChangedEventHandler");
+    return Convert.ToByte(false);
+  }
 
-[UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-public static unsafe byte CompressionSettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-{
-  string propertyName = Marshal.PtrToStringUTF8((IntPtr)ObsProperties.obs_property_name(prop))!;
-  var senderProperties = GetProperties(properties);
-  senderProperties.UpdateCompressionSettings(settings);
-  senderProperties.EventHandlerNeedSenderRestartCheck("CompressionSettingChangedEventHandler: " + propertyName);
-  return Convert.ToByte(true);
-}
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte CompressionMainThreadChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    GetProperties(properties).EventHandlerNeedSenderRestartCheck("CompressionMainThreadChangedEventHandler");
+    return Convert.ToByte(false);
+  }
 
-[UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-public static unsafe byte CompressionJpegQualitySettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-{
-  GetProperties(properties).EventHandlerNeedSenderRestartCheck("CompressionJpegQualitySettingChangedEventHandler");
-  return Convert.ToByte(false);
-}
-
-[UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-public static unsafe byte CompressionMainThreadChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-{
-  GetProperties(properties).EventHandlerNeedSenderRestartCheck("CompressionMainThreadChangedEventHandler");
-  return Convert.ToByte(false);
-}
-
-[UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
-public static unsafe byte IdentifierSettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
-{
-  GetProperties(properties).EventHandlerNeedSenderRestartCheck("IdentifierSettingChangedEventHandler");
-  return Convert.ToByte(false);
-}
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte IdentifierSettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    GetProperties(properties).EventHandlerNeedSenderRestartCheck("IdentifierSettingChangedEventHandler");
+    return Convert.ToByte(false);
+  }
   #endregion Event handlers
 }
