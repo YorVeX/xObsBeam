@@ -28,12 +28,12 @@ public static partial class NetworkInterfaces
     UpdateNetworkInterfaces();
     NetworkChange.NetworkAvailabilityChanged += (sender, e) =>
     {
-      Module.Log($"Refreshing list of network interfaces after NetworkAvailabilityChanged event.", ObsLogLevel.Debug);
+      Module.Log($"Received NetworkAvailabilityChanged event.", ObsLogLevel.Debug);
       UpdateNetworkInterfaces();
     };
     NetworkChange.NetworkAddressChanged += (sender, e) =>
     {
-      Module.Log($"Refreshing list of network interfaces after NetworkAddressChanged event.", ObsLogLevel.Debug);
+      Module.Log($"Received NetworkAddressChanged event.", ObsLogLevel.Debug);
       UpdateNetworkInterfaces();
     };
   }
@@ -41,6 +41,7 @@ public static partial class NetworkInterfaces
   public static void UpdateNetworkInterfaces()
   {
     var networkInterfacesWithIds = new List<(UnicastIPAddressInformation, string)>();
+    Module.Log($"Refreshing list of network interfaces...", ObsLogLevel.Debug);
     var networkInterfaces = NetworkInterface.GetAllNetworkInterfaces();
     foreach (var networkInterface in networkInterfaces)
     {
@@ -65,6 +66,7 @@ public static partial class NetworkInterfaces
       _networkInterfaces = networkInterfaces;
       _unicastAddressesWithIds = networkInterfacesWithIds;
     }
+    Module.Log($"Refreshing list of network interfaces done.", ObsLogLevel.Debug);
   }
 
   public static NetworkInterface[] GetAllNetworkInterfaces()
