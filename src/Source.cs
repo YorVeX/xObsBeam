@@ -400,6 +400,7 @@ public class Source
         if (!foundExactPreviousPipePeer && !string.IsNullOrEmpty(previousPipeFeedsListSelectionValue) && (previousPipeFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) && (previousPipeFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
         {
           // then make this transparent by adding this as a disabled list item
+          Module.Log($"Peer Discovery: previously selected feed \"{previousPipeFeedsListSelectionName}\" not found anymore.", ObsLogLevel.Warning);
           fixed (byte* listItemName = Encoding.UTF8.GetBytes(previousPipeFeedsListSelectionName), listItemValue = Encoding.UTF8.GetBytes(previousPipeFeedsListSelectionValue))
             ObsProperties.obs_property_list_insert_string(peerDiscoveryAvailablePipeFeedsList, 1, (sbyte*)listItemName, (sbyte*)listItemValue);
           ObsProperties.obs_property_list_item_disable(peerDiscoveryAvailablePipeFeedsList, 1, Convert.ToByte(true));
@@ -409,6 +410,7 @@ public class Source
         if (!foundExactPreviousSocketPeer && !string.IsNullOrEmpty(previousSocketFeedsListSelectionValue) && (previousSocketFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedsFoundText")) && (previousSocketFeedsListSelectionValue != Module.ObsTextString("PeerDiscoveryNoFeedSelectedText")))
         {
           // then make this transparent by adding this as a disabled list item
+          Module.Log($"Peer Discovery: previously selected feed \"{previousSocketFeedsListSelectionName}\" not found anymore.", ObsLogLevel.Warning);
           fixed (byte* listItemName = Encoding.UTF8.GetBytes(previousSocketFeedsListSelectionName), listItemValue = Encoding.UTF8.GetBytes(previousSocketFeedsListSelectionValue))
             ObsProperties.obs_property_list_insert_string(peerDiscoveryAvailableSocketFeedsList, 1, (sbyte*)listItemName, (sbyte*)listItemValue);
           ObsProperties.obs_property_list_item_disable(peerDiscoveryAvailableSocketFeedsList, 1, Convert.ToByte(true));

@@ -165,6 +165,9 @@ public static class Module
     AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionEventHandler;
     TaskScheduler.UnobservedTaskException += UnobservedTaskExceptionEventHandler;
 
+    // initialize network interfaces list in background so that the first call to it doesn't take too long
+    Task.Run(NetworkInterfaces.UpdateNetworkInterfaces);
+
     // remember where this module was loaded from
     ModulePath = Path.GetFullPath(Marshal.PtrToStringUTF8((IntPtr)Obs.obs_get_module_binary_path(ObsModule))!);
 

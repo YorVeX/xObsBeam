@@ -9,6 +9,11 @@ namespace xObsBeam;
 
 public partial class PeerDiscovery
 {
+
+#if WINDOWS
+  const int SIO_UDP_CONNRESET = -1744830452;
+#endif
+
   public enum ConnectionTypes
   {
     Pipe,
@@ -110,12 +115,7 @@ public partial class PeerDiscovery
     _serverPeer.ConnectionType = ConnectionTypes.Socket;
     _serverPeer.Identifier = serviceIdentifier;
 
-    _udpServer = new UdpClient();
-    _udpServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, 1);
-    _udpServer.Client.Bind(new IPEndPoint(IPAddress.Any, MulticastPort));
-    _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
-    _udpIsListening = true;
-    Task.Run(UdpServerReceiveLoop);
+    StartUdpServer();
     Module.Log($"Peer Discovery server: Started and entered receive loop for {serviceType} \"{serviceIdentifier}\" on {serviceAddress}:{servicePort}.", ObsLogLevel.Debug);
   }
 
@@ -131,12 +131,7 @@ public partial class PeerDiscovery
     _serverPeer.ConnectionType = ConnectionTypes.Pipe;
     _serverPeer.Identifier = serviceIdentifier;
 
-    _udpServer = new UdpClient();
-    _udpServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, 1);
-    _udpServer.Client.Bind(new IPEndPoint(IPAddress.Any, MulticastPort));
-    _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
-    _udpIsListening = true;
-    Task.Run(UdpServerReceiveLoop);
+    StartUdpServer();
     Module.Log($"Peer Discovery server: Started and entered receive loop for {serviceType} \"{serviceIdentifier}\".", ObsLogLevel.Debug);
   }
 
@@ -148,6 +143,19 @@ public partial class PeerDiscovery
     _udpServer.Close();
     _udpServer.Dispose();
     Module.Log("Peer Discovery server: Stopped.", ObsLogLevel.Debug);
+  }
+
+  void StartUdpServer()
+  {
+    _udpServer = new UdpClient();
+#if WINDOWS
+    _udpServer.Client.IOControl((IOControlCode)SIO_UDP_CONNRESET, new byte[] { 0, 0, 0, 0 }, null); // prevent "ConnectionReset" (10054) SocketExceptions caused by clients via ICMP
+#endif
+    _udpServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, 1);
+    _udpServer.Client.Bind(new IPEndPoint(IPAddress.Any, MulticastPort));
+    _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
+    _udpIsListening = true;
+    Task.Run(UdpServerReceiveLoop);
   }
 
   void UdpServerReceiveLoop()
@@ -164,13 +172,13 @@ public partial class PeerDiscovery
 
         if (queryItems.Length == 2 && queryItems[0] == MulticastPrefix && queryItems[1] == "Discover")
         {
-          // send a response to the original sender
-          foreach (var networkInterface in NetworkInterfaces.GetUnicastAddressesWithIds())
+          // send a response to the original sender from every available interface
+          foreach (var unicastAddress in NetworkInterfaces.GetUnicastAddressesWithIds())
           {
-            if (_serviceAddress != IPAddress.Any && _serviceAddress.ToString() != networkInterface.Item1.Address.ToString())
+            if (_serviceAddress != IPAddress.Any && _serviceAddress.ToString() != unicastAddress.Item1.Address.ToString())
               continue;
 
-            var responseBytes = Encoding.UTF8.GetBytes(_serverPeer.ToMulticastString(networkInterface.Item2, networkInterface.Item1.Address.ToString()));
+            var responseBytes = Encoding.UTF8.GetBytes(_serverPeer.ToMulticastString(unicastAddress.Item2, unicastAddress.Item1.Address.ToString()));
             _udpServer.Send(responseBytes, responseBytes.Length, senderEndPoint);
           }
         }
