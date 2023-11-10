@@ -9,6 +9,11 @@ namespace xObsBeam;
 
 public partial class PeerDiscovery
 {
+
+#if WINDOWS
+  const int SIO_UDP_CONNRESET = -1744830452;
+#endif
+
   public enum ConnectionTypes
   {
     Pipe,
@@ -143,6 +148,9 @@ public partial class PeerDiscovery
   void StartUdpServer()
   {
     _udpServer = new UdpClient();
+#if WINDOWS
+    _udpServer.Client.IOControl((IOControlCode)SIO_UDP_CONNRESET, new byte[] { 0, 0, 0, 0 }, null); // prevent "ConnectionReset" (10054) SocketExceptions caused by clients via ICMP
+#endif
     _udpServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, 1);
     _udpServer.Client.Bind(new IPEndPoint(IPAddress.Any, MulticastPort));
     _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
