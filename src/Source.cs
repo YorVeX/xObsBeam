@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
+﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using System.Collections.Concurrent;
@@ -23,6 +23,7 @@ public class Source
     public bool TimestampFilterAdded;
     public int ReceiveDelay;
     public int RenderDelay;
+    public obs_media_state RelayState;
   }
 
   public unsafe struct FilterContext
@@ -48,6 +49,7 @@ public class Source
   Beam.VideoPlaneInfo _videoPlaneInfo;
   int _audioPlanes;
   uint _audioBytesPerChannel;
+  DateTime RelayEnabledTime;
   #endregion Source instance fields
 
   #region Helper methods
@@ -82,7 +84,7 @@ public class Source
       sourceInfo->id = (sbyte*)id;
       sourceInfo->type = obs_source_type.OBS_SOURCE_TYPE_INPUT;
       sourceInfo->icon_type = obs_icon_type.OBS_ICON_TYPE_CUSTOM;
-      sourceInfo->output_flags = ObsSource.OBS_SOURCE_DO_NOT_DUPLICATE;
+      sourceInfo->output_flags = ObsSource.OBS_SOURCE_DO_NOT_DUPLICATE | ObsSource.OBS_SOURCE_CONTROLLABLE_MEDIA;
       sourceInfo->get_name = &relay_source_get_name;
       sourceInfo->create = &relay_source_create;
       sourceInfo->get_width = &source_get_width;
@@ -91,6 +93,12 @@ public class Source
       sourceInfo->hide = &source_hide;
       sourceInfo->destroy = &source_destroy;
       sourceInfo->get_defaults = &relay_source_get_defaults;
+      sourceInfo->media_play_pause = &relay_source_media_play_pause;
+      sourceInfo->media_stop = &relay_source_media_stop;
+      sourceInfo->media_get_state = &relay_source_media_get_state;
+      sourceInfo->media_get_time = &relay_source_media_get_time;
+      sourceInfo->media_get_duration = &relay_source_media_get_duration;
+      sourceInfo->media_restart = &relay_source_media_restart;
       sourceInfo->get_properties = &source_get_properties;
       sourceInfo->update = &source_update;
       ObsSource.obs_register_source_s(sourceInfo, (nuint)sizeof(obs_source_info));
@@ -579,6 +587,7 @@ public class Source
     context->ReceiveDelay = -1;
     context->RenderDelay = -1;
     context->SourceId = ++_sourceCount;
+    context->RelayState = obs_media_state.OBS_MEDIA_STATE_STOPPED;
     var thisSource = new Source();
     _sourceList.TryAdd(context->SourceId, thisSource);
     thisSource.ContextPointer = (IntPtr)context;
@@ -587,6 +596,13 @@ public class Source
     thisSource.BeamReceiver.SenderRelayProperties.Settings = settings;
     thisSource.BeamReceiver.SenderRelayProperties.Source = source;
     thisSource.BeamReceiver.Disconnected += thisSource.DisconnectedEventHandler;
+
+    fixed (byte* propertyEnableId = "enable"u8)
+    {
+      if (Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId)))
+        StartRelay(context);
+    }
+
     return context;
   }
 
@@ -614,6 +630,84 @@ public class Source
     // add additional defaults for the sender properties of relay sources
     BeamSenderProperties.settings_get_defaults(Beam.SenderTypes.Relay, settings);
   }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void relay_source_media_play_pause(void* data, byte play)
+  {
+    Module.Log($"relay_source_media_play_pause (play: {Convert.ToBoolean(play)}) called", ObsLogLevel.Debug);
+
+    var context = (Context*)data;
+    bool isPlaying = (context->RelayState == obs_media_state.OBS_MEDIA_STATE_PLAYING);
+    if (!isPlaying)
+      StartRelay(data);
+    else
+      StopRelay(data, true);
+
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void relay_source_media_restart(void* data)
+  {
+    Module.Log("relay_source_media_restart called", ObsLogLevel.Debug);
+    StartRelay(data);
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe void relay_source_media_stop(void* data)
+  {
+    Module.Log("relay_source_media_stop called", ObsLogLevel.Debug);
+    StopRelay(data, false);
+  }
+
+  public static unsafe void StartRelay(void* data)
+  {
+    var context = (Context*)data;
+    context->RelayState = obs_media_state.OBS_MEDIA_STATE_PLAYING;
+    fixed (byte* propertyEnableId = "enable"u8)
+      ObsData.obs_data_set_bool(context->Settings, (sbyte*)propertyEnableId, Convert.ToByte((context->RelayState == obs_media_state.OBS_MEDIA_STATE_PLAYING)));
+    var thisSource = GetSource(data);
+    thisSource.RelayEnabledTime = DateTime.UtcNow;
+    thisSource.Connect();
+    Obs.obs_source_media_started(context->Source);
+  }
+
+  public static unsafe void StopRelay(void* data, bool paused)
+  {
+    var context = (Context*)data;
+    context->RelayState = (paused ? obs_media_state.OBS_MEDIA_STATE_PAUSED : obs_media_state.OBS_MEDIA_STATE_STOPPED);
+    fixed (byte* propertyEnableId = "enable"u8)
+      ObsData.obs_data_set_bool(context->Settings, (sbyte*)propertyEnableId, Convert.ToByte((context->RelayState == obs_media_state.OBS_MEDIA_STATE_PLAYING)));
+    var thisSource = GetSource(data);
+    if (thisSource.BeamReceiver.IsConnected)
+      thisSource.BeamReceiver.Disconnect();
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe obs_media_state relay_source_media_get_state(void* data)
+  {
+    Module.Log("relay_source_media_get_state called", ObsLogLevel.Debug);
+    return ((Context*)data)->RelayState;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe long relay_source_media_get_time(void* data)
+  {
+    Module.Log("relay_source_media_get_time called", ObsLogLevel.Debug);
+    if ((((Context*)data)->RelayState == obs_media_state.OBS_MEDIA_STATE_PLAYING) && GetSource(data).BeamReceiver.IsConnected)
+      return (long)DateTime.UtcNow.Subtract(GetSource(data).RelayEnabledTime).TotalMilliseconds;
+    else
+      return 0;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe long relay_source_media_get_duration(void* data)
+  {
+    Module.Log("relay_source_media_get_duration called", ObsLogLevel.Debug);
+    if ((((Context*)data)->RelayState == obs_media_state.OBS_MEDIA_STATE_PLAYING) && GetSource(data).BeamReceiver.IsConnected)
+      return (long)DateTime.UtcNow.Subtract(GetSource(data).RelayEnabledTime).TotalMilliseconds;
+    else
+      return 0;
+  }
   #endregion Relay Source API methods
 
   #region Receiver Source API methods
@@ -639,6 +733,7 @@ public class Source
     context->ReceiveDelay = -1;
     context->RenderDelay = -1;
     context->SourceId = ++_sourceCount;
+    context->RelayState = obs_media_state.OBS_MEDIA_STATE_NONE;
     var thisSource = new Source();
     _sourceList.TryAdd(context->SourceId, thisSource);
     thisSource.ContextPointer = (IntPtr)context;
@@ -675,12 +770,14 @@ public class Source
     Module.Log("source_show called", ObsLogLevel.Debug);
 
     var thisSource = GetSource(data);
-    // add the timestamp helper filter if it doesn't exist yet
     if (!thisSource.IsRelay)
+    {
+      // add the timestamp helper filter if it doesn't exist yet
       ensureTimestampHelperFilterExists(data);
 
-    // the activate/deactivate events are not triggered by Studio Mode, so we need to connect/disconnect in show/hide events if the source should also work in Studio Mode
-    thisSource.Connect();
+      // the activate/deactivate events are not triggered by Studio Mode, so we need to connect/disconnect in show/hide events if the source should also work in Studio Mode
+      thisSource.Connect();
+    }
   }
 
   public static unsafe void ensureTimestampHelperFilterExists(void* data)
@@ -713,8 +810,11 @@ public class Source
   public static unsafe void source_hide(void* data)
   {
     Module.Log("source_hide called", ObsLogLevel.Debug);
+
     // the activate/deactivate events are not triggered by Studio Mode, so we need to connect/disconnect in show/hide events if the source should also work in Studio Mode
-    GetSource(data).BeamReceiver.Disconnect();
+    var thisSource = GetSource(data);
+    if (!thisSource.IsRelay)
+      thisSource.BeamReceiver.Disconnect();
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -727,6 +827,9 @@ public class Source
     var properties = ObsProperties.obs_properties_create();
     ObsProperties.obs_properties_set_flags(properties, ObsProperties.OBS_PROPERTIES_DEFER_UPDATE);
     fixed (byte*
+      propertyEnableId = "enable"u8,
+      propertyEnableRelayCaption = Module.ObsText("EnableRelayCaption"),
+      propertyEnableRelayText = Module.ObsText("EnableRelayText"),
       propertyRenderDelayLimitId = "render_delay_limit"u8,
       propertyRenderDelayLimitCaption = Module.ObsText("RenderDelayLimitCaption"),
       propertyRenderDelayLimitText = Module.ObsText("RenderDelayLimitText"),
@@ -800,8 +903,15 @@ public class Source
         ObsProperties.obs_property_text_set_info_type(renderDelayLimitBelowFrameBufferTimeWarningProperty, obs_text_info_type.OBS_TEXT_INFO_WARNING);
         ObsProperties.obs_property_set_visible(renderDelayLimitBelowFrameBufferTimeWarningProperty, Convert.ToByte(false));
       }
+      else
+      {
+        var enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableRelayCaption);
+        ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableRelayText);
+        ObsProperties.obs_property_set_modified_callback(enableProperty, &EnableChangedEventHandler);
+      }
 
       // label that can display the current delays for an active feed
+      //TODO: make refresh button work for relay sources
       var receiveAndRenderDelayProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyReceiveAndRenderDelayId, (sbyte*)propertyReceiveAndRenderDelayCaption, obs_text_type.OBS_TEXT_INFO);
       ObsProperties.obs_property_set_long_description(receiveAndRenderDelayProperty, (sbyte*)propertyReceiveAndRenderDelayText);
       var receiveAndRenderDelayRefreshButton = ObsProperties.obs_properties_add_button(properties, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonId, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonCaption, &ReceiveAndRenderDelayRefreshButtonClickedEventHandler);
@@ -936,11 +1046,15 @@ public class Source
   public static unsafe void source_update(void* data, obs_data* settings)
   {
     Module.Log("source_update called", ObsLogLevel.Debug);
-    var thisSource = GetSource(data);
-    if (thisSource.BeamReceiver.IsConnected)
-      thisSource.BeamReceiver.Disconnect();
-    if (Convert.ToBoolean(Obs.obs_source_showing(((Context*)data)->Source))) // auto-reconnect if the source is visible
-      thisSource.Connect();
+    fixed (byte* propertyEnableId = "enable"u8)
+    {
+      var thisSource = GetSource(data);
+      if (thisSource.BeamReceiver.IsConnected)
+        thisSource.BeamReceiver.Disconnect();
+      if ((thisSource.IsRelay && Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId))) || // relay sources are controlled by the relay enable checkbox
+         (!thisSource.IsRelay && Convert.ToBoolean(Obs.obs_source_showing(((Context*)data)->Source)))) // receiver sources are controlled by the visibility of the source
+        thisSource.Connect();
+    }
   }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -1005,6 +1119,23 @@ public class Source
   #endregion Relay Source API methods
 
   #region Event handlers
+  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  public static unsafe byte EnableChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
+  {
+    fixed (byte* propertyEnableId = "enable"u8)
+    {
+      var isEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId));
+      var thisSource = GetSource(settings);
+      if (isEnabled)
+        StartRelay((void*)thisSource.ContextPointer);
+      else
+      {
+        if (thisSource.BeamReceiver.IsConnected)
+          StopRelay((void*)thisSource.ContextPointer, false);
+      }
+    }
+    return Convert.ToByte(false);
+  }
 
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte RenderDelayLimitOrFrameBufferChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
@@ -1243,19 +1374,42 @@ public class Source
   {
     var context = (Context*)ContextPointer;
 
-    // reset video output
-    Obs.obs_source_output_video(context->Source, null);
-    context->Video->format = video_format.VIDEO_FORMAT_NONE; // make sure the source is reinitialized on the next frame
-    context->ReceiveDelay = -1;
-    context->RenderDelay = -1;
-
-    if (Convert.ToBoolean(Obs.obs_source_showing(context->Source))) // auto-reconnect if the source is visible
+    if (!IsRelay)
     {
-      Task.Delay(1000).ContinueWith(_ =>
+      // reset video output
+      Obs.obs_source_output_video(context->Source, null);
+      context->Video->format = video_format.VIDEO_FORMAT_NONE; // make sure the source is reinitialized on the next frame
+      context->ReceiveDelay = -1;
+      context->RenderDelay = -1;
+
+      if (Convert.ToBoolean(Obs.obs_source_showing(context->Source))) // auto-reconnect if the source is visible
       {
-        if (Convert.ToBoolean(Obs.obs_source_showing(context->Source))) // some time has passed, check again whether the source is still visible
-          Connect(); // reconnect
-      });
+        Task.Delay(1000).ContinueWith(_ =>
+        {
+          if (Convert.ToBoolean(Obs.obs_source_showing(context->Source))) // some time has passed, check again whether the source is still visible
+            Connect(); // reconnect
+        });
+      }
+    }
+    else
+    {
+      fixed (byte* propertyEnableId = "enable"u8)
+      {
+        if (Convert.ToBoolean(ObsData.obs_data_get_bool(context->Settings, (sbyte*)propertyEnableId))) // relay sources are controlled by the relay enable checkbox
+        {
+          Task.Delay(1000).ContinueWith(_ =>
+          {
+            fixed (byte* propertyEnable2Id = "enable"u8)
+            {
+              if (Convert.ToBoolean(ObsData.obs_data_get_bool(context->Settings, (sbyte*)propertyEnable2Id))) // some time has passed, check again whether the setting is still enabled
+              {
+                RelayEnabledTime = DateTime.UtcNow;
+                Connect(); // reconnect
+              }
+            }
+          });
+        }
+      }
     }
   }
 

@@ -293,8 +293,6 @@ public class BeamSenderProperties
       propertyEnableOutputText = Module.ObsText("EnableOutputText"),
       propertyEnableFilterCaption = Module.ObsText("EnableFilterCaption"),
       propertyEnableFilterText = Module.ObsText("EnableFilterText"),
-      propertyEnableRelayCaption = Module.ObsText("EnableRelayCaption"),
-      propertyEnableRelayText = Module.ObsText("EnableRelayText"),
       propertyIdentifierId = "identifier"u8,
       propertyIdentifierCaption = Module.ObsText("IdentifierCaption"),
       propertyIdentifierText = Module.ObsText("IdentifierText"),
@@ -384,7 +382,7 @@ public class BeamSenderProperties
         ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableOutputText);
         ObsProperties.obs_property_set_modified_callback(enableProperty, &EnableChangedEventHandler);
       }
-      else if (PropertiesType != Beam.SenderTypes.Relay) // ...or filter (exclude relays, as they're controlled by show/hide of its source, so that it's consistent with receiver sources)
+      else if (PropertiesType != Beam.SenderTypes.Relay) // ...or filter (exclude relays, as they got their own enable checkbox)
       {
         var enableProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyEnableId, (sbyte*)propertyEnableFilterCaption);
         ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableFilterText);
@@ -998,13 +996,9 @@ public class BeamSenderProperties
   [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
   public static unsafe byte EnableChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
-    fixed (byte* propertyEnableId = "enable"u8)
-    {
-      var isEnabled = Convert.ToBoolean(ObsData.obs_data_get_bool(settings, (sbyte*)propertyEnableId));
-      var senderProperties = GetProperties(properties);
-      senderProperties.EventHandlerNeedSenderRestartCheck("EnableChangedEventHandler");
-      senderProperties.RestartSenderIfNecessary(settings);
-    }
+    var senderProperties = GetProperties(properties);
+    senderProperties.EventHandlerNeedSenderRestartCheck("EnableChangedEventHandler");
+    senderProperties.RestartSenderIfNecessary(settings, (senderProperties.PropertiesType == Beam.SenderTypes.Output));
     return Convert.ToByte(false);
   }
 
