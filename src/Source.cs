@@ -837,6 +837,8 @@ public class Source
       propertyRenderDelayLimitBelowFrameBufferTimeWarningId = "render_delay_limit_below_frame_buffer_time_warning"u8,
       propertyRenderDelayLimitBelowFrameBufferTimeWarningText = Module.ObsText("RenderDelayLimitBelowFrameBufferTimeWarningText"),
       propertyReceiveAndRenderDelayId = "receive_and_render_delay"u8,
+      propertyReceiveDelayCaption = Module.ObsText("ReceiveDelayCaption"),
+      propertyReceiveDelayText = Module.ObsText("ReceiveDelayText", "--"),
       propertyReceiveAndRenderDelayCaption = Module.ObsText("ReceiveAndRenderDelayCaption"),
       propertyReceiveAndRenderDelayText = Module.ObsText("ReceiveAndRenderDelayText", "--", "--"),
       propertyReceiveAndRenderDelayRefreshButtonId = "receive_and_render_delay_refresh_button"u8,
@@ -910,16 +912,15 @@ public class Source
         ObsProperties.obs_property_set_modified_callback(enableProperty, &EnableChangedEventHandler);
       }
 
-      // label that can display the current delays for an active feed
-      //TODO: make refresh button work for relay sources
-      var receiveAndRenderDelayProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyReceiveAndRenderDelayId, (sbyte*)propertyReceiveAndRenderDelayCaption, obs_text_type.OBS_TEXT_INFO);
-      ObsProperties.obs_property_set_long_description(receiveAndRenderDelayProperty, (sbyte*)propertyReceiveAndRenderDelayText);
-      var receiveAndRenderDelayRefreshButton = ObsProperties.obs_properties_add_button(properties, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonId, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonCaption, &ReceiveAndRenderDelayRefreshButtonClickedEventHandler);
-      ObsProperties.obs_property_set_long_description(receiveAndRenderDelayRefreshButton, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonText);
-
       // frame buffer
       if (!thisSource.IsRelay)
       {
+        // label that can display the current delays for an active feed
+        var receiveAndRenderDelayProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyReceiveAndRenderDelayId, (sbyte*)propertyReceiveAndRenderDelayCaption, obs_text_type.OBS_TEXT_INFO);
+        ObsProperties.obs_property_set_long_description(receiveAndRenderDelayProperty, (sbyte*)propertyReceiveAndRenderDelayText);
+        var receiveAndRenderDelayRefreshButton = ObsProperties.obs_properties_add_button(properties, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonId, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonCaption, &ReceiveAndRenderDelayRefreshButtonClickedEventHandler);
+
+        ObsProperties.obs_property_set_long_description(receiveAndRenderDelayRefreshButton, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonText);
         var frameBufferTimeProperty = ObsProperties.obs_properties_add_int_slider(properties, (sbyte*)propertyFrameBufferTimeId, (sbyte*)propertyFrameBufferTimeCaption, 0, 5000, 100);
         ObsProperties.obs_property_set_long_description(frameBufferTimeProperty, (sbyte*)propertyFrameBufferTimeText);
         ObsProperties.obs_property_int_set_suffix(frameBufferTimeProperty, (sbyte*)propertyFrameBufferTimeSuffix);
@@ -929,6 +930,13 @@ public class Source
         // frame buffer fixed render delay
         var frameBufferTimeFixedRenderDelayProperty = ObsProperties.obs_properties_add_bool(properties, (sbyte*)propertyFrameBufferTimeFixedRenderDelayId, (sbyte*)propertyFrameBufferTimeFixedRenderDelayCaption);
         ObsProperties.obs_property_set_long_description(frameBufferTimeFixedRenderDelayProperty, (sbyte*)propertyFrameBufferTimeFixedRenderDelayText);
+      }
+      else
+      {
+        // label that can display the current delays for an active feed
+        var receiveDelayProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyReceiveAndRenderDelayId, (sbyte*)propertyReceiveDelayCaption, obs_text_type.OBS_TEXT_INFO);
+        ObsProperties.obs_property_set_long_description(receiveDelayProperty, (sbyte*)propertyReceiveDelayText);
+        var receiveAndRenderDelayRefreshButton = ObsProperties.obs_properties_add_button(properties, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonId, (sbyte*)propertyReceiveAndRenderDelayRefreshButtonCaption, &ReceiveAndRenderDelayRefreshButtonClickedEventHandler);
       }
 
       // connection type selection group
@@ -1186,15 +1194,32 @@ public class Source
   public static unsafe byte ReceiveAndRenderDelayRefreshButtonClickedEventHandler(obs_properties* properties, obs_property* prop, void* data)
   {
     var context = (Context*)data;
+    var thisSource = GetSource(data);
     Module.Log("ReceiveAndRenderDelayRefreshButtonClickedEventHandler called", ObsLogLevel.Debug);
-    fixed (byte*
-      propertyReceiveAndRenderDelayId = "receive_and_render_delay"u8,
-      propertyReceiveAndRenderDelayText = Module.ObsText("ReceiveAndRenderDelayText", (context->ReceiveDelay < 0 ? "--" : context->ReceiveDelay), (context->RenderDelay < 0 ? "--" : context->RenderDelay)),
-      propertyReceiveAndRenderDelayRefreshButtonId = "receive_and_render_delay_refresh_button"u8
-    )
+    if (thisSource.IsRelay)
     {
-      var receiveAndRenderDelayProperty = ObsProperties.obs_properties_get(properties, (sbyte*)propertyReceiveAndRenderDelayId);
-      ObsProperties.obs_property_set_long_description(receiveAndRenderDelayProperty, (sbyte*)propertyReceiveAndRenderDelayText);
+      var receiveDelay = thisSource.BeamReceiver.ReceiveDelay;
+      fixed (byte*
+        propertyReceiveAndRenderDelayId = "receive_and_render_delay"u8,
+        propertyReceiveDelayText = Module.ObsText("ReceiveDelayText", (receiveDelay < 0 ? "--" : receiveDelay)),
+        propertyReceiveAndRenderDelayRefreshButtonId = "receive_and_render_delay_refresh_button"u8
+      )
+      {
+        var receiveDelayProperty = ObsProperties.obs_properties_get(properties, (sbyte*)propertyReceiveAndRenderDelayId);
+        ObsProperties.obs_property_set_long_description(receiveDelayProperty, (sbyte*)propertyReceiveDelayText);
+      }
+    }
+    else
+    {
+      fixed (byte*
+        propertyReceiveAndRenderDelayId = "receive_and_render_delay"u8,
+        propertyReceiveAndRenderDelayText = Module.ObsText("ReceiveAndRenderDelayText", (context->ReceiveDelay < 0 ? "--" : context->ReceiveDelay), (context->RenderDelay < 0 ? "--" : context->RenderDelay)),
+        propertyReceiveAndRenderDelayRefreshButtonId = "receive_and_render_delay_refresh_button"u8
+      )
+      {
+        var receiveAndRenderDelayProperty = ObsProperties.obs_properties_get(properties, (sbyte*)propertyReceiveAndRenderDelayId);
+        ObsProperties.obs_property_set_long_description(receiveAndRenderDelayProperty, (sbyte*)propertyReceiveAndRenderDelayText);
+      }
     }
     return Convert.ToByte(true);
   }

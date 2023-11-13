@@ -22,7 +22,6 @@ public class BeamReceiver
 {
   CancellationTokenSource _cancellationSource = new();
   Task _processDataLoopTask = Task.CompletedTask;
-  readonly object _sizeLock = new();
   string _targetHostname = "";
   int _targetPort = -1;
   string _pipeName = "";
@@ -36,6 +35,7 @@ public class BeamReceiver
   public FrameBuffer? FrameBuffer { get; private set; }
   public AudioBuffer? AudioBuffer { get; private set; }
 
+  readonly object _sizeLock = new();
   uint _width;
   public uint Width
   {
@@ -58,6 +58,18 @@ public class BeamReceiver
 
   public bool IsRelay { get; private set; }
   public BeamSenderProperties SenderRelayProperties { get; private set; } = new(Beam.SenderTypes.Relay);
+
+  readonly object _receiveDelayLock = new();
+  int _receiveDelay;
+  public int ReceiveDelay
+  {
+    get
+    {
+      lock (_receiveDelayLock)
+        return _receiveDelay;
+    }
+  }
+
   public bool IsConnected { get; private set; }
 
   public int FrameBufferTimeMs { get; set; }
@@ -483,6 +495,8 @@ public class BeamReceiver
 
             if (IsRelay)
             {
+              lock (_receiveDelayLock)
+                _receiveDelay = videoHeader.ReceiveDelay;
               //TODO: try to avoid .ToArray(), RelayVideo will copy the data anyway
               beamSender.RelayVideo(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray());
             }
@@ -783,6 +797,11 @@ public class BeamReceiver
 
             if (IsRelay)
             {
+              if (beamType == Beam.Type.AudioOnly)
+              {
+                lock (_receiveDelayLock)
+                  _receiveDelay = videoHeader.ReceiveDelay;
+              }
               //TODO: try to avoid .ToArray(), RelayAudio will copy the data anyway
               beamSender.RelayAudio(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray());
             }
