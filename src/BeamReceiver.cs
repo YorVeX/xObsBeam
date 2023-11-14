@@ -497,8 +497,7 @@ public class BeamReceiver
             {
               lock (_receiveDelayLock)
                 _receiveDelay = videoHeader.ReceiveDelay;
-              //TODO: try to avoid .ToArray(), RelayVideo will copy the data anyway
-              beamSender.RelayVideo(videoHeader, readResult.Buffer.Slice(0, videoHeader.DataSize).ToArray());
+              beamSender.RelayVideo(videoHeader, readResult.Buffer);
             }
             else
             {
@@ -680,10 +679,7 @@ public class BeamReceiver
 
           }
           else if (IsRelay)
-          {
-            //TODO: test whether relaying skipped frames (= zero data size) works correctly
-            beamSender.RelayVideo(videoHeader, Array.Empty<byte>());
-          }
+            beamSender.RelayVideo(videoHeader); // relay skipped frames (= zero data size)
           if (logCycle++ >= senderFps)
             logCycle = 0;
         }
@@ -802,8 +798,7 @@ public class BeamReceiver
                 lock (_receiveDelayLock)
                   _receiveDelay = videoHeader.ReceiveDelay;
               }
-              //TODO: try to avoid .ToArray(), RelayAudio will copy the data anyway
-              beamSender.RelayAudio(audioHeader, readResult.Buffer.Slice(0, audioHeader.DataSize).ToArray());
+              beamSender.RelayAudio(audioHeader, readResult.Buffer);
             }
             else
             {

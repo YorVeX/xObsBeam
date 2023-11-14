@@ -600,12 +600,15 @@ public class BeamSender(Beam.SenderTypes senderType)
     }
   }
 
-  public unsafe void RelayVideo(Beam.VideoHeader videoHeader, byte[] data)
+  public unsafe void RelayVideo(Beam.VideoHeader videoHeader, ReadOnlySequence<byte>? data = null)
   {
     foreach (var client in _clients.Values)
     {
       client.EnqueueVideoTimestamp(videoHeader.Timestamp);
-      client.EnqueueVideoFrame(videoHeader.Timestamp, videoHeader, data);
+      if (data != null)
+        client.EnqueueVideoFrame(videoHeader.Timestamp, videoHeader, (ReadOnlySequence<byte>)data!);
+      else
+        client.EnqueueVideoFrame(videoHeader.Timestamp, videoHeader, Array.Empty<byte>());
     }
   }
 
@@ -707,11 +710,11 @@ public class BeamSender(Beam.SenderTypes senderType)
     }
   }
 
-  public unsafe void RelayAudio(Beam.AudioHeader audioHeader, byte[] data)
+  public unsafe void RelayAudio(Beam.AudioHeader audioHeader, ReadOnlySequence<byte> data)
   {
     // send the audio data to all currently connected clients
     foreach (var client in _clients.Values)
-      client.EnqueueAudio(audioHeader, data, data.Length);
+      client.EnqueueAudio(audioHeader, data);
   }
 
   public unsafe void SendAudio(ulong timestamp, uint frames, audio_data._data_e__FixedBuffer data)
