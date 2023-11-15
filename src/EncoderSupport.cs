@@ -118,7 +118,7 @@ public static class EncoderSupport
       return _checkResults[encoder];
     }
   }
-#pragma warning disable CA1864
+#pragma warning restore CA1864
 
   // check format_is_yuv function in OBS video-io.h for reference: https://github.com/obsproject/obs-studio/blob/master/libobs/media-io/video-io.h
   public static bool FormatIsYuv(video_format format)
