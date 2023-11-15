@@ -641,9 +641,9 @@ public class BeamSenderProperties
 
   public bool NativeVideoFormatSupport(Beam.CompressionTypes compressionType, video_format videoFormat)
   {
-    if (!RequiredVideoFormats.ContainsKey(compressionType))
+    if (!RequiredVideoFormats.TryGetValue(compressionType, out video_format[]? value))
       return true;
-    return RequiredVideoFormats[compressionType].Contains(videoFormat);
+    return value.Contains(videoFormat);
   }
 
   public unsafe video_format GetRequiredVideoFormatConversion()
