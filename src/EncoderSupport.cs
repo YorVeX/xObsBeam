@@ -23,10 +23,8 @@ enum Encoders
 public static class EncoderSupport
 {
   static readonly Dictionary<Encoders, bool> _checkResults = [];
-  static readonly Dictionary<Encoders, bool> _checkResults = [];
   static readonly unsafe ConcurrentDictionary<IntPtr, (GCHandle, byte[])> _gcHandles = new();
 
-#pragma warning disable CA1864 // in the below cases "ContainsKey" must be used first to determine whether the actual availability check should be performed at all, and race condition double-adds are handled by using a fire and forget TryAdd call
 #pragma warning disable CA1864 // in the below cases "ContainsKey" must be used first to determine whether the actual availability check should be performed at all, and race condition double-adds are handled by using a fire and forget TryAdd call
   public static unsafe bool QoirLib
   {
@@ -38,7 +36,6 @@ public static class EncoderSupport
         try
         {
           Qoir.qoir_encode(null, null);
-          _checkResults.TryAdd(encoder, true);
           _checkResults.TryAdd(encoder, true);
         }
         catch (Exception ex)
@@ -64,7 +61,6 @@ public static class EncoderSupport
         {
           densityVersionString = " " + Density.density_version_major() + "." + Density.density_version_minor() + "." + Density.density_version_revision();
           _checkResults.TryAdd(encoder, true);
-          _checkResults.TryAdd(encoder, true);
         }
         catch (Exception ex)
         {
@@ -88,7 +84,6 @@ public static class EncoderSupport
         {
           _ = TurboJpeg.tjDestroy(TurboJpeg.tjInitCompress());
           _checkResults.TryAdd(encoder, true);
-          _checkResults.TryAdd(encoder, true);
         }
         catch (Exception ex)
         {
@@ -111,7 +106,6 @@ public static class EncoderSupport
         try
         {
           TurboJpeg.tj3Destroy(TurboJpeg.tj3Init((int)TJINIT.TJINIT_COMPRESS));
-          _checkResults.TryAdd(encoder, true);
           _checkResults.TryAdd(encoder, true);
         }
         catch (Exception ex)
@@ -394,7 +388,6 @@ public static class EncoderSupport
 #pragma warning disable IDE0060 // we don't make use of the memory_func_context parameter but it needs to be there
 
   [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-  [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
   public static unsafe void* QoirMAlloc(void* memory_func_context, nuint len)
   {
     var pooledByteArray = ArrayPool<byte>.Shared.Rent((int)len);
@@ -405,7 +398,6 @@ public static class EncoderSupport
     return pinnedHandle.ToPointer();
   }
 
-  [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
   [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
   public static unsafe void QoirFree(void* memory_func_context, void* ptr)
   {
