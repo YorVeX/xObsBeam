@@ -608,7 +608,7 @@ public class BeamSender(Beam.SenderTypes senderType)
       if (data != null)
         client.EnqueueVideoFrame(videoHeader.Timestamp, videoHeader, (ReadOnlySequence<byte>)data!);
       else
-        client.EnqueueVideoFrame(videoHeader.Timestamp, videoHeader, Array.Empty<byte>());
+        client.EnqueueVideoFrame(videoHeader.Timestamp, videoHeader, []);
     }
   }
 

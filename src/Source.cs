@@ -565,7 +565,7 @@ public class Source
   #region Relay Source API methods
   // the sources here need to deviate from the original ones, since they are called before there is an instance holding the IsRelay information
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe sbyte* relay_source_get_name(void* data)
   {
     Module.Log("relay_source_get_name called", ObsLogLevel.Debug);
@@ -573,7 +573,7 @@ public class Source
       return (sbyte*)sourceName;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void* relay_source_create(obs_data* settings, obs_source* source)
   {
     Module.Log("relay_source_create called", ObsLogLevel.Debug);
@@ -606,7 +606,7 @@ public class Source
     return context;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void relay_source_get_defaults(obs_data* settings)
   {
     Module.Log("relay_source_get_defaults called", ObsLogLevel.Debug);
@@ -631,7 +631,7 @@ public class Source
     BeamSenderProperties.settings_get_defaults(Beam.SenderTypes.Relay, settings);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void relay_source_media_play_pause(void* data, byte play)
   {
     Module.Log($"relay_source_media_play_pause (play: {Convert.ToBoolean(play)}) called", ObsLogLevel.Debug);
@@ -645,14 +645,14 @@ public class Source
 
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void relay_source_media_restart(void* data)
   {
     Module.Log("relay_source_media_restart called", ObsLogLevel.Debug);
     StartRelay(data);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void relay_source_media_stop(void* data)
   {
     Module.Log("relay_source_media_stop called", ObsLogLevel.Debug);
@@ -682,14 +682,14 @@ public class Source
       thisSource.BeamReceiver.Disconnect();
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe obs_media_state relay_source_media_get_state(void* data)
   {
     Module.Log("relay_source_media_get_state called", ObsLogLevel.Debug);
     return ((Context*)data)->RelayState;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe long relay_source_media_get_time(void* data)
   {
     Module.Log("relay_source_media_get_time called", ObsLogLevel.Debug);
@@ -699,7 +699,7 @@ public class Source
       return 0;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe long relay_source_media_get_duration(void* data)
   {
     Module.Log("relay_source_media_get_duration called", ObsLogLevel.Debug);
@@ -711,7 +711,7 @@ public class Source
   #endregion Relay Source API methods
 
   #region Receiver Source API methods
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe sbyte* source_get_name(void* data)
   {
     Module.Log("source_get_name called", ObsLogLevel.Debug);
@@ -1127,7 +1127,7 @@ public class Source
   #endregion Relay Source API methods
 
   #region Event handlers
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte EnableChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte* propertyEnableId = "enable"u8)

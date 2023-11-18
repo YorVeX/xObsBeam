@@ -18,7 +18,7 @@ using ObsInterop;
 
 namespace xObsBeam;
 
-public class BeamReceiver
+public class BeamReceiver(bool isRelay = false)
 {
   CancellationTokenSource _cancellationSource = new();
   Task _processDataLoopTask = Task.CompletedTask;
@@ -56,7 +56,7 @@ public class BeamReceiver
     }
   }
 
-  public bool IsRelay { get; private set; }
+  public bool IsRelay { get; private set; } = isRelay;
   public BeamSenderProperties SenderRelayProperties { get; private set; } = new(Beam.SenderTypes.Relay);
 
   readonly object _receiveDelayLock = new();
@@ -74,11 +74,6 @@ public class BeamReceiver
 
   public int FrameBufferTimeMs { get; set; }
   public bool FrameBufferFixedDelay { get; set; }
-
-  public BeamReceiver(bool isRelay = false)
-  {
-    IsRelay = isRelay;
-  }
 
   public void Connect(IPAddress bindAddress, string hostname, int port, PeerDiscovery.Peer currentPeer = default)
   {

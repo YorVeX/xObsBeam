@@ -25,7 +25,7 @@ pause >nul
 
 cls
 
-echo Preparing build folder, installing .NET 7 SDK and necessary build depedencies...
+echo Preparing build folder, installing .NET 8 SDK and necessary build depedencies...
 REM All done in one line to prevent multiple sudo password prompts:
 wsl curl -sSL https://packages.microsoft.com/keys/microsoft.asc ^| sudo apt-key add - ^&^& sudo apt-add-repository https://packages.microsoft.com/ubuntu/20.04/prod ^&^& sudo apt-get install -y dotnet-sdk-8.0 clang zlib1g-dev ^&^& sudo mkdir -p /build-net ^&^& sudo chown -R $USER:$USER /build-net
 

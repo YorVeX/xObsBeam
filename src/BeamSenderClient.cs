@@ -441,7 +441,7 @@ sealed class BeamSenderClient
     else if (videoFrameCount > (fps / 2))
     {
       videoHeader.DataSize = 0;
-      var emptyFrame = new Beam.BeamVideoData(videoHeader, Array.Empty<byte>(), timestamp);
+      var emptyFrame = new Beam.BeamVideoData(videoHeader, [], timestamp);
       _frames.AddOrUpdate(timestamp, emptyFrame, (key, oldValue) => emptyFrame);
       Module.Log($"<{ClientId}> Error: Send queue size {videoFrameCount} ({_frameTimestampQueue.Count}), skipping video frame {timestamp}.", ObsLogLevel.Error);
       return false;
