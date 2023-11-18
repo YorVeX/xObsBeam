@@ -25,6 +25,7 @@ public static class EncoderSupport
   static readonly Dictionary<Encoders, bool> _checkResults = new();
   static readonly unsafe ConcurrentDictionary<IntPtr, (GCHandle, byte[])> _gcHandles = new();
 
+#pragma warning disable CA1864 // in the below cases "ContainsKey" must be used first to determine whether the actual availability check should be performed at all, and race condition double-adds are handled by using a fire and forget TryAdd call
   public static unsafe bool QoirLib
   {
     get
@@ -35,7 +36,7 @@ public static class EncoderSupport
         try
         {
           Qoir.qoir_encode(null, null);
-          _checkResults.Add(encoder, true);
+          _checkResults.TryAdd(encoder, true);
         }
         catch (Exception ex)
         {
@@ -59,7 +60,7 @@ public static class EncoderSupport
         try
         {
           densityVersionString = " " + Density.density_version_major() + "." + Density.density_version_minor() + "." + Density.density_version_revision();
-          _checkResults.Add(encoder, true);
+          _checkResults.TryAdd(encoder, true);
         }
         catch (Exception ex)
         {
@@ -82,7 +83,7 @@ public static class EncoderSupport
         try
         {
           _ = TurboJpeg.tjDestroy(TurboJpeg.tjInitCompress());
-          _checkResults.Add(encoder, true);
+          _checkResults.TryAdd(encoder, true);
         }
         catch (Exception ex)
         {
@@ -105,7 +106,7 @@ public static class EncoderSupport
         try
         {
           TurboJpeg.tj3Destroy(TurboJpeg.tj3Init((int)TJINIT.TJINIT_COMPRESS));
-          _checkResults.Add(encoder, true);
+          _checkResults.TryAdd(encoder, true);
         }
         catch (Exception ex)
         {
@@ -117,6 +118,7 @@ public static class EncoderSupport
       return _checkResults[encoder];
     }
   }
+#pragma warning disable CA1864
 
   // check format_is_yuv function in OBS video-io.h for reference: https://github.com/obsproject/obs-studio/blob/master/libobs/media-io/video-io.h
   public static bool FormatIsYuv(video_format format)
