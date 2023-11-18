@@ -388,7 +388,6 @@ public class BeamSenderProperties
         ObsProperties.obs_property_set_long_description(enableProperty, (sbyte*)propertyEnableFilterText);
         ObsProperties.obs_property_set_modified_callback(enableProperty, &EnableChangedEventHandler);
       }
-    }
 
       // identifier configuration text box
       var identifierProperty = ObsProperties.obs_properties_add_text(properties, (sbyte*)propertyIdentifierId, (sbyte*)propertyIdentifierCaption, obs_text_type.OBS_TEXT_DEFAULT);
