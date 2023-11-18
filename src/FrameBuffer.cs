@@ -9,7 +9,7 @@ public class FrameBuffer
 {
   const int MinimumVideoFrameBufferCount = 2;
   readonly object _frameListLock = new();
-  readonly List<Beam.IBeamData> _frameList = new();
+  readonly List<Beam.IBeamData> _frameList = [];
   bool _rampUp = true;
   bool _isFirstAudioFrame = true;
   int _videoFrameCount;
@@ -166,7 +166,7 @@ public class FrameBuffer
       int debugAudioFrameCount = 0;
 
       if (_rampUp)
-        return Array.Empty<Beam.IBeamData>(); // still in ramp-up phase, don't return anything yet
+        return []; // still in ramp-up phase, don't return anything yet
 
       if (_frameList.Count < (VideoFrameBufferCount - 1))
         Module.Log($"Warning: Frame buffer below target: {_frameList.Count}/{VideoFrameBufferCount}", ObsLogLevel.Warning);
@@ -261,10 +261,10 @@ public class FrameBuffer
         Reset(); // the buffer ran dry, start over with ramp up
         _frameList.Clear();
         Module.Log("Error: The frame buffer ran dry, refilling. Consider increasing the buffering time to compensate for longer gaps.", ObsLogLevel.Error);
-        return Array.Empty<Beam.IBeamData>();
+        return [];
       }
 
-      return result.ToArray();
+      return [.. result];
     }
   }
 }

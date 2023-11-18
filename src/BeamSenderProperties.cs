@@ -38,7 +38,7 @@ public class BeamSenderProperties
 
   #region Instance fields
   readonly unsafe Context* ContextPointer;
-  readonly List<string> _initializedEventHandlers = new();
+  readonly List<string> _initializedEventHandlers = [];
   unsafe obs_properties* Properties;
   readonly Beam.SenderTypes PropertiesType;
   bool NeedSenderRestart;
@@ -151,7 +151,7 @@ public class BeamSenderProperties
     }
   }
 
-  public readonly Dictionary<Beam.CompressionTypes, video_format[]> RequiredVideoFormats = new();
+  public readonly Dictionary<Beam.CompressionTypes, video_format[]> RequiredVideoFormats = [];
   public video_format[]? RequireVideoFormats { get; private set; }
 
   public unsafe bool UsePipe
@@ -768,11 +768,11 @@ public class BeamSenderProperties
 
       // fixed list of compression algorithms and their supported video formats
       RequiredVideoFormats.Clear();
-      RequiredVideoFormats.Add(Beam.CompressionTypes.Qoi, new[] { video_format.VIDEO_FORMAT_BGRA });
-      RequiredVideoFormats.Add(Beam.CompressionTypes.Qoir, new[] { video_format.VIDEO_FORMAT_BGRA });
-      RequiredVideoFormats.Add(Beam.CompressionTypes.Qoy, new[] { video_format.VIDEO_FORMAT_NV12 });
-      RequiredVideoFormats.Add(Beam.CompressionTypes.Jpeg, new[]
-      {
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Qoi, [video_format.VIDEO_FORMAT_BGRA]);
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Qoir, [video_format.VIDEO_FORMAT_BGRA]);
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Qoy, [video_format.VIDEO_FORMAT_NV12]);
+      RequiredVideoFormats.Add(Beam.CompressionTypes.Jpeg,
+      [
         video_format.VIDEO_FORMAT_I420, // native support by libjpeg-turbo
         video_format.VIDEO_FORMAT_I40A, // no native support by libjpeg-turbo, alpha will be dropped so that it becomes I420
         video_format.VIDEO_FORMAT_I422, // native support by libjpeg-turbo
@@ -787,7 +787,7 @@ public class BeamSenderProperties
         video_format.VIDEO_FORMAT_BGRX, // native support by libjpeg-turbo
         video_format.VIDEO_FORMAT_BGR3, // native support by libjpeg-turbo
         video_format.VIDEO_FORMAT_RGBA, // native support by libjpeg-turbo
-      });
+      ]);
 
       // if only recommended items are configured to be shown: hide compression algorithms that don't natively support the current OBS video format or have a superior alternative available
       var qoiRecommended = !showOnlyRecommended || (NativeVideoFormatSupport(Beam.CompressionTypes.Qoi, obsVideoFormat) && !EncoderSupport.QoirLib);
@@ -993,7 +993,7 @@ public class BeamSenderProperties
   #endregion Event handler helper functions
 
   #region Event handlers
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte EnableChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     var senderProperties = GetProperties(properties);
@@ -1002,7 +1002,7 @@ public class BeamSenderProperties
     return Convert.ToByte(false);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte AutomaticListenPortEnabledChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
@@ -1021,7 +1021,7 @@ public class BeamSenderProperties
     }
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte ConnectionTypePipeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
@@ -1046,7 +1046,7 @@ public class BeamSenderProperties
     }
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte ConnectionTypeSocketChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
@@ -1071,7 +1071,7 @@ public class BeamSenderProperties
     }
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte NetworkInterfaceChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     var senderProperties = GetProperties(properties);
@@ -1080,7 +1080,7 @@ public class BeamSenderProperties
     return Convert.ToByte(true);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte CompressionSettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     string propertyName = Marshal.PtrToStringUTF8((IntPtr)ObsProperties.obs_property_name(prop))!;
@@ -1090,21 +1090,21 @@ public class BeamSenderProperties
     return Convert.ToByte(true);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte CompressionJpegQualitySettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     GetProperties(properties).EventHandlerNeedSenderRestartCheck("CompressionJpegQualitySettingChangedEventHandler");
     return Convert.ToByte(false);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte CompressionMainThreadChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     GetProperties(properties).EventHandlerNeedSenderRestartCheck("CompressionMainThreadChangedEventHandler");
     return Convert.ToByte(false);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte IdentifierSettingChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     GetProperties(properties).EventHandlerNeedSenderRestartCheck("IdentifierSettingChangedEventHandler");

@@ -67,14 +67,14 @@ public static class SettingsDialog
 
 #pragma warning disable IDE1006
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe sbyte* settings_get_name(void* data)
   {
     fixed (byte* dialogName = "Beam Sender Output Settings"u8)
       return (sbyte*)dialogName;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void* settings_create(obs_data* settings, obs_source* source)
   {
     Module.Log("settings_create called", ObsLogLevel.Debug);
@@ -84,34 +84,34 @@ public static class SettingsDialog
     return settings;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void settings_destroy(void* data)
   {
     Module.Log("settings_destroy called", ObsLogLevel.Debug);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe obs_properties* settings_get_properties(void* data)
   {
     Module.Log("settings_get_properties called", ObsLogLevel.Debug);
     return Properties.settings_get_properties(data);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void settings_get_defaults(obs_data* settings)
   {
     Module.Log("settings_get_defaults called", ObsLogLevel.Debug);
     BeamSenderProperties.settings_get_defaults(Beam.SenderTypes.Output, settings);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void settings_update(void* data, obs_data* settings)
   {
     Module.Log("settings_update called", ObsLogLevel.Debug);
     Properties.settings_update(settings);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void settings_save(void* data, obs_data* settings)
   {
     Module.Log("settings_save called", ObsLogLevel.Debug);

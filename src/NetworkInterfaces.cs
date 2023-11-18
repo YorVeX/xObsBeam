@@ -18,8 +18,8 @@ namespace xObsBeam;
 public static partial class NetworkInterfaces
 {
 
-  private static NetworkInterface[] _networkInterfaces = Array.Empty<NetworkInterface>();
-  private static List<(UnicastIPAddressInformation, string)> _unicastAddressesWithIds = new();
+  private static NetworkInterface[] _networkInterfaces = [];
+  private static List<(UnicastIPAddressInformation, string)> _unicastAddressesWithIds = [];
   private static object _networkInterfacesLock = new();
 
   // this is not called before the first method from this class was used, meaning the first call to GetAllNetworkInterfaces() or GetUnicastAddressesWithIds() will implicitly invoke this

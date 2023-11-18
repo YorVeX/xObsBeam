@@ -7,7 +7,7 @@ public class AudioBuffer
 {
   const int MinimumAudioFrameBufferCount = 2;
   readonly object _frameListLock = new();
-  readonly List<Beam.BeamAudioData> _frameList = new();
+  readonly List<Beam.BeamAudioData> _frameList = [];
   bool _rampUp = true;
   bool _isFirstAudioFrame = true;
   readonly double _senderFps;
@@ -140,7 +140,7 @@ public class AudioBuffer
     lock (_frameListLock)
     {
       if (_rampUp)
-        return Array.Empty<Beam.BeamAudioData>(); // still in ramp-up phase, don't return anything yet
+        return []; // still in ramp-up phase, don't return anything yet
 
       if (_frameList.Count < (AudioFrameBufferCount - 1))
         Module.Log($"Warning: Audio frame buffer below target: {_frameList.Count}/{AudioFrameBufferCount}", ObsLogLevel.Warning);
@@ -220,10 +220,10 @@ public class AudioBuffer
         Reset(); // the buffer ran dry, start over with ramp up
         _frameList.Clear();
         Module.Log("Error: The audio frame buffer ran dry, refilling. Consider increasing the buffering time to compensate for longer gaps.", ObsLogLevel.Error);
-        return Array.Empty<Beam.BeamAudioData>();
+        return [];
       }
 
-      return result.ToArray();
+      return [.. result];
     }
   }
 }
