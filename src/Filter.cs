@@ -265,7 +265,7 @@ public class Filter
   }
   #endregion Instance methods
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void SourceUpdateSignalEventHandler(void* data, calldata* callData)
   {
     var senderFilter = GetFilter(data);
@@ -344,7 +344,7 @@ public class Filter
   #endregion Helper methods
 
   #region Filter API methods
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe sbyte* filter_av_get_name(void* data)
   {
     Module.Log("filter_av_get_name called", ObsLogLevel.Debug);
@@ -352,7 +352,7 @@ public class Filter
       return (sbyte*)filterName;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe sbyte* filter_video_get_name(void* data)
   {
     Module.Log("filter_video_get_name called", ObsLogLevel.Debug);
@@ -360,7 +360,7 @@ public class Filter
       return (sbyte*)filterName;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe sbyte* filter_audio_get_name(void* data)
   {
     Module.Log("filter_audio_get_name called", ObsLogLevel.Debug);
@@ -368,7 +368,7 @@ public class Filter
       return (sbyte*)filterName;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void* filter_create_av(obs_data* settings, obs_source* source)
   {
     Module.Log("filter_create_av called", ObsLogLevel.Debug);
@@ -385,7 +385,7 @@ public class Filter
     return context;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void* filter_create_video(obs_data* settings, obs_source* source)
   {
     Module.Log("filter_create_video called", ObsLogLevel.Debug);
@@ -402,7 +402,7 @@ public class Filter
     return context;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void* filter_create_audio(obs_data* settings, obs_source* source)
   {
     Module.Log("filter_create_audio called", ObsLogLevel.Debug);
@@ -419,7 +419,7 @@ public class Filter
     return context;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void filter_remove(void* data, obs_source* source)
   {
     Module.Log("filter_remove called", ObsLogLevel.Debug);
@@ -427,7 +427,7 @@ public class Filter
       ObsSignal.signal_handler_disconnect(Obs.obs_source_get_signal_handler(source), (sbyte*)signalName, &SourceUpdateSignalEventHandler, GetFilter(data).ContextPointer);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void filter_destroy(void* data)
   {
     Module.Log("filter_destroy called", ObsLogLevel.Debug);
@@ -438,7 +438,7 @@ public class Filter
     filter.Dispose();
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe obs_properties* filter_get_properties(void* data)
   {
     Module.Log("filter_get_properties called");
@@ -446,55 +446,55 @@ public class Filter
     return filter.Properties.settings_get_properties(data);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void filter_get_defaults_av(obs_data* settings)
   {
     Module.Log("filter_get_defaults_av called");
     BeamSenderProperties.settings_get_defaults(Beam.SenderTypes.FilterAudioVideo, settings);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void filter_get_defaults_video(obs_data* settings)
   {
     Module.Log("filter_get_defaults_video called");
     BeamSenderProperties.settings_get_defaults(Beam.SenderTypes.FilterVideo, settings);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void filter_get_defaults_audio(obs_data* settings)
   {
     Module.Log("filter_get_defaults_audio called");
     BeamSenderProperties.settings_get_defaults(Beam.SenderTypes.FilterAudio, settings);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void filter_update(void* data, obs_data* settings)
   {
     Module.Log("filter_update called", ObsLogLevel.Debug);
     GetFilter(data)?.Properties.settings_update(settings);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void filter_save(void* data, obs_data* settings)
   {
     Module.Log("filter_save called", ObsLogLevel.Debug);
     GetFilter(data)?.Properties.settings_save(settings);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void filter_video_tick(void* data, float seconds)
   {
     GetFilter(data)?.ProcessTick(seconds);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe obs_source_frame* filter_video(void* data, obs_source_frame* frame)
   {
     GetFilter(data)?.ProcessVideo(data, frame);
     return frame;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe obs_audio_data* filter_audio(void* data, obs_audio_data* frame)
   {
     GetFilter(data)?.ProcessAudio(data, frame);

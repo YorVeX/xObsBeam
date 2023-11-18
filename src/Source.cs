@@ -427,14 +427,14 @@ public class Source
 #pragma warning disable IDE1006
 
   #region Timestamp measure filter API methods
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe sbyte* filter_get_name(void* data)
   {
     fixed (byte* sourceName = "Beam Timestamp Helper"u8)
       return (sbyte*)sourceName;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void* filter_create(obs_data* settings, obs_source* source)
   {
     Module.Log("filter_create called", ObsLogLevel.Debug);
@@ -444,14 +444,14 @@ public class Source
     return context;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void filter_destroy(void* data)
   {
     Module.Log("filter_destroy called", ObsLogLevel.Debug);
     ObsBmem.bfree(data);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe obs_properties* filter_get_properties(void* data)
   {
     var properties = ObsProperties.obs_properties_create();
@@ -465,7 +465,7 @@ public class Source
     return properties;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe obs_source_frame* filter_video(void* data, obs_source_frame* frame)
   {
     // Module.Log("filter_video called with timestamp " + frame->timestamp, ObsLogLevel.Debug);
@@ -483,7 +483,7 @@ public class Source
     return frame;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe obs_audio_data* filter_audio(void* data, obs_audio_data* frame)
   {
     // Module.Log("filter_audio called with timestamp " + frame->timestamp, ObsLogLevel.Debug);
@@ -501,7 +501,7 @@ public class Source
     return frame;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void filter_remove(void* data, obs_source* source)
   {
     Module.Log("filter_remove called", ObsLogLevel.Debug);
@@ -522,7 +522,7 @@ public class Source
   #endregion Timestamp measure filter API methods
 
   #region Source API methods
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe sbyte* source_get_name(void* data)
   {
     Module.Log("source_get_name called", ObsLogLevel.Debug);
@@ -530,7 +530,7 @@ public class Source
       return (sbyte*)sourceName;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void* source_create(obs_data* settings, obs_source* source)
   {
     Module.Log("source_create called", ObsLogLevel.Debug);
@@ -553,7 +553,7 @@ public class Source
     return context;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void source_destroy(void* data)
   {
     Module.Log("source_destroy called", ObsLogLevel.Debug);
@@ -571,7 +571,7 @@ public class Source
     Module.Log("source_destroy finished", ObsLogLevel.Debug);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void source_show(void* data)
   {
     Module.Log("source_show called", ObsLogLevel.Debug);
@@ -598,7 +598,7 @@ public class Source
     }
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void sourceEnumFiltersFindTimestampHelperFilter(obs_source* parent, obs_source* child, void* data)
   {
     Context* context = (Context*)data;
@@ -609,7 +609,7 @@ public class Source
     }
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void source_hide(void* data)
   {
     Module.Log("source_hide called", ObsLogLevel.Debug);
@@ -617,7 +617,7 @@ public class Source
     GetSource(data).BeamReceiver.Disconnect();
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe obs_properties* source_get_properties(void* data)
   {
     Module.Log("source_get_properties called", ObsLogLevel.Debug);
@@ -786,7 +786,7 @@ public class Source
     return properties;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void source_get_defaults(obs_data* settings)
   {
     Module.Log("source_get_defaults called", ObsLogLevel.Debug);
@@ -808,7 +808,7 @@ public class Source
     }
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void source_update(void* data, obs_data* settings)
   {
     Module.Log("source_update called", ObsLogLevel.Debug);
@@ -819,25 +819,25 @@ public class Source
       thisSource.Connect();
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void source_save(void* data, obs_data* settings)
   {
     Module.Log("source_save called", ObsLogLevel.Debug);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe uint source_get_width(void* data)
   {
     return GetSource(data).BeamReceiver.Width;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe uint source_get_height(void* data)
   {
     return GetSource(data).BeamReceiver.Height;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void source_video_tick(void* data, float seconds)
   {
     // Module.Log($"source_video_tick {Obs.obs_get_video_frame_time()} (+{seconds})", (((seconds * 1_000_000_000) > Obs.obs_get_frame_interval_ns()) ? ObsLogLevel.Warning : ObsLogLevel.Debug));
@@ -882,7 +882,7 @@ public class Source
 
   #region Event handlers
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte RenderDelayLimitOrFrameBufferChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
@@ -927,7 +927,7 @@ public class Source
     }
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte ReceiveAndRenderDelayRefreshButtonClickedEventHandler(obs_properties* properties, obs_property* prop, void* data)
   {
     var context = (Context*)data;
@@ -944,7 +944,7 @@ public class Source
     return Convert.ToByte(true);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte ConnectionTypePipeChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
@@ -962,7 +962,7 @@ public class Source
     }
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte ConnectionTypeSocketChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
@@ -980,14 +980,14 @@ public class Source
     }
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte NetworkInterfaceChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     GetSource(settings).CheckNetworkInterfaces(properties, settings);
     return Convert.ToByte(true);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte PeerDiscoveryAvailablePipeFeedsListChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
@@ -1026,7 +1026,7 @@ public class Source
     return Convert.ToByte(true);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte PeerDiscoveryAvailableSocketFeedsListChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*
@@ -1069,7 +1069,7 @@ public class Source
     }
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte ManualConnectionSettingsChangedEventHandler(obs_properties* properties, obs_property* prop, obs_data* settings)
   {
     fixed (byte*

@@ -111,13 +111,13 @@ public static class Module
   #endregion Helper methods
 
   #region Event handlers
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
   public static unsafe void ToolsMenuItemClicked(void* private_data)
   {
     SettingsDialog.Show();
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
   public static unsafe void FrontendEvent(obs_frontend_event eventName, void* private_data)
   {
     Log("FrontendEvent called", ObsLogLevel.Debug);
@@ -138,7 +138,7 @@ public static class Module
 
   #region OBS module API methods
 #pragma warning disable IDE1006
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_set_pointer", CallConvs = new[] { typeof(CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_set_pointer", CallConvs = [typeof(CallConvCdecl)])]
   public static unsafe void obs_module_set_pointer(obs_module* obsModulePointer)
   {
     Log("obs_module_set_pointer called", ObsLogLevel.Debug);
@@ -146,7 +146,7 @@ public static class Module
     ObsModule = obsModulePointer;
   }
 
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_ver", CallConvs = new[] { typeof(CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_ver", CallConvs = [typeof(CallConvCdecl)])]
   public static uint obs_module_ver()
   {
     var major = (uint)Obs.Version.Major;
@@ -156,7 +156,7 @@ public static class Module
     return version;
   }
 
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_load", CallConvs = new[] { typeof(CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_load", CallConvs = [typeof(CallConvCdecl)])]
   public static unsafe bool obs_module_load()
   {
     Log("Loading module...", ObsLogLevel.Debug);
@@ -206,13 +206,13 @@ public static class Module
     return true;
   }
 
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_post_load", CallConvs = new[] { typeof(CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_post_load", CallConvs = [typeof(CallConvCdecl)])]
   public static void obs_module_post_load()
   {
     Log("obs_module_post_load called", ObsLogLevel.Debug);
   }
 
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_unload", CallConvs = new[] { typeof(CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_unload", CallConvs = [typeof(CallConvCdecl)])]
   public static void obs_module_unload()
   {
     Log("obs_module_unload called", ObsLogLevel.Debug);
@@ -221,7 +221,7 @@ public static class Module
     Output.Dispose();
   }
 
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_set_locale", CallConvs = new[] { typeof(CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_set_locale", CallConvs = [typeof(CallConvCdecl)])]
   public static unsafe void obs_module_set_locale(char* locale)
   {
     Log("obs_module_set_locale called", ObsLogLevel.Debug);
@@ -237,7 +237,7 @@ public static class Module
       _textLookupModule = Obs.obs_module_load_locale(ObsModule, (sbyte*)defaultLocale, (sbyte*)currentLocale);
   }
 
-  [UnmanagedCallersOnly(EntryPoint = "obs_module_free_locale", CallConvs = new[] { typeof(CallConvCdecl) })]
+  [UnmanagedCallersOnly(EntryPoint = "obs_module_free_locale", CallConvs = [typeof(CallConvCdecl)])]
   public static unsafe void obs_module_free_locale()
   {
     if (_textLookupModule != null)

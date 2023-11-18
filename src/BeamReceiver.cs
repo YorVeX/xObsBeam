@@ -392,7 +392,7 @@ public class BeamReceiver
     uint rawVideoDataSize = 0;
     Beam.VideoPlaneInfo planeInfo = Beam.VideoPlaneInfo.Empty;
     bool jpegInitialized = false;
-    byte[] conversionBuffer = Array.Empty<byte>();
+    byte[] conversionBuffer = [];
     Beam.VideoPlaneInfo i420PlaneInfo = Beam.VideoPlaneInfo.Empty;
     Beam.VideoPlaneInfo i422PlaneInfo = Beam.VideoPlaneInfo.Empty;
 
@@ -400,10 +400,10 @@ public class BeamReceiver
     uint logCycle = 0;
     int renderDelayAveragingFrameCount = (int)(senderFps / 2);
     int renderDelayAveragingCycle = 0;
-    int[] renderDelays = Array.Empty<int>();
+    int[] renderDelays = [];
     int renderDelayAverage = -1;
 
-    byte[] receivedFrameData = Array.Empty<byte>();
+    byte[] receivedFrameData = [];
 
     DateTime frameReceivedTime;
     ulong lastVideoTimestamp = 0;

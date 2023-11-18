@@ -100,7 +100,7 @@ public static class Output
 
   #region Output API methods
 #pragma warning disable IDE1006
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe sbyte* output_get_name(void* data)
   {
     Module.Log("output_get_name called", ObsLogLevel.Debug);
@@ -108,7 +108,7 @@ public static class Output
       return (sbyte*)outputName;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void* output_create(obs_data* settings, obs_output* output)
   {
     Module.Log("output_create called", ObsLogLevel.Debug);
@@ -122,7 +122,7 @@ public static class Output
     return (void*)context;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void output_destroy(void* data)
   {
     Module.Log("output_destroy called", ObsLogLevel.Debug);
@@ -132,7 +132,7 @@ public static class Output
     _outputData.Settings = null;
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe byte output_start(void* data)
   {
     Module.Log("output_start called", ObsLogLevel.Debug);
@@ -167,7 +167,7 @@ public static class Output
     return Convert.ToByte(true);
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void output_stop(void* data, ulong ts)
   {
     Module.Log("output_stop called", ObsLogLevel.Debug);
@@ -191,7 +191,7 @@ public static class Output
     }
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void output_raw_video(void* data, video_data* frame)
   {
     if (_firstFrame) // this is the first frame since the last output (re)start, get video info
@@ -234,7 +234,7 @@ public static class Output
     }
   }
 
-  [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   public static unsafe void output_raw_audio(void* data, audio_data* frames)
   {
     if (_audioInfo == null) // this is the first frame since the last output (re)start, get audio info

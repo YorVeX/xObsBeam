@@ -131,30 +131,30 @@ namespace LibJpegTurbo
   public static unsafe class TurboJpeg
   {
     [NativeTypeName("const int[6]")]
-    public static readonly int[] tjMCUWidth = new int[6]
-    {
+    public static readonly int[] tjMCUWidth =
+    [
       8,
       16,
       16,
       8,
       8,
       32,
-    };
+    ];
 
     [NativeTypeName("const int[6]")]
-    public static readonly int[] tjMCUHeight = new int[6]
-    {
+    public static readonly int[] tjMCUHeight =
+    [
       8,
       8,
       16,
       8,
       16,
       8,
-    };
+    ];
 
     [NativeTypeName("const int[12]")]
-    public static readonly int[] tjRedOffset = new int[12]
-    {
+    public static readonly int[] tjRedOffset =
+    [
       0,
       2,
       0,
@@ -167,11 +167,11 @@ namespace LibJpegTurbo
       3,
       1,
       -1,
-    };
+    ];
 
     [NativeTypeName("const int[12]")]
-    public static readonly int[] tjGreenOffset = new int[12]
-    {
+    public static readonly int[] tjGreenOffset =
+    [
       1,
       1,
       1,
@@ -184,11 +184,11 @@ namespace LibJpegTurbo
       2,
       2,
       -1,
-    };
+    ];
 
     [NativeTypeName("const int[12]")]
-    public static readonly int[] tjBlueOffset = new int[12]
-    {
+    public static readonly int[] tjBlueOffset =
+    [
       2,
       0,
       2,
@@ -201,11 +201,11 @@ namespace LibJpegTurbo
       1,
       3,
       -1,
-    };
+    ];
 
     [NativeTypeName("const int[12]")]
-    public static readonly int[] tjAlphaOffset = new int[12]
-    {
+    public static readonly int[] tjAlphaOffset =
+    [
       -1,
       -1,
       -1,
@@ -218,11 +218,11 @@ namespace LibJpegTurbo
       0,
       0,
       -1,
-    };
+    ];
 
     [NativeTypeName("const int[12]")]
-    public static readonly int[] tjPixelSize = new int[12]
-    {
+    public static readonly int[] tjPixelSize =
+    [
       3,
       3,
       4,
@@ -235,7 +235,7 @@ namespace LibJpegTurbo
       4,
       4,
       4,
-    };
+    ];
 
     [NativeTypeName("const tjregion")]
     public static readonly TJRegion TJUNCROPPED = new()

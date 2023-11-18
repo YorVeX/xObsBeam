@@ -16,7 +16,7 @@ using ObsInterop;
 
 namespace xObsBeam;
 
-public class BeamSender
+public class BeamSender(Beam.SenderTypes senderType)
 {
   public const int MaxFrameQueueSize = 5;
   public const int DefaultPort = 13629;
@@ -31,10 +31,10 @@ public class BeamSender
   int _videoDataPoolMaxSize;
   private int _videoFramesProcessed;
   private int _videoFramesCompressed;
-  readonly Beam.SenderTypes _senderType;
+  readonly Beam.SenderTypes _senderType = senderType;
   Beam.VideoHeader _videoHeader;
   Beam.AudioHeader _audioHeader;
-  byte[] _audioData = Array.Empty<byte>();
+  byte[] _audioData = [];
   Beam.VideoPlaneInfo _videoPlaneInfo;
   Beam.VideoPlaneInfo _i420PlaneInfo;
   Beam.VideoPlaneInfo _i422PlaneInfo;
@@ -53,11 +53,6 @@ public class BeamSender
   bool _compressionThreadingSync = true;
   unsafe qoir_encode_options_struct* _qoirEncodeOptions = null;
   readonly PeerDiscovery _discoveryServer = new();
-
-  public BeamSender(Beam.SenderTypes senderType)
-  {
-    _senderType = senderType;
-  }
 
   public unsafe bool SetVideoParameters(BeamSenderProperties properties, video_format format, video_format conversionVideoFormat, uint width, uint height, uint fps_num, uint fps_den, byte full_range, float* color_matrix, float* color_range_min, float* color_range_max, uint* linesize, video_data._data_e__FixedBuffer data)
   {
