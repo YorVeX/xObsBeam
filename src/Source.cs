@@ -126,7 +126,7 @@ public class Source
       if (configuredNetworkInterfaceName == "Any: 0.0.0.0")
         return IPAddress.Any;
 
-      foreach (var networkInterface in NetworkInterfaces.GetAllNetworkInterfaces())
+      foreach (var networkInterface in NetworkInterfaces.AllNetworkInterfaces)
       {
         foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
         {
@@ -245,7 +245,7 @@ public class Source
     var context = (Context*)ContextPointer;
     var settings = context->Settings;
 
-    var discoveredPeers = PeerDiscovery.Discover().Result;
+    var discoveredPeers = PeerDiscovery.Discover();
     bool foundPipePeers = false;
     bool foundSocketPeers = false;
     bool foundExactPreviousPipePeer = false;
@@ -743,7 +743,7 @@ public class Source
       fixed (byte* networkInterfaceAnyListItem = "Any: 0.0.0.0"u8)
         ObsProperties.obs_property_list_add_string(networkInterfacesListProperty, (sbyte*)networkInterfaceAnyListItem, (sbyte*)networkInterfaceAnyListItem);
       thisSource.NetworkInterfacesHaveLocalAddress = false;
-      foreach (var networkInterface in NetworkInterfaces.GetAllNetworkInterfaces())
+      foreach (var networkInterface in NetworkInterfaces.AllNetworkInterfaces)
       {
         if (networkInterface.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up)
         {
