@@ -20,7 +20,50 @@ public static partial class NetworkInterfaces
 
   private static NetworkInterface[] _networkInterfaces = [];
   private static List<(UnicastIPAddressInformation, string)> _unicastAddressesWithIds = [];
-  private static object _networkInterfacesLock = new();
+  private static List<IPAddress> _multicastInterfaceIps = [];
+  private static readonly object _networkInterfacesLock = new();
+
+  public static NetworkInterface[] AllNetworkInterfaces
+  {
+    get
+    {
+      lock (_networkInterfacesLock)
+        return _networkInterfaces;
+    }
+    private set
+    {
+      lock (_networkInterfacesLock)
+        _networkInterfaces = value;
+    }
+  }
+
+  public static List<IPAddress> MulticastInterfaceIps
+  {
+    get
+    {
+      lock (_networkInterfacesLock)
+        return _multicastInterfaceIps;
+    }
+    private set
+    {
+      lock (_networkInterfacesLock)
+        _multicastInterfaceIps = value;
+    }
+  }
+
+  public static List<(UnicastIPAddressInformation, string)> UnicastAddressesWithIds
+  {
+    get
+    {
+      lock (_networkInterfacesLock)
+        return _unicastAddressesWithIds;
+    }
+    private set
+    {
+      lock (_networkInterfacesLock)
+        _unicastAddressesWithIds = value;
+    }
+  }
 
   // this is not called before the first method from this class was used, meaning the first call to GetAllNetworkInterfaces() or GetUnicastAddressesWithIds() will implicitly invoke this
   static NetworkInterfaces()
@@ -41,22 +84,29 @@ public static partial class NetworkInterfaces
   public static void UpdateNetworkInterfaces()
   {
     var networkInterfacesWithIds = new List<(UnicastIPAddressInformation, string)>();
+    var multicastInterfaceIps = new List<IPAddress>();
     Module.Log($"Refreshing list of network interfaces...", ObsLogLevel.Debug);
     var networkInterfaces = NetworkInterface.GetAllNetworkInterfaces();
     foreach (var networkInterface in networkInterfaces)
     {
       if (networkInterface.OperationalStatus == OperationalStatus.Up)
       {
-        foreach (var ip in networkInterface.GetIPProperties().UnicastAddresses)
+        var ipProperties = networkInterface.GetIPProperties();
+        foreach (var ip in ipProperties.UnicastAddresses)
         {
           if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
           {
+            // remember working unicast addresses (this includes localhost and virtual interfaces)
             string identifierString = networkInterface.NetworkInterfaceType == NetworkInterfaceType.Loopback ? "localhost" : networkInterface.GetPhysicalAddress().ToString();
             if (string.IsNullOrEmpty(identifierString))
               identifierString = networkInterface.Name;
             string hashIdentifier = BitConverter.ToString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(identifierString))).Replace("-", "");
             networkInterfacesWithIds.Add((ip, hashIdentifier));
             // Module.Log("NIC: \"" + networkInterface.Name + "\": " + ip.Address + " / " + identifierString + " / " + hashIdentifier, ObsLogLevel.Debug);
+
+            // remember multicast capable interfaces (this does not include localhost and virtual interfaces)
+            if ((networkInterface.NetworkInterfaceType != NetworkInterfaceType.Loopback) && networkInterface.SupportsMulticast && (ipProperties.MulticastAddresses.Count > 0))
+              multicastInterfaceIps.Add(ip.Address);
           }
         }
       }
@@ -65,20 +115,9 @@ public static partial class NetworkInterfaces
     {
       _networkInterfaces = networkInterfaces;
       _unicastAddressesWithIds = networkInterfacesWithIds;
+      _multicastInterfaceIps = multicastInterfaceIps;
     }
     Module.Log($"Refreshing list of network interfaces done.", ObsLogLevel.Debug);
-  }
-
-  public static NetworkInterface[] GetAllNetworkInterfaces()
-  {
-    lock (_networkInterfacesLock)
-      return _networkInterfaces;
-  }
-
-  public static List<(UnicastIPAddressInformation, string)> GetUnicastAddressesWithIds()
-  {
-    lock (_networkInterfacesLock)
-      return _unicastAddressesWithIds;
   }
 
   // source: https://regex101.com/r/JCLOZL/15

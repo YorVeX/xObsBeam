@@ -1,6 +1,22 @@
 ﻿// SPDX-FileCopyrightText: © 2023 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
+/*
+  Peer Discovery regression testing:
+  - named pipes from remote systems are not listed
+  - named pipes from the same system are listed
+  - sockets from remote systems are listed
+  - sockets from the same system are listed
+  - sockets on localhost from remote systems are not listed
+  - if a service is only provided on a specific interface, only the service on this interface is listed (for same system and remote systems)
+  - sockets are redetected from interface ID when the IP address changed
+  - sockets are redetected from interface ID when the port changed
+  - no duplicates are listed
+  - receiver on system with multiple interfaces discovers all services
+  - sender on system with multiple interfaces announces all services
+*/
+
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -20,7 +36,7 @@ public partial class PeerDiscovery
     Socket,
   }
 
-  public struct Peer
+  public struct Peer : IComparable<Peer>
   {
     public string InterfaceId;
     public string Identifier;
@@ -89,7 +105,49 @@ public partial class PeerDiscovery
       };
     }
 
+    public override bool Equals(object? obj)
+    {
+      return obj is Peer peer &&
+             InterfaceId == peer.InterfaceId &&
+             Identifier == peer.Identifier &&
+             SenderType == peer.SenderType &&
+             SenderVersionString == peer.SenderVersionString &&
+             ConnectionType == peer.ConnectionType &&
+             IP == peer.IP &&
+             Port == peer.Port;
+    }
+
     public bool IsEmpty => string.IsNullOrEmpty(Identifier);
+
+    public override int GetHashCode()
+    {
+      HashCode hash = new();
+      hash.Add(InterfaceId);
+      hash.Add(Identifier);
+      hash.Add(SenderType);
+      hash.Add(SenderVersionString);
+      hash.Add(ConnectionType);
+      hash.Add(IP);
+      hash.Add(Port);
+      return hash.ToHashCode();
+    }
+
+    public int CompareTo(Peer other)
+    {
+      if (ConnectionType == ConnectionTypes.Socket)
+        return SocketListItemName.CompareTo(other.SocketListItemName);
+      return PipeListItemName.CompareTo(other.PipeListItemName);
+    }
+
+    public static bool operator ==(Peer left, Peer right)
+    {
+      return left.Equals(right);
+    }
+
+    public static bool operator !=(Peer left, Peer right)
+    {
+      return !(left == right);
+    }
   }
 
   const string MulticastPrefix = "BeamDiscovery";
@@ -98,7 +156,7 @@ public partial class PeerDiscovery
   public const string StringSeparator = "｜";
   public const string StringSeparatorReplacement = "|";
 
-  UdpClient _udpServer = new();
+  CancellationTokenSource _cancellationSource = new();
   Peer _serverPeer;
   bool _udpIsListening;
   IPAddress _serviceAddress = IPAddress.Any;
@@ -106,7 +164,6 @@ public partial class PeerDiscovery
   public void StartServer(IPAddress serviceAddress, int servicePort, Beam.SenderTypes serviceType, string serviceIdentifier)
   {
     _serviceAddress = serviceAddress;
-    Module.Log($"Peer Discovery server: Starting for {serviceType} \"{serviceIdentifier}\" on {serviceAddress}:{servicePort}...", ObsLogLevel.Debug);
     if (_udpIsListening)
       StopServer();
     _serverPeer.IP = _serviceAddress.ToString();
@@ -115,24 +172,40 @@ public partial class PeerDiscovery
     _serverPeer.ConnectionType = ConnectionTypes.Socket;
     _serverPeer.Identifier = serviceIdentifier;
 
-    StartUdpServer();
-    Module.Log($"Peer Discovery server: Started and entered receive loop for {serviceType} \"{serviceIdentifier}\" on {serviceAddress}:{servicePort}.", ObsLogLevel.Debug);
+    if (!_cancellationSource.TryReset())
+    {
+      _cancellationSource.Dispose();
+      _cancellationSource = new CancellationTokenSource();
+    }
+    Module.Log($"Peer Discovery server: Starting for {serviceType} \"{serviceIdentifier}\" on {IPAddress.Loopback}:{servicePort}...", ObsLogLevel.Info);
+    Task.Run(() => UdpServerReceiveLoop(IPAddress.Loopback), _cancellationSource.Token);
+    foreach (var multicastAddress in NetworkInterfaces.MulticastInterfaceIps)
+    {
+      Module.Log($"Peer Discovery server: Starting for {serviceType} \"{serviceIdentifier}\" on {multicastAddress}:{servicePort}...", ObsLogLevel.Info);
+      Task.Run(() => UdpServerReceiveLoop(multicastAddress), _cancellationSource.Token);
+    }
+    _udpIsListening = true;
   }
 
   public void StartServer(Beam.SenderTypes serviceType, string serviceIdentifier)
   {
     _serviceAddress = IPAddress.Loopback;
-    Module.Log($"Peer Discovery server: Starting for {serviceType} \"{serviceIdentifier}\"...", ObsLogLevel.Debug);
     if (_udpIsListening)
       StopServer();
+    Module.Log($"Peer Discovery server: Starting for {serviceType} \"{serviceIdentifier}\" on {_serviceAddress}...", ObsLogLevel.Info);
     _serverPeer.IP = serviceIdentifier;
     _serverPeer.Port = 0;
     _serverPeer.SenderType = serviceType;
     _serverPeer.ConnectionType = ConnectionTypes.Pipe;
     _serverPeer.Identifier = serviceIdentifier;
 
-    StartUdpServer();
-    Module.Log($"Peer Discovery server: Started and entered receive loop for {serviceType} \"{serviceIdentifier}\".", ObsLogLevel.Debug);
+    if (!_cancellationSource.TryReset())
+    {
+      _cancellationSource.Dispose();
+      _cancellationSource = new CancellationTokenSource();
+    }
+    Task.Run(() => UdpServerReceiveLoop(_serviceAddress), _cancellationSource.Token);
+    _udpIsListening = true;
   }
 
   public void StopServer()
@@ -140,132 +213,178 @@ public partial class PeerDiscovery
     if (!_udpIsListening)
       return;
     _udpIsListening = false;
-    _udpServer.Close();
-    _udpServer.Dispose();
+    _cancellationSource.Cancel();
     Module.Log("Peer Discovery server: Stopped.", ObsLogLevel.Debug);
   }
 
-  void StartUdpServer()
-  {
-    _udpServer = new UdpClient();
-#if WINDOWS
-    _udpServer.Client.IOControl((IOControlCode)SIO_UDP_CONNRESET, new byte[] { 0, 0, 0, 0 }, null); // prevent "ConnectionReset" (10054) SocketExceptions caused by clients via ICMP
-#endif
-    _udpServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, 1);
-    _udpServer.Client.Bind(new IPEndPoint(IPAddress.Any, MulticastPort));
-    _udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
-    _udpIsListening = true;
-    Task.Run(UdpServerReceiveLoop);
-  }
-
-  void UdpServerReceiveLoop()
+  async void UdpServerReceiveLoop(IPAddress bindIpAddress)
   {
     try
     {
-      IPEndPoint senderEndPoint = new(IPAddress.Any, 0);
-      while (true)
+      using var udpServer = new UdpClient(AddressFamily.InterNetwork);
+      udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), 2);
+#if WINDOWS
+      udpServer.Client.IOControl((IOControlCode)SIO_UDP_CONNRESET, new byte[] { 0, 0, 0, 0 }, null); // prevent "ConnectionReset" (10054) SocketExceptions caused by clients via ICMP
+#endif
+      udpServer.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, 1);
+      udpServer.Client.Bind(new IPEndPoint(bindIpAddress, MulticastPort));
+      Module.Log($"Peer Discovery server at {bindIpAddress}: Started and entered receive loop for {_serverPeer.SenderType} \"{_serverPeer.Identifier}\".", ObsLogLevel.Debug);
+
+      while (!_cancellationSource.IsCancellationRequested)
       {
-        byte[] data = _udpServer.Receive(ref senderEndPoint);
-        string queryMessage = Encoding.UTF8.GetString(data);
+        var receiveResult = await udpServer.ReceiveAsync(_cancellationSource.Token);
+
+        string queryMessage = Encoding.UTF8.GetString(receiveResult.Buffer);
         var queryItems = queryMessage.Split(StringSeparator, StringSplitOptions.TrimEntries);
-        Module.Log($"Peer Discovery server: {_serverPeer.SenderType} \"{_serverPeer.Identifier}\" received query: {queryMessage}", ObsLogLevel.Debug);
+        Module.Log($"Peer Discovery server at {bindIpAddress}: {_serverPeer.SenderType} \"{_serverPeer.Identifier}\" received query: {queryMessage}", ObsLogLevel.Debug);
 
         if (queryItems.Length == 2 && queryItems[0] == MulticastPrefix && queryItems[1] == "Discover")
         {
-          // send a response to the original sender from every available interface
-          foreach (var unicastAddress in NetworkInterfaces.GetUnicastAddressesWithIds())
+          // send a response to the original sender for every available interface
+          foreach (var unicastAddress in NetworkInterfaces.UnicastAddressesWithIds)
           {
-            if (_serviceAddress != IPAddress.Any && _serviceAddress.ToString() != unicastAddress.Item1.Address.ToString())
+            // if a service is only provided on a specific interface, don't announce it via other interfaces
+            if ((_serviceAddress != IPAddress.Any) && (_serviceAddress.ToString() != unicastAddress.Item1.Address.ToString()))
               continue;
 
-            var responseBytes = Encoding.UTF8.GetBytes(_serverPeer.ToMulticastString(unicastAddress.Item2, unicastAddress.Item1.Address.ToString()));
-            _udpServer.Send(responseBytes, responseBytes.Length, senderEndPoint);
+            // don't announce loopback services via non-loopback interfaces (the remote receiver would not be able to connect to it anyway)
+            if (IPAddress.IsLoopback(unicastAddress.Item1.Address) && !IPAddress.IsLoopback(bindIpAddress))
+              continue;
+
+            string multicastString = _serverPeer.ToMulticastString(unicastAddress.Item2, unicastAddress.Item1.Address.ToString());
+            Module.Log($"Peer Discovery server at {bindIpAddress}: {_serverPeer.SenderType} \"{_serverPeer.Identifier}\" announcing service: \"{_serverPeer.ToMulticastString(unicastAddress.Item2, unicastAddress.Item1.Address.ToString())}\"", ObsLogLevel.Debug);
+            var responseBytes = Encoding.UTF8.GetBytes(multicastString);
+            udpServer.Send(responseBytes, responseBytes.Length, receiveResult.RemoteEndPoint);
           }
         }
       }
     }
     catch (SocketException)
     {
-      // _udpServer has been closed, stop listening
-      Module.Log("Peer Discovery server: Listening stopped.", ObsLogLevel.Info);
+      // udpServer has been closed, stop listening
+      Module.Log($"Peer Discovery server at {bindIpAddress}: Listening stopped (socket closed).", ObsLogLevel.Info);
+    }
+    catch (OperationCanceledException)
+    {
+      Module.Log($"Peer Discovery server at {bindIpAddress}: Listening stopped (task stopped).", ObsLogLevel.Info);
     }
     catch (Exception ex)
     {
-      Module.Log($"{ex.GetType().Name} in Peer Discovery server receive loop: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
+      Module.Log($"{ex.GetType().Name} in Peer Discovery server at {bindIpAddress} receive loop: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
     }
   }
 
-  public static async Task<List<Peer>> Discover(Peer currentPeer = default, int waitTimeMs = 100)
+  public static List<Peer> Discover(Peer currentPeer = default, int waitTimeMs = 100)
   {
     Module.Log("Peer Discovery client: Starting discovery...", ObsLogLevel.Debug);
-    var peers = new List<Peer>();
-    using UdpClient udpClient = new();
+    var peers = new ConcurrentDictionary<string, Peer>();
 
     // prepare the discovery message
     string message = $"{MulticastPrefix}{StringSeparator}Discover";
     byte[] data = Encoding.UTF8.GetBytes(message);
 
     // broadcast the discovery message
+    List<Task> sendTasks = [];
     try
     {
-      udpClient.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress));
-      udpClient.Send(data, data.Length, MulticastGroupAddress, MulticastPort);
+      CancellationTokenSource cancelAfterTimeout = new(waitTimeMs);
+      var multicastInterfaceIps = new List<IPAddress>(NetworkInterfaces.MulticastInterfaceIps)
+      {
+        IPAddress.Loopback // NetworkInterfaces.MulticastInterfaceIps doesn't include the loopback interface, so we need to add it manually
+      };
+      foreach (var multicastInterfaceIp in multicastInterfaceIps)
+      {
+        sendTasks.Add(Task.Run(async () =>
+        {
+          using UdpClient udpClient = new(AddressFamily.InterNetwork);
+
+          // send discovery request
+          try
+          {
+            Module.Log($"Peer Discovery client: Sending multicast discovery request from {multicastInterfaceIp}", ObsLogLevel.Debug);
+            udpClient.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), multicastInterfaceIp);
+            udpClient.Client.Bind(new IPEndPoint(multicastInterfaceIp, 0));
+            udpClient.Send(data, data.Length, MulticastGroupAddress, MulticastPort);
+          }
+          catch (Exception ex)
+          {
+            Module.Log($"Peer Discovery client: {ex.GetType().Name} while sending discovery request from {multicastInterfaceIp}: {ex.Message}", ObsLogLevel.Error);
+            if (ex.StackTrace != null)
+              Module.Log(ex.StackTrace, ObsLogLevel.Debug);
+            return;
+          }
+
+          // receive discovery responses
+          try
+          {
+            while (true)
+            {
+              var receiveResult = await udpClient.ReceiveAsync(cancelAfterTimeout.Token);
+              var responseString = Encoding.UTF8.GetString(receiveResult.Buffer);
+              Module.Log($"Peer Discovery client: Response string: {responseString}.", ObsLogLevel.Debug);
+              bool peerAdded = false;
+              try
+              {
+                Peer discoveredPeer;
+                try { discoveredPeer = Peer.FromMulticastString(responseString); } catch { continue; }
+                if (!currentPeer.IsEmpty) // searching for a specific identifier? then don't fill the list with other peers that are not interesting
+                {
+                  if (currentPeer.Identifier == discoveredPeer.Identifier && currentPeer.InterfaceId == discoveredPeer.InterfaceId && discoveredPeer.SenderVersionString == Module.ModuleVersionString)
+                  {
+                    Module.Log($"Peer Discovery client: found specific {discoveredPeer.SenderVersionString} {discoveredPeer.SenderType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
+                    if (discoveredPeer.ConnectionType == ConnectionTypes.Socket)
+                      peerAdded = peers.TryAdd(discoveredPeer.ConnectionType + discoveredPeer.SocketUniqueIdentifier, discoveredPeer);
+                    else if (discoveredPeer.ConnectionType == ConnectionTypes.Pipe)
+                      peerAdded = peers.TryAdd(discoveredPeer.ConnectionType + discoveredPeer.Identifier, discoveredPeer); // add only this entry to the list...
+                    break; // ...and stop the loop
+                  }
+                }
+                else
+                {
+                  Module.Log($"Peer Discovery client: Adding peer: {responseString}.", ObsLogLevel.Debug);
+                  if (discoveredPeer.ConnectionType == ConnectionTypes.Socket)
+                    peerAdded = peers.TryAdd(discoveredPeer.ConnectionType + discoveredPeer.SocketUniqueIdentifier, discoveredPeer);
+                  else if (discoveredPeer.ConnectionType == ConnectionTypes.Pipe)
+                    peerAdded = peers.TryAdd(discoveredPeer.ConnectionType + discoveredPeer.Identifier, discoveredPeer); // add only this entry to the list...
+                  Module.Log($"Peer Discovery client: Peer added {peerAdded} for: {responseString}.", ObsLogLevel.Debug);
+                }
+                if (peerAdded)
+                  Module.Log($"Peer Discovery client: Found v{discoveredPeer.SenderVersionString} {discoveredPeer.SenderType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
+              }
+              catch (Exception ex)
+              {
+                Module.Log($"Peer Discovery client: {ex.GetType().Name} while processing response \"{responseString}\" from {receiveResult.RemoteEndPoint.Address}: {ex.Message}", ObsLogLevel.Error);
+                if (ex.StackTrace != null)
+                  Module.Log(ex.StackTrace, ObsLogLevel.Debug);
+              }
+            }
+          }
+          catch (OperationCanceledException)
+          {
+            Module.Log($"Peer Discovery client: Discovery finished for network interface {multicastInterfaceIp}.", ObsLogLevel.Debug);
+            // this is the normal way to exit the loop after the timeout was reached
+          }
+          catch (Exception ex)
+          {
+            Module.Log($"Peer Discovery client: {ex.GetType().Name} while receiving discovery responses on network interface {multicastInterfaceIp}: {ex.Message}", ObsLogLevel.Error);
+            if (ex.StackTrace != null)
+              Module.Log(ex.StackTrace, ObsLogLevel.Debug);
+          }
+        }, cancelAfterTimeout.Token));
+      }
     }
     catch (SocketException ex)
     {
       Module.Log($"Peer Discovery client: {ex.GetType().Name} while sending discovery request: {ex.Message}", ObsLogLevel.Error);
       if (ex.StackTrace != null)
         Module.Log(ex.StackTrace, ObsLogLevel.Debug);
-      return peers;
+      return [.. peers.Values];
     }
 
-    // collect responses
-    CancellationTokenSource cancelAfterTimeout = new(waitTimeMs);
-    await Task.Run(async () =>
-    {
-      try
-      {
-        while (true)
-        {
-          var receiveResult = await udpClient.ReceiveAsync(cancelAfterTimeout.Token);
-          var responseString = Encoding.UTF8.GetString(receiveResult.Buffer);
-          try
-          {
-            Peer discoveredPeer;
-            try { discoveredPeer = Peer.FromMulticastString(responseString); } catch { continue; }
-            if (!currentPeer.IsEmpty) // searching for a specific identifier? then don't fill the list with other peers that are not interesting
-            {
-              if (currentPeer.Identifier == discoveredPeer.Identifier && currentPeer.InterfaceId == discoveredPeer.InterfaceId && discoveredPeer.SenderVersionString == Module.ModuleVersionString)
-              {
-                Module.Log($"Peer Discovery client: found specific {discoveredPeer.SenderVersionString} {discoveredPeer.SenderType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
-                peers.Add(discoveredPeer); // add only this entry to the list...
-                break; // ...and stop the loop
-              }
-            }
-            else
-              peers.Add(discoveredPeer);
-            Module.Log($"Peer Discovery client: found v{discoveredPeer.SenderVersionString} {discoveredPeer.SenderType} peer \"{discoveredPeer.Identifier}\" at {discoveredPeer.IP}:{discoveredPeer.Port}.", ObsLogLevel.Debug);
-          }
-          catch (Exception ex)
-          {
-            Module.Log($"Peer Discovery client: {ex.GetType().Name} while processing response \"{responseString}\" from {receiveResult.RemoteEndPoint.Address}: {ex.Message}", ObsLogLevel.Error);
-            if (ex.StackTrace != null)
-              Module.Log(ex.StackTrace, ObsLogLevel.Debug);
-          }
-        }
-      }
-      catch (OperationCanceledException)
-      {
-        Module.Log($"Peer Discovery client: Discovery finished, found {peers.Count} peers.", ObsLogLevel.Debug);
-        // this is the normal way to exit the loop after the timeout was reached
-      }
-      catch (Exception ex)
-      {
-        Module.Log($"Peer Discovery client: {ex.GetType().Name} while receiving discovery responses: {ex.Message}", ObsLogLevel.Error);
-        if (ex.StackTrace != null)
-          Module.Log(ex.StackTrace, ObsLogLevel.Debug);
-      }
-    }, cancelAfterTimeout.Token);
-    return peers;
+    Task.WaitAll([.. sendTasks]);
+    var peersList = new List<Peer>([.. peers.Values]);
+    peersList.Sort();
+    Module.Log($"Peer Discovery client: Discovery finished for all network interfaces, found {peers.Count} peers.", ObsLogLevel.Debug);
+    return peersList;
   }
 }

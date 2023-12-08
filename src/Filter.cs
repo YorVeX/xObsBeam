@@ -423,6 +423,7 @@ public class Filter
   public static unsafe void filter_remove(void* data, obs_source* source)
   {
     Module.Log("filter_remove called", ObsLogLevel.Debug);
+    GetFilter(data).StopSender();
     fixed (byte* signalName = "update"u8)
       ObsSignal.signal_handler_disconnect(Obs.obs_source_get_signal_handler(source), (sbyte*)signalName, &SourceUpdateSignalEventHandler, GetFilter(data).ContextPointer);
   }

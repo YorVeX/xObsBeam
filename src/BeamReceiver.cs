@@ -100,7 +100,7 @@ public class BeamReceiver(bool isRelay = false)
       // do peer discovery if discovery information is available
       if (!currentPeer.IsEmpty)
       {
-        var discoveredPeers = PeerDiscovery.Discover(currentPeer).Result;
+        var discoveredPeers = PeerDiscovery.Discover(currentPeer);
         if (discoveredPeers.Count > 0)
         {
           _targetHostname = discoveredPeers[0].IP;
