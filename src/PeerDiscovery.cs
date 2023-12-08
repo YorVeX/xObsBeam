@@ -222,7 +222,10 @@ public partial class PeerDiscovery
     try
     {
       using var udpServer = new UdpClient(AddressFamily.InterNetwork);
-      udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), 2);
+      if (bindIpAddress == IPAddress.Loopback)
+        udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), bindIpAddress);
+      else
+        udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), 2);
 #if WINDOWS
       udpServer.Client.IOControl((IOControlCode)SIO_UDP_CONNRESET, new byte[] { 0, 0, 0, 0 }, null); // prevent "ConnectionReset" (10054) SocketExceptions caused by clients via ICMP
 #endif
