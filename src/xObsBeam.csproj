@@ -12,7 +12,7 @@
     <OptimizationPreference>Speed</OptimizationPreference>
     <PublishAot>true</PublishAot>
     <Authors>https://github.com/YorVeX</Authors>
-    <AssemblyVersion>0.9.9.0</AssemblyVersion>
+    <AssemblyVersion>0.9.10.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>
