@@ -153,6 +153,7 @@ public partial class PeerDiscovery
   const string MulticastPrefix = "BeamDiscovery";
   const string MulticastGroupAddress = "224.0.0.79";
   const int MulticastPort = 13639;
+  const int MulticastTtl = 2;
   public const string StringSeparator = "｜";
   public const string StringSeparatorReplacement = "|";
 
@@ -222,10 +223,10 @@ public partial class PeerDiscovery
     try
     {
       using var udpServer = new UdpClient(AddressFamily.InterNetwork);
-      if (bindIpAddress == IPAddress.Loopback)
+      if (IPAddress.IsLoopback(bindIpAddress))
         udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), bindIpAddress);
       else
-        udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), 2);
+        udpServer.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), MulticastTtl);
 #if WINDOWS
       udpServer.Client.IOControl((IOControlCode)SIO_UDP_CONNRESET, new byte[] { 0, 0, 0, 0 }, null); // prevent "ConnectionReset" (10054) SocketExceptions caused by clients via ICMP
 #endif
@@ -305,7 +306,10 @@ public partial class PeerDiscovery
           try
           {
             Module.Log($"Peer Discovery client: Sending multicast discovery request from {multicastInterfaceIp}", ObsLogLevel.Debug);
-            udpClient.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), multicastInterfaceIp);
+            if (IPAddress.IsLoopback(multicastInterfaceIp))
+              udpClient.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), multicastInterfaceIp);
+            else
+              udpClient.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), MulticastTtl);
             udpClient.Client.Bind(new IPEndPoint(multicastInterfaceIp, 0));
             udpClient.Send(data, data.Length, MulticastGroupAddress, MulticastPort);
           }
