@@ -1,6 +1,7 @@
 ﻿// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -41,7 +42,7 @@ public static class Module
   public static unsafe obs_module* ObsModule { get; private set; } = null;
   public static string ModuleName { get; private set; } = "xObsBeam";
   public static string ModulePath { get; private set; } = "";
-  public static string ModuleVersionString { get; private set; } = "v0.0.0";
+  public static string ModuleVersionString { get; private set; } = "0.0.0";
 
   static unsafe text_lookup* _textLookupModule = null;
 
@@ -142,7 +143,7 @@ public static class Module
   public static unsafe void obs_module_set_pointer(obs_module* obsModulePointer)
   {
     Log("obs_module_set_pointer called", ObsLogLevel.Debug);
-    ModuleName = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name!;
+    ModuleName = Assembly.GetExecutingAssembly().GetName().Name!;
     ObsModule = obsModulePointer;
   }
 
@@ -171,11 +172,11 @@ public static class Module
     // remember where this module was loaded from
     ModulePath = Path.GetFullPath(Marshal.PtrToStringUTF8((IntPtr)Obs.obs_get_module_binary_path(ObsModule))!);
 
-    var thisAssembly = System.Reflection.Assembly.GetExecutingAssembly();
+    var thisAssembly = Assembly.GetExecutingAssembly();
 
     // configure library resolving for native libraries to additionally search the same directory as this module
     NativeLibrary.SetDllImportResolver(thisAssembly,
-      (string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath) =>
+      (string libraryName, Assembly assembly, DllImportSearchPath? searchPath) =>
       {
         Log($"Trying to load native library \"{libraryName}\" from additional path: {Path.GetDirectoryName(ModulePath)!}", ObsLogLevel.Debug);
         if (NativeLibrary.TryLoad(Path.Combine(Path.GetDirectoryName(ModulePath)!, libraryName), out nint handle)) // search current module directory
@@ -200,9 +201,10 @@ public static class Module
     Source.Register();
     Filter.Register();
 
-    Version version = thisAssembly.GetName().Version!;
-    ModuleVersionString = $"{version.Major}.{version.Minor}.{version.Build}";
-    Log($"Version {ModuleVersionString} loaded (built with .NET {Environment.Version}).", ObsLogLevel.Info);
+    var informationalVersion = thisAssembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion;
+    ModuleVersionString = (informationalVersion.Contains('+') ? informationalVersion.Split("+").First() : informationalVersion);
+    var versionGitHash = (informationalVersion.Contains('+') ? informationalVersion.Split("+").Last() : "");
+    Log($"Version {ModuleVersionString} loaded ({versionGitHash} built with .NET {Environment.Version}).", ObsLogLevel.Info);
     return true;
   }
 
