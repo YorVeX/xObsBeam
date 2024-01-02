@@ -20,7 +20,7 @@ VIProductVersion "${VERSION}"
 VIAddVersionKey "ProductName" "${APPNAME}"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "VIProductVersion" "${VERSION}"
-VIAddVersionKey "LegalCopyright" "Copyright (c) 2023 ${AUTHOR}, https://github.com/${AUTHOR}"
+VIAddVersionKey "LegalCopyright" "Copyright (c) 2023-2024 ${AUTHOR}, https://github.com/${AUTHOR}"
 VIAddVersionKey "FileDescription" "${APPDISPLAYNAME}"
 
 ; Main install settings
