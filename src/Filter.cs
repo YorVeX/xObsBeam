@@ -25,7 +25,7 @@ public class Filter
   #region Instance fields
   unsafe Context* ContextPointer;
   unsafe uint FilterId => ContextPointer->FilterId;
-  private string _parentSourceName = "";
+  public string ParentSourceName { get; private set; } = "";
   public BeamSenderProperties Properties { get; private set; }
   public bool IsEnabled { get; private set; }
   public bool IsActive { get; private set; }
@@ -61,9 +61,9 @@ public class Filter
   {
     get
     {
-      if (string.IsNullOrEmpty(_parentSourceName))
+      if (string.IsNullOrEmpty(ParentSourceName))
         return "<" + ContextPointer->FilterId + ">";
-      return "<" + ContextPointer->FilterId + "/" + _parentSourceName + ">";
+      return "<" + ContextPointer->FilterId + "/" + ParentSourceName + ">";
     }
   }
 
@@ -160,20 +160,6 @@ public class Filter
     {
       _isFirstVideoFrame = false;
 
-      // identify and remember the parent source (obs_filter_get_parent is only valid during specific callbacks, so we need to do this here)
-      if (ContextPointer->ParentSource == null)
-      {
-        //TODO: move this initialization to filter_add as soon as an OBS (probably the next after 29.1.3) with this new callback has been released: https://github.com/obsproject/obs-studio/commit/a494cf5ce493b77af682e4c4e2a64302d2ecc393
-        // background: obs_filter_get_parent() is not guaranteed to work in filter_create, but it should be in filter_add, and then we don't need this here anymore where it might be too late and also doubled for first audio and video frame
-        ContextPointer->ParentSource = Obs.obs_filter_get_parent(ContextPointer->Source);
-        if (ContextPointer->ParentSource != null)
-        {
-          _parentSourceName = Marshal.PtrToStringUTF8((IntPtr)Obs.obs_source_get_name(ContextPointer->ParentSource))!;
-          fixed (byte* signalName = "update"u8) // register for source settings update to restart the sender if necessary
-            ObsSignal.signal_handler_connect(Obs.obs_source_get_signal_handler(ContextPointer->ParentSource), (sbyte*)signalName, &SourceUpdateSignalEventHandler, ContextPointer);
-        }
-      }
-
       var requiredVideoFormatConversion = Properties.GetRequiredVideoFormatConversion(frame->format);
       if (requiredVideoFormatConversion != video_format.VIDEO_FORMAT_NONE)
       {
@@ -232,16 +218,6 @@ public class Filter
     {
       _isFirstAudioFrame = false;
 
-      // identify and remember the parent source (obs_filter_get_parent is only valid during specific callbacks, so we need to do this here)
-      if (ContextPointer->ParentSource == null)
-      {
-        //TODO: move this initialization to filter_add as soon as an OBS (probably the next after 29.1.3) with this new callback has been released: https://github.com/obsproject/obs-studio/commit/a494cf5ce493b77af682e4c4e2a64302d2ecc393
-        // background: obs_filter_get_parent() is not guaranteed to work in filter_create, but it should be in filter_add, and then we don't need this here anymore where it might be too late and also doubled for first audio and video frame
-        ContextPointer->ParentSource = Obs.obs_filter_get_parent(ContextPointer->Source);
-        if (ContextPointer->ParentSource != null)
-          _parentSourceName = Marshal.PtrToStringUTF8((IntPtr)Obs.obs_source_get_name(ContextPointer->ParentSource))!;
-      }
-
       var audioInfo = ObsBmem.bzalloc<obs_audio_info>(); // need this for samples_per_sec info
       var audioOutputInfo = ObsAudio.audio_output_get_info(Obs.obs_get_audio()); // need this for format info, it's not in the global audio info
       var speakerLayout = (ContextPointer->ParentSource != null ? Obs.obs_source_get_speaker_layout(ContextPointer->ParentSource) : audioInfo->speakers);
@@ -287,6 +263,7 @@ public class Filter
       sourceInfo.output_flags = ObsSource.OBS_SOURCE_ASYNC_VIDEO | ObsSource.OBS_SOURCE_AUDIO;
       sourceInfo.get_name = &filter_av_get_name;
       sourceInfo.create = &filter_create_av;
+      sourceInfo.filter_add = &filter_add;
       sourceInfo.filter_remove = &filter_remove;
       sourceInfo.destroy = &filter_destroy;
       sourceInfo.get_defaults = &filter_get_defaults_av;
@@ -306,6 +283,7 @@ public class Filter
       sourceInfo.output_flags = ObsSource.OBS_SOURCE_ASYNC_VIDEO;
       sourceInfo.get_name = &filter_video_get_name;
       sourceInfo.create = &filter_create_video;
+      sourceInfo.filter_add = &filter_add;
       sourceInfo.filter_remove = &filter_remove;
       sourceInfo.destroy = &filter_destroy;
       sourceInfo.get_defaults = &filter_get_defaults_video;
@@ -324,6 +302,7 @@ public class Filter
       sourceInfo.output_flags = ObsSource.OBS_SOURCE_AUDIO;
       sourceInfo.get_name = &filter_audio_get_name;
       sourceInfo.create = &filter_create_audio;
+      sourceInfo.filter_add = &filter_add;
       sourceInfo.filter_remove = &filter_remove;
       sourceInfo.destroy = &filter_destroy;
       sourceInfo.get_defaults = &filter_get_defaults_audio;
@@ -417,6 +396,27 @@ public class Filter
     thisFilter.ContextPointer = context;
 
     return context;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+  public static unsafe void filter_add(void* data, obs_source* source)
+  {
+    Module.Log("filter_add called", ObsLogLevel.Debug);
+    var filter = GetFilter(data);
+    fixed (byte* signalName = "update"u8)
+      ObsSignal.signal_handler_disconnect(Obs.obs_source_get_signal_handler(source), (sbyte*)signalName, &SourceUpdateSignalEventHandler, GetFilter(data).ContextPointer);
+
+    // identify and remember the parent source (obs_filter_get_parent is only valid during specific callbacks, so we need to do this here)
+    if (filter.ContextPointer->ParentSource == null)
+    {
+      filter.ContextPointer->ParentSource = Obs.obs_filter_get_parent(filter.ContextPointer->Source);
+      if (filter.ContextPointer->ParentSource != null)
+      {
+        filter.ParentSourceName = Marshal.PtrToStringUTF8((IntPtr)Obs.obs_source_get_name(filter.ContextPointer->ParentSource))!;
+        fixed (byte* signalName = "update"u8) // register for source settings update to restart the sender if necessary
+          ObsSignal.signal_handler_connect(Obs.obs_source_get_signal_handler(filter.ContextPointer->ParentSource), (sbyte*)signalName, &SourceUpdateSignalEventHandler, filter.ContextPointer);
+      }
+    }
   }
 
   [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]

@@ -117,6 +117,7 @@ public class Source
       filterInfo->get_properties = &filter_get_properties;
       filterInfo->filter_video = &filter_video;
       filterInfo->filter_audio = &filter_audio;
+      filterInfo->filter_add = &filter_add;
       filterInfo->filter_remove = &filter_remove;
       ObsSource.obs_register_source_s(filterInfo, (nuint)sizeof(obs_source_info));
     }
@@ -511,14 +512,6 @@ public class Source
   {
     // Module.Log("filter_video called with timestamp " + frame->timestamp, ObsLogLevel.Debug);
     var filterContext = (FilterContext*)data;
-    if (filterContext->SourceId == 0)
-    {
-      //TODO: move this initialization to filter_add as soon as an OBS (probably the next after 29.1.3) with this new callback has been released: https://github.com/obsproject/obs-studio/commit/a494cf5ce493b77af682e4c4e2a64302d2ecc393
-      // background: obs_filter_get_parent() is not guaranteed to work in filter_create, but it should be in filter_add, and then we don't need this check on every frame anymore
-      var parentSource = Obs.obs_filter_get_parent(filterContext->FilterSource);
-      if (parentSource != null)
-        filterContext->SourceId = ((Context*)GetSource(parentSource).ContextPointer)->SourceId;
-    }
     if (filterContext->SourceId > 0)
       _sourceList[filterContext->SourceId].CurrentVideoTimestamp = frame->timestamp;
     return frame;
@@ -529,17 +522,23 @@ public class Source
   {
     // Module.Log("filter_audio called with timestamp " + frame->timestamp, ObsLogLevel.Debug);
     var filterContext = (FilterContext*)data;
+    if (filterContext->SourceId > 0)
+      _sourceList[filterContext->SourceId].CurrentAudioTimestamp = frame->timestamp;
+    return frame;
+  }
+
+  [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+  public static unsafe void filter_add(void* data, obs_source* source)
+  {
+    Module.Log("filter_add called", ObsLogLevel.Debug);
+    var filterContext = (FilterContext*)data;
     if (filterContext->SourceId == 0)
     {
-      //TODO: move this initialization to filter_add as soon as an OBS (probably the next after 29.1.3) with this new callback has been released: https://github.com/obsproject/obs-studio/commit/a494cf5ce493b77af682e4c4e2a64302d2ecc393
-      // background: obs_filter_get_parent() is not guaranteed to work in filter_create, but it should be in filter_add, and then we don't need this check on every frame anymore
+      // identify and remember the parent source (obs_filter_get_parent is only valid during specific callbacks, so we need to do this here)
       var parentSource = Obs.obs_filter_get_parent(filterContext->FilterSource);
       if (parentSource != null)
         filterContext->SourceId = ((Context*)GetSource(parentSource).ContextPointer)->SourceId;
     }
-    if (filterContext->SourceId > 0)
-      _sourceList[filterContext->SourceId].CurrentAudioTimestamp = frame->timestamp;
-    return frame;
   }
 
   [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
