@@ -152,6 +152,7 @@ public static class EncoderSupport
       case video_format.VIDEO_FORMAT_BGRX:
       case video_format.VIDEO_FORMAT_Y800:
       case video_format.VIDEO_FORMAT_BGR3:
+      case video_format.VIDEO_FORMAT_R10L:
         return false;
       default:
         return false;
@@ -173,6 +174,7 @@ public static class EncoderSupport
       case video_format.VIDEO_FORMAT_P216:
       case video_format.VIDEO_FORMAT_P416:
       case video_format.VIDEO_FORMAT_V210:
+      case video_format.VIDEO_FORMAT_R10L:
         return true;
       default:
         return false;
@@ -212,6 +214,7 @@ public static class EncoderSupport
       case video_format.VIDEO_FORMAT_BGRA:
       case video_format.VIDEO_FORMAT_BGRX:
       case video_format.VIDEO_FORMAT_BGR3:
+      case video_format.VIDEO_FORMAT_R10L:
         return TJSAMP.TJSAMP_444;
     }
     return TJSAMP.TJSAMP_444;

@@ -416,12 +416,12 @@ public class Beam
         planeInfo.Linesize[0] = adjusted_width;
         planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
         return planeInfo;
-      // case video_format.VIDEO_FORMAT_R10L: // not yet, newer OBS version
-      //   planeInfo = new PlaneInfo(1, width * height * 4);
-      //   planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
-      //   planeInfo.Linesize[0] = width * 4;
-      //   planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
-      //   return planeInfo;
+      case video_format.VIDEO_FORMAT_R10L:
+        planeInfo = new VideoPlaneInfo(1, width * height * 4);
+        planeInfo.DataSize = AlignSize(planeInfo.DataSize, alignment);
+        planeInfo.Linesize[0] = width * 4;
+        planeInfo.PlaneSizes[0] = (planeInfo.Linesize[0] * height);
+        return planeInfo;
       default:
         Module.Log($"Unsupported video format: {format}", ObsLogLevel.Error);
         return planeInfo;
