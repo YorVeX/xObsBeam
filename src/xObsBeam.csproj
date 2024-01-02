@@ -11,8 +11,10 @@
     <InvariantGlobalization>true</InvariantGlobalization>    <!-- reduce size of resulting binary by removing unused .NET globalization features -->
     <OptimizationPreference>Speed</OptimizationPreference>
     <PublishAot>true</PublishAot>
+    <Copyright>© 2023-2024 github.com/YorVeX</Copyright>
     <Authors>https://github.com/YorVeX</Authors>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <VersionPrefix>1.1.0</VersionPrefix>
+    <VersionSuffix>beta</VersionSuffix>
   </PropertyGroup>
 
   <ItemGroup>
