@@ -14,7 +14,7 @@
     <Copyright>© 2023-2024 github.com/YorVeX</Copyright>
     <Authors>https://github.com/YorVeX</Authors>
     <VersionPrefix>1.1.0</VersionPrefix>
-    <VersionSuffix>beta</VersionSuffix>
+    <VersionSuffix></VersionSuffix>
   </PropertyGroup>
 
   <ItemGroup>
