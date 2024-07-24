@@ -895,7 +895,7 @@ public class Source
       // render delay limit
       if (!thisSource.IsRelay)
       {
-        var renderDelayLimitProperty = ObsProperties.obs_properties_add_int_slider(properties, (sbyte*)propertyRenderDelayLimitId, (sbyte*)propertyRenderDelayLimitCaption, 0, 5000, 50);
+        var renderDelayLimitProperty = ObsProperties.obs_properties_add_int_slider(properties, (sbyte*)propertyRenderDelayLimitId, (sbyte*)propertyRenderDelayLimitCaption, 0, 10000, 50);
         ObsProperties.obs_property_set_long_description(renderDelayLimitProperty, (sbyte*)propertyRenderDelayLimitText);
         ObsProperties.obs_property_int_set_suffix(renderDelayLimitProperty, (sbyte*)propertyRenderDelayLimitSuffix);
         ObsProperties.obs_property_set_modified_callback(renderDelayLimitProperty, &RenderDelayLimitOrFrameBufferChangedEventHandler);
