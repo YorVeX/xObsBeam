@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
+// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using System.Net;
@@ -100,7 +100,7 @@ public static partial class NetworkInterfaces
             string identifierString = networkInterface.NetworkInterfaceType == NetworkInterfaceType.Loopback ? "localhost" : networkInterface.GetPhysicalAddress().ToString();
             if (string.IsNullOrEmpty(identifierString))
               identifierString = networkInterface.Name;
-            string hashIdentifier = BitConverter.ToString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(identifierString))).Replace("-", "");
+            string hashIdentifier = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(identifierString)));
             networkInterfacesWithIds.Add((ip, hashIdentifier));
             // Module.Log("NIC: \"" + networkInterface.Name + "\": " + ip.Address + " / " + identifierString + " / " + hashIdentifier, ObsLogLevel.Debug);
 
