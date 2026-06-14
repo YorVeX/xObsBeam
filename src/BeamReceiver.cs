@@ -402,10 +402,16 @@ public class BeamReceiver(bool isRelay = false)
     if (IsRelay)
     {
       SenderRelayProperties.UniquePrefix = SenderRelayProperties.Identifier;
+      Task startTask;
       if (SenderRelayProperties.UsePipe)
-        beamSender.Start(SenderRelayProperties.Identifier, SenderRelayProperties.Identifier);
+        startTask = beamSender.Start(SenderRelayProperties.Identifier, SenderRelayProperties.Identifier);
       else
-        beamSender.Start(SenderRelayProperties.Identifier, SenderRelayProperties.NetworkInterfaceAddress, SenderRelayProperties.Port, SenderRelayProperties.AutomaticPort);
+        startTask = beamSender.Start(SenderRelayProperties.Identifier, SenderRelayProperties.NetworkInterfaceAddress, SenderRelayProperties.Port, SenderRelayProperties.AutomaticPort);
+      _ = startTask.ContinueWith(t =>
+      {
+        if (t.Exception != null)
+          Module.Log($"BeamSender (relay) Start faulted: {t.Exception.Flatten().Message}", ObsLogLevel.Error);
+      }, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     var videoHeader = new Beam.VideoHeader();

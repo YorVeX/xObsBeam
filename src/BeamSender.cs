@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
+// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using System.Buffers;
@@ -266,7 +266,7 @@ public class BeamSender(Beam.SenderTypes senderType)
     }
   }
 
-  public async void Start(string identifier, IPAddress localAddr, int port, bool automaticPort)
+  public async Task Start(string identifier, IPAddress localAddr, int port, bool automaticPort)
   {
     if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterVideo) && (_videoPlaneInfo.DataSize == 0))
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
@@ -359,14 +359,14 @@ public class BeamSender(Beam.SenderTypes senderType)
       catch (Exception ex)
       {
         Module.Log($"{ex.GetType().Name} in BeamSender.Start: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
-        throw;
+        break;
       }
     }
     _listener.Stop();
     Module.Log($"Listener stopped.", ObsLogLevel.Info);
   }
 
-  public async void Start(string identifier, string pipeName)
+  public async Task Start(string identifier, string pipeName)
   {
     if ((_senderType is Beam.SenderTypes.Output or Beam.SenderTypes.FilterAudioVideo or Beam.SenderTypes.FilterVideo) && (_videoPlaneInfo.DataSize == 0))
       throw new InvalidOperationException("Video data size is unknown. Call SetVideoParameters() before calling Start().");
@@ -418,7 +418,7 @@ public class BeamSender(Beam.SenderTypes senderType)
       catch (Exception ex)
       {
         Module.Log($"{ex.GetType().Name} in BeamSender.Start: {ex.Message}\n{ex.StackTrace}", ObsLogLevel.Error);
-        throw;
+        break;
       }
     }
     pipeStream.Close();

@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
+// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using System.Runtime.InteropServices;
@@ -184,10 +184,16 @@ public static class Output
   {
     if (_beamSender.CanStart)
     {
+      Task startTask;
       if (SettingsDialog.Properties.UsePipe)
-        _beamSender.Start(SettingsDialog.Properties.Identifier, SettingsDialog.Properties.Identifier);
+        startTask = _beamSender.Start(SettingsDialog.Properties.Identifier, SettingsDialog.Properties.Identifier);
       else
-        _beamSender.Start(SettingsDialog.Properties.Identifier, SettingsDialog.Properties.NetworkInterfaceAddress, SettingsDialog.Properties.Port, SettingsDialog.Properties.AutomaticPort);
+        startTask = _beamSender.Start(SettingsDialog.Properties.Identifier, SettingsDialog.Properties.NetworkInterfaceAddress, SettingsDialog.Properties.Port, SettingsDialog.Properties.AutomaticPort);
+      _ = startTask.ContinueWith(t =>
+      {
+        if (t.Exception != null)
+          Module.Log($"BeamSender.Start faulted: {t.Exception.Flatten().Message}", ObsLogLevel.Error);
+      }, TaskContinuationOptions.OnlyOnFaulted);
     }
   }
 

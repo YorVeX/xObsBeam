@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
+// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using System.Collections.Concurrent;
@@ -96,10 +96,16 @@ public class Filter
     if (_beamSender.CanStart)
     {
       _startRequested = DateTime.MinValue;
+      Task startTask;
       if (Properties.UsePipe)
-        _beamSender.Start(Properties.Identifier, Properties.Identifier);
+        startTask = _beamSender.Start(Properties.Identifier, Properties.Identifier);
       else
-        _beamSender.Start(Properties.Identifier, Properties.NetworkInterfaceAddress, Properties.Port, Properties.AutomaticPort);
+        startTask = _beamSender.Start(Properties.Identifier, Properties.NetworkInterfaceAddress, Properties.Port, Properties.AutomaticPort);
+      _ = startTask.ContinueWith(t =>
+      {
+        if (t.Exception != null)
+          Module.Log($"{UniquePrefix} BeamSender.Start faulted: {t.Exception.Flatten().Message}", ObsLogLevel.Error);
+      }, TaskContinuationOptions.OnlyOnFaulted);
       IsActive = true;
     }
   }

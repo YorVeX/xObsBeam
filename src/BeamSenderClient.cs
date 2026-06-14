@@ -64,8 +64,18 @@ sealed class BeamSenderClient
     else
       throw new InvalidOperationException("No socket or pipe stream available.");
     _lastSentTimestamp = 0;
-    _ = Task.Run(() => SendLoopAsync(PipeWriter.Create(_stream), _cancellationSource.Token));
-    _ = Task.Run(() => ReceiveLoopAsync(PipeReader.Create(_stream), _cancellationSource.Token));
+    Task.Run(() => SendLoopAsync(PipeWriter.Create(_stream), _cancellationSource.Token))
+      .ContinueWith(t =>
+      {
+        if (t.Exception != null)
+          Module.Log($"<{ClientId}> SendLoopAsync faulted: {t.Exception.Flatten().Message}", ObsLogLevel.Error);
+      }, TaskContinuationOptions.OnlyOnFaulted);
+    Task.Run(() => ReceiveLoopAsync(PipeReader.Create(_stream), _cancellationSource.Token))
+      .ContinueWith(t =>
+      {
+        if (t.Exception != null)
+          Module.Log($"<{ClientId}> ReceiveLoopAsync faulted: {t.Exception.Flatten().Message}", ObsLogLevel.Error);
+      }, TaskContinuationOptions.OnlyOnFaulted);
   }
 
   public void Disconnect(int blockingTimeout = 1000)
