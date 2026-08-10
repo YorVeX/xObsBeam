@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
+// SPDX-FileCopyrightText: © 2023-2026 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using System.Collections.Concurrent;
@@ -151,7 +151,7 @@ public class Filter
       var obsVideoInfo = ObsBmem.bzalloc<obs_video_info>();
       if (Convert.ToBoolean(Obs.obs_get_video_info(obsVideoInfo)) && (obsVideoInfo != null))
       {
-        if (_beamSender.VideoParametersChanged(frame->format, frame->width, frame->height, obsVideoInfo->fps_num, obsVideoInfo->fps_den, frame->full_range, frame->color_matrix, frame->color_range_min, frame->color_range_max))
+        if (_beamSender.VideoParametersChanged(frame->format, frame->width, frame->height, obsVideoInfo->fps_num, obsVideoInfo->fps_den, frame->full_range, &frame->color_matrix.e0, &frame->color_range_min.e0, &frame->color_range_max.e0))
         {
           ObsBmem.bfree(obsVideoInfo);
           Module.Log($"{UniquePrefix} {_filterType} source video configuration changed, restarting sender.", ObsLogLevel.Info);
@@ -178,7 +178,7 @@ public class Filter
       {
         try
         {
-          if (_beamSender.SetVideoParameters(Properties, frame->format, requiredVideoFormatConversion, frame->width, frame->height, obsVideoInfo->fps_num, obsVideoInfo->fps_den, frame->full_range, frame->color_matrix, frame->color_range_min, frame->color_range_max, frame->linesize, *(video_data._data_e__FixedBuffer*)&frame->data))
+          if (_beamSender.SetVideoParameters(Properties, frame->format, requiredVideoFormatConversion, frame->width, frame->height, obsVideoInfo->fps_num, obsVideoInfo->fps_den, frame->full_range, &frame->color_matrix.e0, &frame->color_range_min.e0, &frame->color_range_max.e0, &frame->linesize.e0, *(video_data._data_e__FixedBuffer*)&frame->data))
             StartSenderIfPossible();
         }
         catch (Exception ex)

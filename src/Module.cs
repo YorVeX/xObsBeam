@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
+﻿// SPDX-FileCopyrightText: © 2023-2026 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using System.Reflection;
@@ -178,9 +178,18 @@ public static class Module
     NativeLibrary.SetDllImportResolver(thisAssembly,
       (string libraryName, Assembly assembly, DllImportSearchPath? searchPath) =>
       {
-        Log($"Trying to load native library \"{libraryName}\" from additional path: {Path.GetDirectoryName(ModulePath)!}", ObsLogLevel.Debug);
-        if (NativeLibrary.TryLoad(Path.Combine(Path.GetDirectoryName(ModulePath)!, libraryName), out nint handle)) // search current module directory
+        var moduleDirectory = Path.GetDirectoryName(ModulePath)!;
+        Log($"Trying to load native library \"{libraryName}\" from additional path: {moduleDirectory}", ObsLogLevel.Debug);
+        // search current module directory - on Windows the loader appends ".dll" to names without an extension, on Linux/macOS the "lib" prefix and ".so"/".dylib" suffix need to be added explicitly
+        // (since .NET 10 the default search no longer includes the module directory for NativeAOT, see https://learn.microsoft.com/en-us/dotnet/core/compatibility/interop/10.0/native-library-search)
+        if (NativeLibrary.TryLoad(Path.Combine(moduleDirectory, libraryName), out nint handle))
           return handle;
+        if (!OperatingSystem.IsWindows())
+        {
+          var unixLibraryName = "lib" + libraryName + (OperatingSystem.IsMacOS() ? ".dylib" : ".so");
+          if (NativeLibrary.TryLoad(Path.Combine(moduleDirectory, unixLibraryName), out nint unixHandle))
+            return unixHandle;
+        }
 
         if (libraryName == "turbojpeg")
         {

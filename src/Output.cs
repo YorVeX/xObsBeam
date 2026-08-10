@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
+// SPDX-FileCopyrightText: © 2023-2026 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using System.Runtime.InteropServices;
@@ -216,10 +216,10 @@ public static class Output
       }
 
       var video = ObsBmem.bzalloc<obs_source_frame>(); // only using this to store the color_matrix, color_range_min and color_range_max fields
-      ObsVideo.video_format_get_parameters_for_format(_videoInfo->colorspace, _videoInfo->range, _videoInfo->format, video->color_matrix, video->color_range_min, video->color_range_max);
+      ObsVideo.video_format_get_parameters_for_format(_videoInfo->colorspace, _videoInfo->range, _videoInfo->format, &video->color_matrix.e0, &video->color_range_min.e0, &video->color_range_max.e0);
       try
       {
-        if (_beamSender.SetVideoParameters(SettingsDialog.Properties, _videoInfo->format, _conversionVideoFormat, _videoInfo->width, _videoInfo->height, _videoInfo->fps_num, _videoInfo->fps_den, Convert.ToByte(_videoInfo->range == video_range_type.VIDEO_RANGE_FULL), video->color_matrix, video->color_range_min, video->color_range_max, frame->linesize, frame->data))
+        if (_beamSender.SetVideoParameters(SettingsDialog.Properties, _videoInfo->format, _conversionVideoFormat, _videoInfo->width, _videoInfo->height, _videoInfo->fps_num, _videoInfo->fps_den, Convert.ToByte(_videoInfo->range == video_range_type.VIDEO_RANGE_FULL), &video->color_matrix.e0, &video->color_range_min.e0, &video->color_range_max.e0, &frame->linesize.e0, frame->data))
           StartSenderIfPossible();
       }
       catch (Exception ex)

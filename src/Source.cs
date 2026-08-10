@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
+﻿// SPDX-FileCopyrightText: © 2023-2026 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using System.Collections.Concurrent;
@@ -1451,16 +1451,16 @@ public class Source
       context->Video->width = videoFrame.Header.Width;
       context->Video->height = videoFrame.Header.Height;
       context->Video->full_range = videoFrame.Header.FullRange;
-      new Span<uint>(context->Video->linesize, Beam.VideoHeader.MAX_AV_PLANES).Clear(); // initialize all linesizes to 0 first
+      new Span<uint>(&context->Video->linesize.e0, Beam.VideoHeader.MAX_AV_PLANES).Clear(); // initialize all linesizes to 0 first
       _videoPlaneInfo = Beam.GetVideoPlaneInfo(context->Video->format, context->Video->width, context->Video->height);
       for (int planeIndex = 0; planeIndex < _videoPlaneInfo.Count; planeIndex++)
       {
         context->Video->linesize[planeIndex] = _videoPlaneInfo.Linesize[planeIndex];
         Module.Log("VideoFrameReceivedEventHandler(): linesize[" + planeIndex + "] = " + _videoPlaneInfo.Linesize[planeIndex], ObsLogLevel.Debug);
       }
-      new ReadOnlySpan<float>(videoFrame.Header.ColorMatrix, 16).CopyTo(new Span<float>(context->Video->color_matrix, 16));
-      new ReadOnlySpan<float>(videoFrame.Header.ColorRangeMin, 3).CopyTo(new Span<float>(context->Video->color_range_min, 3));
-      new ReadOnlySpan<float>(videoFrame.Header.ColorRangeMax, 3).CopyTo(new Span<float>(context->Video->color_range_max, 3));
+      new ReadOnlySpan<float>(videoFrame.Header.ColorMatrix, 16).CopyTo(new Span<float>(&context->Video->color_matrix.e0, 16));
+      new ReadOnlySpan<float>(videoFrame.Header.ColorRangeMin, 3).CopyTo(new Span<float>(&context->Video->color_range_min.e0, 3));
+      new ReadOnlySpan<float>(videoFrame.Header.ColorRangeMax, 3).CopyTo(new Span<float>(&context->Video->color_range_max.e0, 3));
       Module.Log("VideoFrameReceivedEventHandler(): reinitialized", ObsLogLevel.Debug);
       IsAudioOnly = false;
     }

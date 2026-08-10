@@ -29,7 +29,13 @@
       "options": {
         "cwd": "${workspaceFolder}/scripts/wsl"
       },
-      "command": ".\\build-linux-x64-wsl.cmd"
+      "command": "powershell.exe",
+      "args": [
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        ".\\build-linux-x64-wsl.ps1"
+      ]
     },
     {
       "label": "test (win-x64)",
