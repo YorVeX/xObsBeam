@@ -54,6 +54,11 @@ nunit-*.xml
 [Rr]eleasePS/
 dlldata.c
 
+# Native library build artifacts (produced by make in lib/ source dirs)
+# Only the contents of the binaries/ subfolders are tracked as prebuilt outputs.
+/lib/QoirLib/libQoirLib.so
+/lib/Density/density/build/
+
 # Benchmark Results
 BenchmarkDotNet.Artifacts/
 

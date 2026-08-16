@@ -38,7 +38,8 @@ cls
 
 echo Preparing build folder, installing .NET 10 SDK and necessary build depedencies...
 REM All done in one line to prevent multiple sudo password prompts:
-wsl -d %WSL_DISTRO% sudo add-apt-repository -y ppa:dotnet/backports ^&^& sudo apt-get install -y dotnet-sdk-10.0 clang zlib1g-dev ^&^& sudo mkdir -p /build-net ^&^& sudo chown -R $USER:$USER /build-net
+REM make is needed to rebuild the prebuilt native libraries (QoirLib, density) via rebuild-linux-libs.sh
+wsl -d %WSL_DISTRO% sudo add-apt-repository -y ppa:dotnet/backports ^&^& sudo apt-get install -y dotnet-sdk-10.0 clang make zlib1g-dev ^&^& sudo mkdir -p /build-net ^&^& sudo chown -R $USER:$USER /build-net
 
 if %ERRORLEVEL% == 0 (
   echo.
