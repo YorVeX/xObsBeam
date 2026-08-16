@@ -24,6 +24,70 @@
       }
     },
     {
+      "label": "publish (osx-arm64)",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}/scripts"
+      },
+      "command": "bash",
+      "args": [
+        "build-osx-arm64.sh"
+      ]
+    },
+    {
+      "label": "publish (osx-x64)",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}/scripts"
+      },
+      "command": "bash",
+      "args": [
+        "build-osx-x64.sh"
+      ]
+    },
+    {
+      "label": "publish (macos-universal)",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}/scripts"
+      },
+      "command": "bash",
+      "args": [
+        "build-macos-universal.sh"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      }
+    },
+    {
+      "label": "publish and release (macos-universal)",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}/scripts"
+      },
+      "command": "bash",
+      "args": [
+        "release-macos-universal.sh"
+      ],
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "publish (macos-universal)"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "test (osx-local)",
+      "type": "shell",
+      "options": {
+        "cwd": "${workspaceFolder}/scripts"
+      },
+      "command": "bash",
+      "args": [
+        "test-osx-local.sh"
+      ]
+    },
+    {
       "label": "publish and release (WSL linux-x64)",
       "type": "shell",
       "options": {

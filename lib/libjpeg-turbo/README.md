@@ -15,6 +15,13 @@ This DLL should be placed in the same folder as the xObsBeam plugin for simplici
 #### Linux
 On Linux it is recommended to install one of the libjpeg-turbo packages provided either by your distribution or from [https://sourceforge.net/projects/libjpeg-turbo/files](https://sourceforge.net/projects/libjpeg-turbo/files). You need the `libturbojpeg.so.0` library file, e.g. on Ubuntu this would be contained in the [libturbojpeg](https://packages.ubuntu.com/search?keywords=libturbojpeg) package.
 
+#### macOS
+On macOS libjpeg-turbo is not bundled with the xObsBeam plugin. Install it via [Homebrew](https://brew.sh):
+```
+brew install libjpeg-turbo
+```
+This installs `libturbojpeg.dylib` into the Homebrew lib directory (`/opt/homebrew/lib` on Apple Silicon, `/usr/local/lib` on Intel). The xObsBeam plugin searches these paths automatically when loading the turbojpeg library.
+
 ### Compatible versions and features
 The wrapper class was more thoroughly tested in Windows with both libjpeg-turbo versions 2.1.5.1 and 2.1.91 (aka beta 3.0 beta 2) and had a quick and short test on Ubuntu 20.04 with the 2.0.3-0ubuntu1 version. In general it should also work with many older versions.
 

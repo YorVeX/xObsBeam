@@ -52,7 +52,7 @@ if (-not $publishDir) {
 Copy-Item -Path "$BuildFolderFromWindows\$ProjectName\publish\*" -Destination $publishDir -Force
 
 # Create release structure.
-$releaseBase = Join-Path $scriptDir "..\..\release\linux-x64-glibc-2.31\.config\obs-studio\plugins\$ProjectName"
+$releaseBase = Join-Path $scriptDir "..\..\release\linux-x64-glibc-2.35\.config\obs-studio\plugins\$ProjectName"
 $releaseBinDir = Join-Path $releaseBase "bin\64bit"
 $releaseLocaleDir = Join-Path $releaseBase "data\locale"
 New-Item -ItemType Directory -Force -Path $releaseBinDir | Out-Null
@@ -67,8 +67,8 @@ Copy-Item -Path "$localeSource\*" -Destination $releaseLocaleDir -Force
 
 # Copy extra binaries to the release structure
 $libBase = Join-Path $scriptDir "..\..\..\lib"
-Copy-Item -Path "$libBase\QoirLib\binaries\linux-x64-glibc-2.31\libQoirLib.so" -Destination $releaseBinDir -Force
-Copy-Item -Path "$libBase\Density\binaries\linux-x64-glibc-2.31\libdensity.so" -Destination $releaseBinDir -Force
+Copy-Item -Path "$libBase\QoirLib\binaries\linux-x64-glibc-2.35\libQoirLib.so" -Destination $releaseBinDir -Force
+Copy-Item -Path "$libBase\Density\binaries\linux-x64-glibc-2.35\libdensity.so" -Destination $releaseBinDir -Force
 
 # Final cleanup in WSL
 wsl -d $WSL_DISTRO rm -Rf "$BuildFolderFromLinux/$ProjectName/*"

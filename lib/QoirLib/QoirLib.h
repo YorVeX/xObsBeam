@@ -20,6 +20,8 @@
 #define DLL_EXPORT __declspec(dllexport)
 #elif defined(__linux__)
 #define DLL_EXPORT __attribute__ ((visibility ("default")))
+#elif defined(__APPLE__)
+#define DLL_EXPORT __attribute__ ((visibility ("default")))
 #endif
 
 #ifndef QOIR_INCLUDE_GUARD

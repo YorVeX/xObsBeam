@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
+// SPDX-FileCopyrightText: © 2023-2024 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 /*
@@ -305,13 +305,21 @@ public partial class PeerDiscovery
           // send discovery request
           try
           {
-            Module.Log($"Peer Discovery client: Sending multicast discovery request from {multicastInterfaceIp}", ObsLogLevel.Debug);
-            if (IPAddress.IsLoopback(multicastInterfaceIp))
-              udpClient.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), multicastInterfaceIp);
-            else
-              udpClient.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), MulticastTtl);
             udpClient.Client.Bind(new IPEndPoint(multicastInterfaceIp, 0));
-            udpClient.Send(data, data.Length, MulticastGroupAddress, MulticastPort);
+            if (IPAddress.IsLoopback(multicastInterfaceIp))
+            {
+              // The loopback interface does not support sending multicast packets on macOS/Unix (EADDRNOTAVAIL),
+              // so send the discovery request as a unicast packet directly to the loopback discovery port.
+              // The server is bound to 127.0.0.1:MulticastPort and will reply to our remote endpoint.
+              Module.Log($"Peer Discovery client: Sending unicast discovery request from {multicastInterfaceIp}", ObsLogLevel.Debug);
+              udpClient.Send(data, data.Length, IPAddress.Loopback.ToString(), MulticastPort);
+            }
+            else
+            {
+              Module.Log($"Peer Discovery client: Sending multicast discovery request from {multicastInterfaceIp}", ObsLogLevel.Debug);
+              udpClient.JoinMulticastGroup(IPAddress.Parse(MulticastGroupAddress), MulticastTtl);
+              udpClient.Send(data, data.Length, MulticastGroupAddress, MulticastPort);
+            }
           }
           catch (Exception ex)
           {

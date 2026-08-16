@@ -37,7 +37,7 @@ recursive_wildcard=$(wildcard $1$2) $(foreach d,$(wildcard $1*),$(call recursive
 UPDATE_SUBMODULES := $(shell git submodule update --init --recursive)
 
 TARGET = libdensity
-CFLAGS = -Ofast -flto -std=c99 -Wall -MD
+CFLAGS = -O3 -ffast-math -flto -std=c99 -Wall -MD
 LFLAGS = -flto
 
 BUILD_DIRECTORY = build
@@ -98,6 +98,14 @@ else
 	else
 		EXTENSION = .so
 	endif
+	# Allow forcing a specific architecture (e.g. ARCH=arm64 or ARCH=x86_64) so the
+	# universal macOS build script can compile each architecture separately.
+	ifdef ARCH
+		ifeq ($(UNAME_S),Darwin)
+			CFLAGS += -arch $(ARCH)
+			LFLAGS += -arch $(ARCH)
+		endif
+	endif
 	BENCHMARK_EXTENSION =
 	SEPARATOR = /
 	ifeq ($(shell lsb_release -a 2>/dev/null | grep Distributor | awk '{ print $$3 }'),Ubuntu)
@@ -133,11 +141,11 @@ pre-link : post-compile
 # Compared to the original the link flags in the following section have been changed as follows to link
 # based on the objects and not on the static lib (otherwise the necessary function exports are missing):
 # old: $(CC) $(LFLAGS) -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(BUILD_DIRECTORY)/$(TARGET)$(STATIC_EXTENSION)
-# new: $(CC) $(LFLAGS) -fvisibility=default -static-libgcc -static-libstdc++ -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(DENSITY_OBJ)
+# new: $(CC) $(LFLAGS) -fvisibility=default -static-libgcc $(if $(filter Darwin,$(UNAME_S)),,-static-libstdc++) -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(DENSITY_OBJ)
 
 link: pre-link $(DENSITY_OBJ)
 	$(AR) crs $(BUILD_DIRECTORY)/$(TARGET)$(STATIC_EXTENSION) $(DENSITY_OBJ)
-	$(CC) $(LFLAGS) -fvisibility=default -static-libgcc -static-libstdc++ -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(DENSITY_OBJ)
+	$(CC) $(LFLAGS) -fvisibility=default $(if $(filter Darwin,$(UNAME_S)),,-static-libgcc -static-libstdc++) -shared -o $(BUILD_DIRECTORY)/$(TARGET)$(EXTENSION) $(DENSITY_OBJ)
 
 post-link: link
 	@echo Done.

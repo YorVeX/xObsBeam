@@ -1,4 +1,4 @@
-﻿// SPDX-FileCopyrightText: © 2023-2026 YorVeX, https://github.com/YorVeX
+// SPDX-FileCopyrightText: © 2023-2026 YorVeX, https://github.com/YorVeX
 // SPDX-License-Identifier: MIT
 
 using System.Reflection;
@@ -39,10 +39,59 @@ public static class Module
   const string DefaultLocale = "en-US";
   static string _locale = DefaultLocale;
 
+#if MACOS
+  // .NET's NamedPipeServerStream/NamedPipeClientStream use Unix domain sockets on macOS, locating
+  // the socket file via TMPDIR (falling back to confstr(_CS_DARWIN_USER_TEMP_DIR)). TMPDIR differs
+  // depending on how OBS was launched (Terminal inherits the shell's TMPDIR, Finder/Dock has none
+  // and confstr may resolve to a different per-session sandbox dir), so two instances end up looking
+  // in different directories and the pipe client never finds the server's socket (silent hang).
+  // Parall (used to run multiple OBS instances) additionally overrides HOME per-instance, which would
+  // redirect any HOME-relative path and can exceed the 104-char Unix domain socket path limit.
+  //
+  // Fix: force TMPDIR to a fixed shared directory that is not under HOME (so Parall doesn't redirect
+  // it), short enough for the socket path limit, and independent of the launch-context-dependent
+  // TMPDIR/confstr values. /tmp satisfies all of this; users can override via XOBSBEAM_PIPE_DIR.
+  const string MacPipeDirEnvVar = "XOBSBEAM_PIPE_DIR";
+  const string MacPipeTempDirDefault = "/tmp";
+
+  /// <summary>
+  /// Forces TMPDIR to a fixed shared directory so that NamedPipeServerStream and
+  /// NamedPipeClientStream can find each other across independently-launched OBS instances.
+  /// Must run before any pipe stream is created.
+  /// </summary>
+  static void NormalizeMacOSTempDir()
+  {
+    string? pipeTempDir = Environment.GetEnvironmentVariable(MacPipeDirEnvVar);
+    if (string.IsNullOrEmpty(pipeTempDir))
+      pipeTempDir = MacPipeTempDirDefault;
+
+    try
+    {
+      Directory.CreateDirectory(pipeTempDir);
+    }
+    catch (Exception ex)
+    {
+      Log($"{ex.GetType().Name} creating pipe dir {pipeTempDir}: {ex.Message}, falling back to {MacPipeTempDirDefault}", ObsLogLevel.Warning);
+      pipeTempDir = MacPipeTempDirDefault;
+      try { Directory.CreateDirectory(pipeTempDir); } catch { }
+    }
+
+    var previousTmpdir = Environment.GetEnvironmentVariable("TMPDIR");
+    Environment.SetEnvironmentVariable("TMPDIR", pipeTempDir + "/");
+    if (!string.IsNullOrEmpty(previousTmpdir) && previousTmpdir != pipeTempDir + "/")
+      Log($"TMPDIR overridden from {previousTmpdir} to {pipeTempDir}/ (named pipes require a shared directory on macOS; set {MacPipeDirEnvVar} to customize).", ObsLogLevel.Info);
+    else
+      Log($"TMPDIR set to {pipeTempDir}/ (named pipes will use this directory; set {MacPipeDirEnvVar} to customize).", ObsLogLevel.Debug);
+  }
+#endif
+
   public static unsafe obs_module* ObsModule { get; private set; } = null;
   public static string ModuleName { get; private set; } = "xObsBeam";
   public static string ModulePath { get; private set; } = "";
   public static string ModuleVersionString { get; private set; } = "0.0.0";
+
+  // Homebrew library search paths for macOS (libjpeg-turbo is not bundled with the plugin)
+  static readonly string[] HomebrewLibDirs = ["/opt/homebrew/lib", "/usr/local/lib"];
 
   static unsafe text_lookup* _textLookupModule = null;
 
@@ -162,6 +211,12 @@ public static class Module
   {
     Log("Loading module...", ObsLogLevel.Debug);
 
+#if MACOS
+    // Must run before any NamedPipeServerStream/NamedPipeClientStream is created, so that both
+    // the sender (server) and receiver (client) sides resolve the same Unix domain socket path.
+    NormalizeMacOSTempDir();
+#endif
+
     // register handlers for otherwise unhandled exceptions so that at least a log message is written
     AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionEventHandler;
     TaskScheduler.UnobservedTaskException += UnobservedTaskExceptionEventHandler;
@@ -193,9 +248,24 @@ public static class Module
 
         if (libraryName == "turbojpeg")
         {
-          Log($"Trying to load native library \"{libraryName}\" with additional name variant: libturbojpeg.so.0", ObsLogLevel.Debug);
-          if (NativeLibrary.TryLoad("libturbojpeg.so.0", assembly, searchPath, out nint handle2))
-            return handle2;
+          if (OperatingSystem.IsLinux())
+          {
+            Log($"Trying to load native library \"{libraryName}\" with additional name variant: libturbojpeg.so.0", ObsLogLevel.Debug);
+            if (NativeLibrary.TryLoad("libturbojpeg.so.0", assembly, searchPath, out nint handle2))
+              return handle2;
+          }
+          else if (OperatingSystem.IsMacOS())
+          {
+            // libjpeg-turbo is expected to be installed via Homebrew on macOS (not bundled with the plugin)
+            // Homebrew installs to /opt/homebrew/lib on Apple Silicon and /usr/local/lib on Intel
+            foreach (var homebrewLibDir in HomebrewLibDirs)
+            {
+              var homebrewPath = Path.Combine(homebrewLibDir, "libturbojpeg.dylib");
+              Log($"Trying to load native library \"{libraryName}\" from Homebrew path: {homebrewPath}", ObsLogLevel.Debug);
+              if (NativeLibrary.TryLoad(homebrewPath, out nint homebrewHandle))
+                return homebrewHandle;
+            }
+          }
         }
 
         return IntPtr.Zero; // fall back to default search paths and names
