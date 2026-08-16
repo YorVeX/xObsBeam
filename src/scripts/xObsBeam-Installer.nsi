@@ -1,7 +1,7 @@
 ; if you want to build this, you need to download and install NSIS from https://nsis.sourceforge.io/Download or
 ; execute this on a CMD or PowerShell window: winget install NSIS.NSIS
 
-Unicode True
+Unicode true
 
 !define AUTHOR "YorVeX"
 
@@ -20,7 +20,7 @@ VIProductVersion "${VERSION}"
 VIAddVersionKey "ProductName" "${APPNAME}"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "VIProductVersion" "${VERSION}"
-VIAddVersionKey "LegalCopyright" "Copyright (c) 2023-2024 ${AUTHOR}, https://github.com/${AUTHOR}"
+VIAddVersionKey "LegalCopyright" "Copyright (c) 2023-2026 ${AUTHOR}, https://github.com/${AUTHOR}"
 VIAddVersionKey "FileDescription" "${APPDISPLAYNAME}"
 
 ; Main install settings
@@ -30,8 +30,8 @@ Icon "..\..\img\${APPNAME}-Icon.ico"
 UninstallIcon "..\..\img\${APPNAME}-Icon.ico"
 InstallDirRegKey HKLM "Software\${APPNAME}" ""
 InstallDir "$PROGRAMFILES64\obs-studio"
-OutFile "..\release\win-x64\${APPNAME}-win-x64-installer.exe"
-SetCompressor LZMA
+OutFile "..\release\win-x64\${APPNAME}-${VERSION}-win-x64-installer.exe"
+SetCompressor lzma
 
 ; Define splash screen
 Function .onInit
@@ -83,11 +83,11 @@ Section "${APPDISPLAYNAME}" Section1
 		StrCpy $INSTALL_BASE_DIR "$OBS_INSTALL_DIR"
 	!endif
 
-	StrCpy $InstDir "$INSTALL_BASE_DIR"
+	StrCpy $INSTDIR "$INSTALL_BASE_DIR"
 
 	IfFileExists "$INSTDIR\*.*" +3
-		MessageBox MB_OK|MB_ICONSTOP "OBS directory doesn't exist!"
-		Abort
+	MessageBox MB_OK|MB_ICONSTOP "OBS directory doesn't exist!"
+	Abort
 
 	!define UNINSTALLER "$INSTDIR\obs-plugins\uninstall-${APPNAME}-win-x64.exe"
 
@@ -106,7 +106,7 @@ Section "${APPDISPLAYNAME}" Section1
 	File /r "..\locale\*.*" ; locale files
 
 	CreateDirectory "$SMPROGRAMS\${APPDISPLAYNAME}"
-	CreateShortCut "$SMPROGRAMS\${APPDISPLAYNAME}\Uninstall ${APPDISPLAYNAME}.lnk" "${UNINSTALLER}"
+	CreateShortcut "$SMPROGRAMS\${APPDISPLAYNAME}\Uninstall ${APPDISPLAYNAME}.lnk" "${UNINSTALLER}"
 
 SectionEnd
 
@@ -116,7 +116,8 @@ Section -FinishSection
 	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayName" "${APPDISPLAYNAME}"
 	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "UninstallString" "${UNINSTALLER}"
 	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "Publisher" "${AUTHOR}"
-	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "HelpLink" "https://github.com/${AUTHOR}/${APPNAME}"
+	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "HelpLink" \
+		"https://github.com/${AUTHOR}/${APPNAME}"
 	WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayVersion" "${DISPLAY_VERSION}"
 	WriteUninstaller "${UNINSTALLER}"
 
@@ -124,17 +125,17 @@ SectionEnd
 
 ; Modern install component descriptions
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-	!insertmacro MUI_DESCRIPTION_TEXT ${Section1} "Install the ${APPDISPLAYNAME} to your installed OBS Studio version"
+!insertmacro MUI_DESCRIPTION_TEXT ${Section1} "Install the ${APPDISPLAYNAME} to your installed OBS Studio version"
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 UninstallText "This will uninstall the ${APPDISPLAYNAME} from your system"
 
-;Uninstall section
+; Uninstall section
 Section Uninstall
 	SectionIn RO
 	AllowSkipFiles off
 
-	;Remove from registry...
+	; Remove from registry...
 	DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
 	DeleteRegKey HKLM "SOFTWARE\${APPNAME}"
 
